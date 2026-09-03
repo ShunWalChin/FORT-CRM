@@ -253,6 +253,20 @@ export function telaCanais(ui) {
  * É deliberadamente sem dependência: entra em site feito em WordPress, em
  * Wix ou em HTML escrito à mão, que é onde estes três clientes estão.
  */
+/*
+ * O formulário pronto para colar.
+ *
+ * A chave viaja no ENDEREÇO do script (`?chave=`), e não só num atributo.
+ *
+ * Motivo, tomado do CRM da Comp AI (MIT): o injetor de HTML personalizado do
+ * Google Tag Manager RECONSTRÓI o elemento `<script>` e mantém apenas a URL —
+ * `data-*`, `async` e `defer` são descartados no caminho. Um script que só lê
+ * atributo carrega, não encontra a chave, e volta em silêncio: aparece na aba
+ * de rede, o formulário parece instalado, e nada é registrado.
+ *
+ * O atributo continua valendo e VENCE quando os dois existem, para que um
+ * trecho colado à mão ganhe de uma URL velha.
+ */
 function snippet(base, chave, empresa) {
   return `<!-- FORT-CRM — captação de lead · ${empresa} -->
 <form id="fort-lead">
@@ -276,7 +290,13 @@ document.getElementById('fort-lead').addEventListener('submit', function (ev) {
 
   var fbp = (document.cookie.match(/_fbp=([^;]+)/) || [])[1] || null;
 
-  fetch('${base}/api/entrada/${chave}', {
+  // A chave sai do atributo OU do endereço deste script. Gerenciador de tags
+  // costuma apagar atributo e preservar a URL — com os dois, funciona nos dois.
+  var eu = document.currentScript;
+  var viaUrl = eu && eu.src ? new URL(eu.src).searchParams.get('chave') : null;
+  var CHAVE = (eu && eu.getAttribute('data-chave')) || viaUrl || '${chave}';
+
+  fetch('${base}/api/entrada/' + CHAVE, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({

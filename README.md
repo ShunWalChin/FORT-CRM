@@ -10,7 +10,7 @@ fontes.
 🔗 **Sistema no ar: [fortcrm.fattech.com.br](https://fortcrm.fattech.com.br)**
 
 ```
-Node ≥ 23.4 · zero dependências · 118 testes · nenhum passo de build
+Node ≥ 23.4 · zero dependências · 128 testes · nenhum passo de build
 ```
 
 ---
@@ -53,7 +53,7 @@ flag a partir dessa versão. No Node 22 ele sobe e morre no primeiro `import`.
 
 ```bash
 node src/selftest.mjs       # 45 testes — CRM de uma empresa
-node src/selftest-fed.mjs   # 73 testes — federação, atribuição, conversão, CTWA
+node src/selftest-fed.mjs   # 83 testes — federação, atribuição, conversão, CTWA
 ```
 
 ### Entrar
@@ -85,6 +85,7 @@ que o sistema ainda não faz. Cada seção tem um botão que abre a tela de verd
 | [Atribuição e conversões](docs/ATRIBUICAO-E-CONVERSOES.md) | Do clique no anúncio à conversão devolvida |
 | [Click-to-WhatsApp](docs/CTWA.md) | `ctwa_clid`, webhook assinado, Business Messaging |
 | [Canais de entrada](docs/CANAIS.md) | Catálogo por empresa, porta pública, cobertura |
+| [Campos personalizados](docs/CAMPOS-PERSONALIZADOS.md) | Registro de propriedades, JSON validado, por empresa |
 | [Interface](docs/INTERFACE.md) | Cinco temas, versão mobile, decisões de usabilidade |
 | [API](docs/API.md) | Referência das rotas |
 | [Deploy](docs/DEPLOY.md) | Contêiner isolado, túnel, backup, manutenção |
@@ -146,6 +147,7 @@ src/
   db.mjs                SQLite, escopo por empresa, cadeia de auditoria
   schema.mjs            14 tabelas do CRM
   schema-extra.mjs      event_log, atribuições, conversões, webhooks, chaves
+  migracoes.mjs         colunas novas em base existente
   compliance.mjs        as 9 checagens — puro, sem I/O
   regua.mjs             17 gatilhos e renderização de mensagem
   atribuicao.mjs        parâmetros de clique, normalização, hash SHA-256
@@ -153,12 +155,13 @@ src/
   conversoes-servico.mjs  fila, avaliação e despacho
   ctwa.mjs              Click-to-WhatsApp: webhook, HMAC, Business Messaging
   canais.mjs            catálogo de canais de entrada por empresa
+  propriedades.mjs      registro de campos: sistema + personalizados
   central.mjs           consolidação e chaves de captação
   senha.mjs             scrypt, migração automática
   limite.mjs            teto de requisições por origem
   api.mjs               ~45 rotas
   seed.mjs              carga de demonstração
-  selftest*.mjs         118 testes
+  selftest*.mjs         128 testes
 web/
   app.js                SPA, sem framework
   ui.js                 ícones SVG e temas

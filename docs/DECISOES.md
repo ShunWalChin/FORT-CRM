@@ -44,6 +44,25 @@ O defeito ficou escondido atrás de um `ReferenceError: banco is not defined` na
 rota que chamava. Consertar o crash foi o que revelou o estrago. Agora `reset`
 sem empresa explícita **falha alto**.
 
+### `create table if not exists` não acrescenta coluna
+
+Resolve o banco novo e **não** resolve o que já existe. Acrescentar uma coluna
+ao `schema.mjs` não muda uma tabela já criada, e a primeira escrita quebra com
+`has no column named X` — longe do arquivo que foi editado.
+
+Passou despercebido em desenvolvimento porque eu apagava `data/` e a base
+renascia com o schema novo. Em produção, onde apagar a base não é opção, o
+deploy subiu limpo e a recarga quebrou.
+
+`src/migracoes.mjs` declara as colunas esperadas e aplica o que falta na
+abertura do banco. Idempotente, e **falha alto** quando um `ALTER` não passa —
+uma coluna que não entrou é uma escrita que vai quebrar depois, com uma
+mensagem que não explica nada.
+
+Deliberadamente **não** remove coluna, não renomeia e não muda tipo: isso exige
+recriar a tabela, e essa operação tem de ser escrita e revisada uma a uma, nunca
+inferida por diferença.
+
 ### Recarregar uma instância exige re-sincronizar a central
 
 A carga gera IDs novos, e a central é uma projeção das três instâncias.
@@ -277,3 +296,48 @@ contas esquecidas que ninguém audita.
 ### O menu por papel é organização, não segurança
 
 Quem digitar a URL chega igual. É o servidor que recusa.
+
+---
+
+## Ideias vindas de fora
+
+Três decisões foram adaptadas do [CRM da Comp AI](https://github.com/trycompai/crm)
+(MIT, © Comp AI). O código é outro — eles são Next.js/Prisma/Postgres e nós somos
+Node puro com SQLite —, mas o desenho vale nos dois.
+
+### Campos personalizados em JSON, com um registro que descreve os dois tipos
+
+Ver [Campos personalizados](CAMPOS-PERSONALIZADOS.md). A frase que resume o
+motivo: uma lista mostrando oito colunas personalizadas não pode virar oito
+junções.
+
+O que mudei: eles têm um registro para a instalação inteira; aqui ele é por
+empresa, porque cada instância é um negócio diferente. Há teste garantindo que o
+catálogo da oficina não contém campo da fazenda.
+
+### A ficha vive na URL
+
+"Sheets, not inner pages." A ficha é uma gaveta identificada por um parâmetro
+(`#/clientes?ficha=abc`), e não uma rota de página interna.
+
+Três coisas passaram a funcionar: o endereço é compartilhável, o **botão Voltar
+fecha a gaveta** em vez de sair da tela — no celular, onde voltar é um gesto,
+isso tirava o operador do trabalho — e recarregar reabre onde estava.
+
+Detalhe que importa: a gaveta usa `pushState`, não troca de hash. Trocar o hash
+dispararia `hashchange` e faria a tela de trás recarregar por baixo da gaveta que
+acabou de abrir.
+
+### O Tag Manager apaga atributos
+
+O injetor de HTML personalizado do Google Tag Manager **reconstrói** o elemento
+de script e mantém apenas a URL: atributos `data-*`, `async` e `defer` somem no
+caminho.
+
+Um script de captação que só lê atributo carrega, não encontra a chave, e volta
+em silêncio — aparece na aba de rede, o formulário parece instalado, e **nada é
+registrado**. O snippet agora lê a chave do atributo **ou** do `?chave=` no
+endereço, com o atributo vencendo quando os dois existem.
+
+Esta é do tipo que só se descobre em produção, com o cliente reclamando que não
+chega lead.

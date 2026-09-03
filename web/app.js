@@ -494,7 +494,9 @@ async function navegar() {
    * altura num aparelho de 375: é leitura de mesa.
    */
   const padrao = ehMobile() ? 'regua' : 'painel';
-  const rota = (location.hash.replace('#/', '') || padrao).split('/')[0];
+  // `split('?')` antes de tudo: a gaveta vive em `#/clientes?ficha=abc`, e sem
+  // isto a rota viraria "clientes?ficha=abc" e nenhuma tela casaria.
+  const rota = (location.hash.split('?')[0].replace('#/', '') || padrao).split('/')[0];
   estado.rota = rota;
   desenharMenu();
   const alvo = document.getElementById('conteudo');
@@ -551,6 +553,8 @@ async function navegar() {
    */
   rotularTabelas(alvo);
   sincronizarNavBaixo();
+  // Link colado ou pagina recarregada com `?ficha=` reabre a ficha.
+  restaurarGavetaDaUrl();
 }
 
 /** A barra de polegar só existe no celular, e reflete a rota atual. */
@@ -1051,7 +1055,7 @@ function formularioCliente() {
 
 // ── Ficha do cliente ────────────────────────────────────────────────────────
 async function abrirFicha(id) {
-  abrirGaveta('<div class="carregando">carregando ficha…</div>');
+  abrirGaveta('<div class="carregando">carregando ficha…</div>', { ficha: id });
   const d = await api(`/clientes/${id}`);
   const c = d.cliente;
 
@@ -1081,17 +1085,7 @@ async function abrirFicha(id) {
 
     <form id="form-ficha" style="margin-top:18px">
       <div class="grade g2" style="gap:10px">
-        <div class="campo"><label>Nome</label><input name="nome" value="${esc(c.nome)}" required></div>
-        <div class="campo"><label>Telefone</label><input name="telefone" value="${esc(c.telefone ?? '')}" placeholder="5538998112233"></div>
-        <div class="campo"><label>E-mail</label><input name="email" type="email" value="${esc(c.email ?? '')}"></div>
-        <div class="campo"><label>Cidade</label><input name="cidade" value="${esc(c.cidade ?? '')}"></div>
-        <div class="campo"><label>Perfil</label>
-          <select name="perfil">
-            ${Object.entries(PERFIS).map(([k, v]) =>
-    `<option value="${esc(k)}" ${k === c.perfil ? 'selected' : ''}>${esc(v)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="campo"><label>Observação</label><input name="observacao" value="${esc(c.observacao ?? '')}"></div>
+        ${(d.propriedades ?? []).map(campoDaFicha).join('')}
       </div>
       <label style="display:flex;gap:9px;align-items:flex-start;margin:6px 0 14px;cursor:pointer">
         <input type="checkbox" name="consentimento" ${c.consentimento_lgpd ? 'checked' : ''}
@@ -1178,9 +1172,110 @@ async function abrirFicha(id) {
       </p>` : `<div class="aviso crit" style="margin-top:24px">
         Descadastro registrado em ${data(c.opt_out_em)}. Nenhuma mensagem automática sai para este contato.
       </div>`}
-  `);
+  `, { ficha: id });
 
-  const form = document.querySelector('#form-ficha');
+  /*
+ * Desenha um campo a partir da DEFINIÇÃO, não de um `if` por nome.
+ *
+ * É o ponto da ideia inteira: acrescentar "tipo de bomba" à Minas Peças é uma
+ * linha na tabela `propriedades`, e esta função já sabe desenhá-la. Sem isso,
+ * cada campo novo custaria alteração no formulário, na tabela, no filtro e na
+ * ficha — quatro lugares para esquecer um.
+ *
+ * Campo de sistema e campo personalizado passam pelo MESMO caminho; o que muda
+ * é só o prefixo do `name`, que diz ao servidor onde gravar.
+ */
+/*
+ * Colhe o formulário separando coluna real de campo personalizado.
+ *
+ * O `name` carrega a distinção — `telefone` vai para a coluna, `campos.metragem`
+ * vai para o JSON. Assim o mesmo formulário serve aos dois sem a tela precisar
+ * manter uma segunda lista do que é o quê.
+ */
+function colherCampos(f, propriedades) {
+  const saida = { campos: {} };
+  for (const p of propriedades) {
+    const nome = p.origem === 'sistema' ? p.chave : `campos.${p.chave}`;
+    const alvo = f.elements[nome];
+    if (!alvo) continue;
+
+    let v;
+    if (p.tipo === 'multi_selecao') {
+      // Vários checkboxes com o mesmo nome viram RadioNodeList; um só vem
+      // como elemento. Tratar os dois casos evita perder a única opção marcada.
+      const lista = alvo instanceof RadioNodeList ? [...alvo] : [alvo];
+      v = lista.filter((x) => x.checked).map((x) => x.value);
+    } else if (p.tipo === 'booleano') {
+      v = alvo.checked;
+    } else {
+      v = String(alvo.value ?? '').trim();
+      if (v === '') v = null;
+    }
+
+    if (p.origem === 'sistema') saida[p.chave] = v;
+    else saida.campos[p.chave] = v;
+  }
+  return saida;
+}
+
+function campoDaFicha(p) {
+  const nome = p.origem === 'sistema' ? p.chave : `campos.${p.chave}`;
+  const v = p.valor;
+  const req = p.obrigatorio ? 'required' : '';
+  const largo = p.tipo === 'texto_longo' || p.tipo === 'multi_selecao';
+
+  let entrada;
+  switch (p.tipo) {
+    case 'texto_longo':
+      entrada = `<textarea name="${esc(nome)}" rows="2" ${req}>${esc(v ?? '')}</textarea>`;
+      break;
+    case 'selecao':
+      entrada = `<select name="${esc(nome)}" ${req}>
+        <option value="">—</option>
+        ${(p.opcoes ?? []).map((o) => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(rotuloOpcao(o))}</option>`).join('')}
+      </select>`;
+      break;
+    case 'multi_selecao': {
+      const sel = new Set(Array.isArray(v) ? v : (v ? [v] : []));
+      entrada = `<div class="multi-opcoes">
+        ${(p.opcoes ?? []).map((o) => `
+          <label class="opcao">
+            <input type="checkbox" name="${esc(nome)}" value="${esc(o)}" ${sel.has(o) ? 'checked' : ''}>
+            <span>${esc(rotuloOpcao(o))}</span>
+          </label>`).join('')}
+      </div>`;
+      break;
+    }
+    case 'booleano':
+      entrada = `<label class="opcao"><input type="checkbox" name="${esc(nome)}" ${v ? 'checked' : ''}>
+        <span>Sim</span></label>`;
+      break;
+    case 'numero':
+    case 'moeda':
+      entrada = `<input name="${esc(nome)}" type="number" step="any" value="${esc(v ?? '')}" ${req}>`;
+      break;
+    case 'data':
+      entrada = `<input name="${esc(nome)}" type="date" value="${esc(String(v ?? '').slice(0, 10))}" ${req}>`;
+      break;
+    default:
+      entrada = `<input name="${esc(nome)}" type="${p.tipo === 'email' ? 'email' : 'text'}"
+        value="${esc(v ?? '')}" ${req}>`;
+  }
+
+  return `<div class="campo ${largo ? 'campo-largo' : ''}">
+    <label>${esc(p.rotulo)}${p.origem === 'custom' ? ' <span class="marca-custom">próprio</span>' : ''}</label>
+    ${entrada}
+    ${p.descricao ? `<div class="campo-dica">${esc(p.descricao)}</div>` : ''}
+  </div>`;
+}
+
+/** `produtor_rural` → `Produtor rural`. O banco guarda a chave, a tela mostra gente. */
+function rotuloOpcao(o) {
+  const s = String(o).replaceAll('_', ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const form = document.querySelector('#form-ficha');
   if (form) {
     form.onsubmit = async (ev) => {
       ev.preventDefault();
@@ -1188,20 +1283,18 @@ async function abrirFicha(id) {
       const estadoTxt = f.querySelector('#ficha-estado');
       estadoTxt.textContent = 'salvando…';
       try {
-        await api(`/clientes/${id}`, {
+        const r = await api(`/clientes/${id}`, {
           method: 'PATCH',
           corpo: {
-            nome: f.nome.value.trim(),
-            telefone: f.telefone.value.trim() || null,
-            email: f.email.value.trim() || null,
-            cidade: f.cidade.value.trim() || null,
-            perfil: f.perfil.value,
-            observacao: f.observacao.value.trim() || null,
+            ...colherCampos(f, d.propriedades ?? []),
             ...(c.opt_out_em ? {} : { consentimento_lgpd: f.consentimento.checked }),
           },
         });
         estadoTxt.textContent = 'salvo ✓';
-        toast('Cliente atualizado');
+        // O servidor devolve aviso quando descarta chave desconhecida. Engolir
+        // isso faria o operador achar que gravou algo que nao gravou.
+        if (r?.avisos?.length) toast('Salvo, com ressalva', r.avisos.join(' '));
+        else toast('Cliente atualizado');
         // A lista atrás da gaveta mostra nome, telefone e LGPD — deixá-la
         // desatualizada faria o atendente achar que não salvou.
         navegar();
@@ -1687,24 +1780,82 @@ VISOES.manual = async (el) => {
 };
 
 // ── Gaveta ──────────────────────────────────────────────────────────────────
-function abrirGaveta(html) {
-  fecharGaveta();
+/*
+ * A gaveta vive na URL.
+ *
+ * Ideia tomada do CRM da Comp AI (MIT): "sheets, not inner pages" — a ficha é
+ * uma gaveta identificada por um parâmetro, e não uma rota
+ * `/clientes/:id/editar`. Três coisas que só funcionam por causa disso:
+ *
+ *   - o endereço é COMPARTILHÁVEL. "Olha a ficha do seu Antônio" vira um link,
+ *     em vez de "abre Clientes, procura, clica";
+ *   - o botão VOLTAR do navegador fecha a gaveta, que é o que qualquer pessoa
+ *     espera. Antes ele saía da tela inteira, e no celular — onde voltar é um
+ *     gesto — isso tirava o operador do trabalho;
+ *   - recarregar a página reabre onde estava.
+ *
+ * O parâmetro fica DEPOIS da rota (`#/clientes?ficha=abc`), para a navegação
+ * normal continuar lendo `#/clientes` sem saber que a gaveta existe.
+ */
+function abrirGaveta(html, { ficha = null } = {}) {
+  fecharGaveta({ mexerNaUrl: false });
+
   const veu = document.createElement('div');
   veu.className = 'veu';
-  veu.onclick = fecharGaveta;
+  veu.onclick = () => fecharGaveta();
   const g = document.createElement('aside');
   g.className = 'gaveta';
+  g.setAttribute('role', 'dialog');
+  g.setAttribute('aria-modal', 'true');
   g.innerHTML = html;
   document.body.append(veu, g);
-  g.querySelector('[data-fechar]')?.addEventListener('click', fecharGaveta);
+  g.querySelector('[data-fechar]')?.addEventListener('click', () => fecharGaveta());
+
+  if (ficha) {
+    const [rota] = location.hash.split('?');
+    const alvo = `${rota}?ficha=${encodeURIComponent(ficha)}`;
+    // `pushState`, e não trocar o hash: trocar o hash dispara `hashchange` e
+    // faria a tela de trás recarregar por baixo da gaveta que acabou de abrir.
+    if (location.hash !== alvo) history.pushState({ ficha }, '', alvo);
+  }
+
+  // Foco para dentro: sem isto o Tab continua percorrendo a lista atrás,
+  // e quem usa teclado fica editando o que não está vendo.
+  (g.querySelector('input, select, textarea, button') ?? g).focus?.();
 }
 
-function fecharGaveta() {
+function fecharGaveta({ mexerNaUrl = true } = {}) {
+  const tinha = document.querySelector('.gaveta');
   document.querySelector('.veu')?.remove();
-  document.querySelector('.gaveta')?.remove();
+  tinha?.remove();
+
+  if (tinha && mexerNaUrl && location.hash.includes('ficha=')) {
+    const [rota] = location.hash.split('?');
+    history.replaceState({}, '', rota);
+  }
 }
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharGaveta(); });
+
+/*
+ * Voltar fecha a gaveta em vez de sair da tela.
+ *
+ * `popstate` cobre o botão do navegador e o gesto de voltar do celular. Se não
+ * havia gaveta aberta, a navegação segue normal — o roteador cuida.
+ */
+window.addEventListener('popstate', () => {
+  if (document.querySelector('.gaveta') && !location.hash.includes('ficha=')) {
+    fecharGaveta({ mexerNaUrl: false });
+  }
+});
+
+/** Reabre a ficha quando a URL já vem com `?ficha=` — link colado ou recarga. */
+function restaurarGavetaDaUrl() {
+  const q = location.hash.split('?')[1];
+  if (!q) return;
+  const id = new URLSearchParams(q).get('ficha');
+  if (id && !document.querySelector('.gaveta')) abrirFicha(id);
+}
 
 // ── Início ──────────────────────────────────────────────────────────────────
 (async function iniciar() {

@@ -19,6 +19,7 @@ import { Banco, agora, novoId } from './db.mjs';
 import { GATILHOS } from './regua.mjs';
 import { CATALOGO, metaDe } from './federacao.mjs';
 import { canaisDe } from './canais.mjs';
+import { garantirCamposSistema } from './propriedades.mjs';
 import { extrairAtribuicao, identificadoresHash } from './atribuicao.mjs';
 import { hashSenha } from './senha.mjs';
 
@@ -228,6 +229,30 @@ const OPORTUNIDADES_FT = [
  *    pela porta não clicou em anúncio. Quem tem parâmetro de clique só pode ter
  *    vindo por canal atribuível, e é isso que o diagnóstico de cobertura mede.
  */
+/** Valores de exemplo para os campos proprios de cada empresa. */
+function camposDeExemplo(codigo, i) {
+  if (i % 3 === 2) return {};  // um terco sem preencher
+  if (codigo === 'MP') {
+    return {
+      tipo_bomba: ['rotativa', 'mecanica em linha', 'common rail'][i % 3],
+      ...(i % 4 === 0 ? { frota_placas: 3 + (i % 9) } : {}),
+    };
+  }
+  if (codigo === 'AF') {
+    return {
+      maturacao: ['fresco', 'meia cura', 'curado', 'extra curado'][i % 4],
+      ...(i % 3 === 0 ? { entrega_dia: ['terca', 'quinta', 'sabado'][i % 3] } : {}),
+    };
+  }
+  if (codigo === 'FT') {
+    return {
+      tipo_superficie: [['alvenaria'], ['alvenaria', 'externa'], ['madeira', 'gesso']][i % 3],
+      ...(i % 2 === 0 ? { metragem: 40 + i * 12 } : {}),
+    };
+  }
+  return {};
+}
+
 function origemDe(codigo, tipoAtr, i) {
   const lista = canaisDe(codigo);
   if (!lista.length) return 'balcao';
@@ -265,7 +290,8 @@ function atribuicaoDe(tipo, i) {
 const TABELAS_LIMPAVEIS = [
   'conversoes', 'destinos_conversao', 'identificadores_hash', 'atribuicoes', 'event_log',
   'disparos', 'atividades', 'oportunidades', 'pedidos', 'ordens_servico', 'veiculos',
-  'catalogo', 'gatilhos', 'clientes', 'canais', 'memberships', 'usuarios', 'empresas',
+  'catalogo', 'gatilhos', 'propriedades', 'clientes', 'canais', 'memberships',
+  'usuarios', 'empresas',
 ];
 
 /*
@@ -394,6 +420,44 @@ function semearInterno(banco, codigo, reset) {
     });
   }
 
+  // ── Propriedades ────────────────────────────────────────────────────────
+  // Os campos de sistema descrevem as colunas reais; os personalizados sao o
+  // que cada negocio precisa e os outros dois nao. Uma oficina de injecao nao
+  // tem "maturacao preferida", e uma fazenda de queijo nao tem "tipo de bomba".
+  garantirCamposSistema(escopo);
+
+  const PROPRIAS = {
+    MP: [
+      { chave: 'tipo_bomba', rotulo: 'Tipo de bomba', tipo: 'selecao',
+        opcoes: ['rotativa', 'mecanica em linha', 'common rail', 'nao sei'],
+        mostrar_na_tabela: 1, ordem: 110 },
+      { chave: 'frota_placas', rotulo: 'Quantidade de veiculos', tipo: 'numero', ordem: 120 },
+    ],
+    AF: [
+      { chave: 'maturacao', rotulo: 'Maturacao preferida', tipo: 'selecao',
+        opcoes: ['fresco', 'meia cura', 'curado', 'extra curado'],
+        mostrar_na_tabela: 1, ordem: 110 },
+      { chave: 'entrega_dia', rotulo: 'Melhor dia de entrega', tipo: 'selecao',
+        opcoes: ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'], ordem: 120 },
+    ],
+    FT: [
+      { chave: 'tipo_superficie', rotulo: 'Superficie da obra', tipo: 'multi_selecao',
+        opcoes: ['alvenaria', 'madeira', 'metal', 'gesso', 'externa'], ordem: 110 },
+      { chave: 'metragem', rotulo: 'Metragem da obra (m2)', tipo: 'numero',
+        mostrar_na_tabela: 1, ordem: 120 },
+    ],
+  }[codigo] ?? [];
+
+  for (const c of PROPRIAS) {
+    escopo.inserir('propriedades', {
+      id: novoId(), entidade: 'cliente', origem: 'custom',
+      chave: c.chave, rotulo: c.rotulo, tipo: c.tipo,
+      opcoes: c.opcoes ? JSON.stringify(c.opcoes) : null,
+      obrigatorio: 0, mostrar_na_tabela: c.mostrar_na_tabela ?? 0,
+      ordem: c.ordem, criado_em: agora(),
+    });
+  }
+
   // ── Clientes ────────────────────────────────────────────────────────────
   const brutos = { MP: CLIENTES_MP, AF: CLIENTES_AF, FT: CLIENTES_FT }[codigo] ?? [];
   const ids = [];
@@ -426,6 +490,10 @@ function semearInterno(banco, codigo, reset) {
       opt_out_em: optOut ? iso(30) : null,
       ultimo_inbound_em: iso(inboundDias),
       observacao: perfil === 'revenda' ? 'Revenda — ticket maior, funil separado.' : null,
+      // Campos proprios preenchidos em parte da base, de proposito: campo
+      // personalizado quase sempre chega incompleto no mundo real, e a tela
+      // precisa mostrar bem o "—".
+      campos: JSON.stringify(camposDeExemplo(codigo, i)),
       criado_em: iso(320 - i * 4),
     });
 

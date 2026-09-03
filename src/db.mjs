@@ -15,6 +15,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { SCHEMA_SQL } from './schema.mjs';
 import { SCHEMA_EXTRA_SQL, SCHEMA_CENTRAL_SQL } from './schema-extra.mjs';
+import { migrarColunas } from './migracoes.mjs';
 
 export function agora() {
   return new Date().toISOString();
@@ -52,6 +53,17 @@ export class Banco {
       this.#sql.exec(SCHEMA_SQL);
       this.#sql.exec(SCHEMA_EXTRA_SQL);
     }
+
+    /*
+     * `create table if not exists` resolve o banco novo e NAO resolve o que ja
+     * existe: acrescentar coluna ao schema nao muda uma tabela ja criada, e a
+     * primeira escrita quebra com "has no column named X" — longe daqui.
+     *
+     * Aconteceu em producao com `clientes.campos`. Local passava porque a base
+     * era apagada e renascia; no servidor, o deploy subiu e a recarga quebrou.
+     */
+    this.migracoes = migrarColunas(this.#sql);
+
     this.central = central;
   }
 

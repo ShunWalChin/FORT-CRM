@@ -15,6 +15,9 @@ import {
 } from './central.mjs';
 import { canaisDe, canal, diagnosticar, rotularOrigem, TIPOS } from './canais.mjs';
 import {
+  validarChave, validarCampos, formatar, garantirCamposSistema, CAMPOS_SISTEMA,
+} from './propriedades.mjs';
+import {
   extrairMensagens, validarAssinatura, responderDesafio, eventoBM, EVENTOS_BM,
   montarMetaBusinessMessaging, dentroDaJanela,
 } from './ctwa.mjs';
@@ -1051,6 +1054,160 @@ teste('o action_source declarado fica em coluna, nao so no blob', () => {
       igual(l.action_source, noPayload, 'a coluna divergiu do que foi enviado');
     }
   }
+});
+
+/* ── Registro de propriedades e campos personalizados ─────────────────────── */
+
+const PROPS_FT = [
+  { origem: 'sistema', chave: 'nome', rotulo: 'Nome', tipo: 'texto', obrigatorio: 1 },
+  { origem: 'custom', chave: 'metragem', rotulo: 'Metragem', tipo: 'numero', obrigatorio: 0 },
+  {
+    origem: 'custom', chave: 'superficie', rotulo: 'Superficie', tipo: 'multi_selecao',
+    obrigatorio: 0, opcoes: ['alvenaria', 'madeira', 'externa'],
+  },
+  {
+    origem: 'custom', chave: 'urgencia', rotulo: 'Urgencia', tipo: 'selecao',
+    obrigatorio: 0, opcoes: ['baixa', 'alta'],
+  },
+  { origem: 'custom', chave: 'visita', rotulo: 'Data da visita', tipo: 'data', obrigatorio: 0 },
+  { origem: 'custom', chave: 'orcado', rotulo: 'Valor orcado', tipo: 'moeda', obrigatorio: 0 },
+];
+
+teste('chave de campo tem de sobreviver a URL, coluna e JSON', () => {
+  igual(validarChave('metragem_obra'), null);
+  igual(validarChave('m2'), null);
+
+  verdadeiro(validarChave(''), 'vazia tem de ser recusada');
+  verdadeiro(validarChave('Metragem'), 'maiuscula recusada');
+  verdadeiro(validarChave('preco (R$)'), 'espaco e simbolo recusados');
+  verdadeiro(validarChave('2metros'), 'comecar por numero recusado');
+  verdadeiro(validarChave('a'.repeat(60)), 'longa demais recusada');
+
+  // O que colidiria com coluna real e o pior caso: gravaria no JSON uma chave
+  // que a tela leria da coluna, e os dois valores divergiriam para sempre.
+  verdadeiro(validarChave('nome'), 'chave de coluna real recusada');
+  verdadeiro(validarChave('telefone'), 'chave de coluna real recusada');
+  verdadeiro(validarChave('campos'), 'a propria coluna JSON recusada');
+  verdadeiro(validarChave('empresa_id'), 'coluna de escopo recusada');
+});
+
+teste('valor invalido nao entra, e o erro diz qual campo e por que', () => {
+  const r = validarCampos(PROPS_FT, { metragem: 'nao e numero' });
+  igual(r.valido, false);
+  verdadeiro(r.erros[0].includes('Metragem'), 'o erro precisa nomear o campo');
+  verdadeiro(/n[uú]mero/.test(r.erros[0]), 'e dizer o que esta errado');
+  igual(r.limpo.metragem, undefined, 'valor invalido nao pode chegar ao limpo');
+});
+
+teste('opcao fora da lista e recusada, em escolha unica e multipla', () => {
+  igual(validarCampos(PROPS_FT, { urgencia: 'media' }).valido, false);
+  igual(validarCampos(PROPS_FT, { urgencia: 'alta' }).valido, true);
+
+  const m = validarCampos(PROPS_FT, { superficie: ['alvenaria', 'marte'] });
+  igual(m.valido, false);
+  verdadeiro(m.erros[0].includes('marte'), 'o erro precisa dizer QUAL valor sobrou');
+
+  igual(validarCampos(PROPS_FT, { superficie: ['alvenaria', 'externa'] }).valido, true);
+});
+
+teste('chave desconhecida e DESCARTADA e reportada, nunca gravada', () => {
+  // Gravar em silencio dado que nenhuma tela mostra e criar um vazamento
+  // invisivel: ninguem sabe que esta la, ninguem apaga, e ele sai no export.
+  const r = validarCampos(PROPS_FT, { metragem: 120, chave_inventada: 'lixo' });
+  igual(r.limpo.metragem, 120, 'o campo valido tem de passar');
+  igual(r.limpo.chave_inventada, undefined, 'a chave desconhecida NAO pode ser gravada');
+  verdadeiro(r.erros.some((e) => e.includes('chave_inventada')), 'e precisa ser reportada');
+});
+
+teste('campo obrigatorio vazio bloqueia', () => {
+  const props = [{ origem: 'custom', chave: 'obr', rotulo: 'Obrigatorio', tipo: 'texto', obrigatorio: 1 }];
+  igual(validarCampos(props, {}).valido, false);
+  igual(validarCampos(props, { obr: '' }).valido, false);
+  igual(validarCampos(props, { obr: 'algo' }).valido, true);
+});
+
+teste('cada tipo converte para a forma que vai ao banco', () => {
+  const r = validarCampos(PROPS_FT, {
+    metragem: '287,5',
+    orcado: '1250.90',
+    visita: '2026-09-15T18:30:00.000Z',
+    superficie: 'alvenaria, externa',
+  });
+  igual(r.valido, true);
+  igual(r.limpo.metragem, 287.5, 'virgula decimal aceita — e como se digita aqui');
+  igual(r.limpo.orcado, 1250.9);
+  // Campo de data nao carrega fuso: gravar hora faz o mesmo dia aparecer
+  // diferente conforme quem le.
+  igual(r.limpo.visita, '2026-09-15', 'data guarda so o dia');
+  igual(r.limpo.superficie.join('|'), 'alvenaria|externa', 'texto separado por virgula vira lista');
+});
+
+teste('campo do sistema nao e validado como personalizado', () => {
+  // `nome` e coluna real. Mandar por engano no bloco de campos personalizados
+  // tem de ser recusado, senao gravaria uma copia divergente dentro do JSON.
+  const r = validarCampos(PROPS_FT, { nome: 'Outro Nome' });
+  igual(r.limpo.nome, undefined, 'coluna real nao pode entrar no JSON');
+  verdadeiro(r.erros.some((e) => e.includes('nome')));
+});
+
+teste('formatar devolve texto legivel, e nunca vazio', () => {
+  const moeda = { tipo: 'moeda' };
+  const data = { tipo: 'data' };
+  const bool = { tipo: 'booleano' };
+  const multi = { tipo: 'multi_selecao' };
+
+  verdadeiro(formatar(moeda, 1250.9).includes('1.250,90'), 'moeda em pt-BR');
+  igual(formatar(data, '2026-09-15'), '15/09/2026');
+  igual(formatar(bool, true), 'Sim');
+  igual(formatar(bool, false), 'Não');
+  igual(formatar(multi, ['a', 'b']), 'a, b');
+
+  // Vazio vira travessao, e nao "null" nem "undefined" na tela.
+  igual(formatar(moeda, null), '—');
+  igual(formatar({ tipo: 'texto' }, ''), '—');
+  igual(formatar({ tipo: 'texto' }, undefined), '—');
+});
+
+teste('a carga semeia o registro POR EMPRESA, com o que cada negocio precisa', () => {
+  const esperado = {
+    MP: ['tipo_bomba', 'frota_placas'],
+    AF: ['maturacao', 'entrega_dia'],
+    FT: ['tipo_superficie', 'metragem'],
+  };
+
+  for (const cod of ['MP', 'AF', 'FT']) {
+    const b = fed.abrir(cod);
+    const emp = b.sistema().prepare('select id from empresas limit 1').get();
+    const esc = b.para(emp.id);
+    const props = esc.todas('select origem, chave, tipo from propriedades where {ESCOPO}');
+
+    const sistema = props.filter((p) => p.origem === 'sistema').map((p) => p.chave);
+    igual(sistema.length, CAMPOS_SISTEMA.length, `${cod}: campos de sistema`);
+    verdadeiro(sistema.includes('nome') && sistema.includes('perfil'), `${cod}: colunas reais descritas`);
+
+    const custom = props.filter((p) => p.origem === 'custom').map((p) => p.chave).sort();
+    igual(custom.join(','), esperado[cod].slice().sort().join(','), `${cod}: campos proprios`);
+
+    // O ponto de ter registro por empresa: os catalogos nao se misturam.
+    for (const outro of Object.keys(esperado).filter((x) => x !== cod)) {
+      for (const chave of esperado[outro]) {
+        verdadeiro(!custom.includes(chave),
+          `${cod} nao pode ter "${chave}", que e da ${outro}`);
+      }
+    }
+  }
+});
+
+teste('garantirCamposSistema e idempotente', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const esc = b.para(emp.id);
+
+  const antes = esc.contar('propriedades', "and origem = 'sistema'");
+  garantirCamposSistema(esc);
+  garantirCamposSistema(esc);
+  igual(esc.contar('propriedades', "and origem = 'sistema'"), antes,
+    'rodar de novo nao pode duplicar');
 });
 
 fed.fecharTudo();

@@ -73,6 +73,13 @@ create table if not exists clientes (
   opt_out_em         text,
   ultimo_inbound_em  text,
   observacao         text,
+  -- Campos que a empresa criou para si, num JSON so.
+  --
+  -- Nao e entidade-atributo-valor de proposito: mostrar uma lista com oito
+  -- campos personalizados viraria oito juncoes, em toda pagina. Aqui os valores
+  -- vem na MESMA linha que ja foi lida. O preco e nao haver integridade no
+  -- valor, e e por isso que toda escrita passa por validarCampos() no servidor.
+  campos             text not null default '{}',
   criado_em          text not null
 );
 create index if not exists ix_clientes_empresa on clientes(empresa_id);
@@ -210,6 +217,33 @@ create unique index if not exists ux_disparos_idem on disparos(empresa_id, idemp
 create index if not exists ix_disparos_empresa on disparos(empresa_id, criado_em);
 
 -- Atividades ---------------------------------------------------------------
+-- Registro de propriedades: descreve TANTO as colunas reais quanto as chaves
+-- dentro de clientes.campos.
+--
+-- E o que faz "acrescentar um campo ao CRM" ser uma linha de dado em vez de
+-- alteracao em quatro lugares: formulario, tabela, filtro e ficha leem daqui.
+--
+-- Linha de sistema (origem='sistema') descreve coluna real e tem chave e tipo
+-- IMUTAVEIS — mudar isso nao renomeia a coluna, so faz o registro mentir.
+create table if not exists propriedades (
+  id                text primary key,
+  empresa_id        text not null references empresas(id) on delete cascade,
+  entidade          text not null default 'cliente',
+  origem            text not null default 'custom' check (origem in ('sistema','custom')),
+  chave             text not null,
+  rotulo            text not null,
+  tipo              text not null,
+  opcoes            text,
+  descricao         text,
+  obrigatorio       integer not null default 0,
+  mostrar_na_tabela integer not null default 0,
+  ordem             integer not null default 100,
+  arquivado_em      text,
+  criado_em         text not null,
+  unique (empresa_id, entidade, chave)
+);
+create index if not exists ix_prop_ent on propriedades (empresa_id, entidade, arquivado_em);
+
 create table if not exists atividades (
   id          text primary key,
   empresa_id  text not null references empresas(id) on delete cascade,

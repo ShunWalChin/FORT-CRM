@@ -15,6 +15,9 @@ import { consultarConsolidado, garantirChaves, listarChaves, receberLead, resolv
 import { canaisDe, diagnosticar, empresaDoNumero, rotularOrigem, PERGUNTA_ORIGEM, RESPOSTAS_ORIGEM, TIPOS } from './canais.mjs';
 import { extrairMensagens, responderDesafio, validarAssinatura, LOCAIS_CONVERSAO } from './ctwa.mjs';
 import { CATALOGO } from './federacao.mjs';
+import {
+  listarPropriedades, validarCampos, validarChave, formatar, TIPOS_CAMPO,
+} from './propriedades.mjs';
 import { despacharConversoes, drenarEventos, registrarMudancaDeEtapa } from './conversoes-servico.mjs';
 import { extrairAtribuicao, identificadoresHash, temSinal } from './atribuicao.mjs';
 import { EVENTOS } from './conversoes.mjs';
@@ -497,11 +500,21 @@ export const ROTAS = {
     const veiculos = escopo.todas('select * from veiculos where {ESCOPO} and cliente_id = ? order by placa', p.id)
       .map((v) => ({ ...v, revisao: projetarRevisao(v, Date.now()) }));
 
+    const props = listarPropriedades(escopo, 'cliente');
+    const valores = seguroJsonApi(cliente.campos) ?? {};
+
     return ok({
       cliente,
       // A ficha mostrava `origem: 'guincho_24h'` cru. Rotular aqui, e não no
       // navegador, mantém o catálogo como fonte única.
       origem: rotularOrigem(empresa.codigo, cliente.origem),
+      // O registro viaja junto com o valor: é ele que diz à tela como desenhar
+      // e como rotular, sem a tela precisar saber que campos existem.
+      propriedades: props.map((d) => ({
+        ...d,
+        valor: d.origem === 'sistema' ? cliente[d.chave] : (valores[d.chave] ?? null),
+        exibicao: formatar(d, d.origem === 'sistema' ? cliente[d.chave] : valores[d.chave]),
+      })),
       veiculos,
       ordens: escopo.todas(
         'select * from ordens_servico where {ESCOPO} and cliente_id = ? order by aberta_em desc', p.id),
@@ -557,13 +570,40 @@ export const ROTAS = {
       dados.consentimento_lgpd = corpo.consentimento_lgpd ? 1 : 0;
       dados.consentimento_em = corpo.consentimento_lgpd ? agora() : null;
     }
+
+    /*
+     * Campos personalizados sao validados contra o REGISTRO, no servidor.
+     *
+     * E o que compra de volta a integridade que a coluna JSON nao tem. Sem
+     * isso, qualquer cliente da API grava qualquer chave com qualquer forma, e
+     * em seis meses a coluna vira deposito de lixo que nenhuma tela mostra.
+     *
+     * Chave desconhecida e DESCARTADA e reportada — nunca gravada em silencio.
+     */
+    let avisos = [];
+    if (corpo?.campos !== undefined) {
+      const props = listarPropriedades(escopo, 'cliente');
+      const v = validarCampos(props, corpo.campos);
+      if (!v.valido && v.erros.some((e) => !e.includes('ignorado'))) {
+        throw new ErroHttp(400, 'campos_invalidos', v.erros.join(' '));
+      }
+      avisos = v.erros;
+      const atual = seguroJsonApi(
+        escopo.uma('select campos from clientes where {ESCOPO} and id = ?', p.id)?.campos,
+      ) ?? {};
+      dados.campos = JSON.stringify({ ...atual, ...v.limpo });
+    }
+
     const n = escopo.atualizar('clientes', p.id, dados);
     if (!n) throw new ErroHttp(404, 'nao_encontrado', 'Cliente não encontrado.');
     banco.auditar({
       empresaId: empresa.id, ator: usuario.email, acao: 'cliente.editar',
       entidade: 'clientes', entidadeId: p.id, dados,
     });
-    return ok(escopo.uma('select * from clientes where {ESCOPO} and id = ?', p.id));
+    return ok({
+      ...escopo.uma('select * from clientes where {ESCOPO} and id = ?', p.id),
+      avisos: avisos.length ? avisos : undefined,
+    });
   },
 
   /** Opt-out: bloqueia qualquer envio, sem exceção e sem desfazer por engano. */
@@ -1181,6 +1221,96 @@ export const ROTAS = {
         ? null
         : 'Nenhum parâmetro de clique nem UTM na entrada — este lead não terá conversão atribuível.',
     });
+  },
+
+  // ── Campos personalizados ────────────────────────────────────────────────
+  /**
+   * O registro de propriedades da empresa ativa.
+   *
+   * Uma tela só lê daqui para desenhar formulário, coluna de tabela e ficha —
+   * é o que faz acrescentar um campo ser uma linha de dado, e não alteração em
+   * quatro lugares do código.
+   */
+  'GET /api/propriedades': (fed, req, _p, _c, url) => {
+    const { escopo } = contexto(fed, req);
+    const entidade = url?.searchParams.get('entidade') ?? 'cliente';
+    return ok({
+      entidade,
+      tipos: TIPOS_CAMPO,
+      propriedades: listarPropriedades(escopo, entidade),
+    });
+  },
+
+  'POST /api/propriedades': (fed, req, _p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+
+    const erroChave = validarChave(corpo?.chave);
+    if (erroChave) throw new ErroHttp(400, 'chave_invalida', erroChave);
+    if (!TIPOS_CAMPO[corpo?.tipo]) {
+      throw new ErroHttp(400, 'tipo_invalido', `Tipo "${corpo?.tipo}" não existe.`);
+    }
+    const rotulo = String(corpo?.rotulo ?? '').trim();
+    if (!rotulo) throw new ErroHttp(400, 'rotulo_vazio', 'O campo precisa de um nome visível.');
+
+    const opcoes = Array.isArray(corpo?.opcoes)
+      ? corpo.opcoes.map((o) => String(o).trim()).filter(Boolean)
+      : [];
+    if (TIPOS_CAMPO[corpo.tipo].exigeOpcoes && opcoes.length < 2) {
+      throw new ErroHttp(400, 'faltam_opcoes',
+        'Campo de escolha precisa de pelo menos duas opções — senão não há o que escolher.');
+    }
+
+    const jaExiste = escopo.uma(
+      'select id from propriedades where {ESCOPO} and entidade = ? and chave = ?',
+      corpo?.entidade ?? 'cliente', corpo.chave,
+    );
+    if (jaExiste) throw new ErroHttp(409, 'chave_duplicada', `Já existe um campo com a chave "${corpo.chave}".`);
+
+    const id = novoId();
+    escopo.inserir('propriedades', {
+      id,
+      entidade: corpo?.entidade ?? 'cliente',
+      origem: 'custom',
+      chave: corpo.chave,
+      rotulo,
+      tipo: corpo.tipo,
+      opcoes: opcoes.length ? JSON.stringify(opcoes) : null,
+      descricao: corpo?.descricao ? String(corpo.descricao).slice(0, 400) : null,
+      obrigatorio: corpo?.obrigatorio ? 1 : 0,
+      mostrar_na_tabela: corpo?.mostrarNaTabela ? 1 : 0,
+      ordem: Number(corpo?.ordem) || 100,
+      criado_em: agora(),
+    });
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'propriedade.criar',
+      entidade: 'propriedades', entidadeId: id,
+      dados: { chave: corpo.chave, tipo: corpo.tipo },
+    });
+    return ok({ id, criado: true });
+  },
+
+  /**
+   * Arquivar, e não apagar.
+   *
+   * O valor continua gravado no JSON de cada cliente. Apagar a definição faria
+   * o dado virar órfão ilegível — ninguém saberia mais o que aquela chave era,
+   * e desarquivar traria tudo de volta. Arquivar some da tela e preserva.
+   */
+  'DELETE /api/propriedades/:id': (fed, req, p) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const alvo = escopo.uma('select * from propriedades where {ESCOPO} and id = ?', p.id);
+    if (!alvo) throw new ErroHttp(404, 'nao_encontrado', 'Campo não encontrado.');
+    if (alvo.origem === 'sistema') {
+      throw new ErroHttp(409, 'campo_do_sistema',
+        'Campo do sistema não pode ser removido — ele descreve uma coluna real da base.');
+    }
+    escopo.atualizar('propriedades', p.id, { arquivado_em: agora() });
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'propriedade.arquivar',
+      entidade: 'propriedades', entidadeId: p.id, dados: { chave: alvo.chave },
+    });
+    return ok({ arquivado: true, chave: alvo.chave });
   },
 
   // ── Canais de entrada ────────────────────────────────────────────────────
