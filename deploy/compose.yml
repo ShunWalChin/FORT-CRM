@@ -1,0 +1,70 @@
+# =============================================================================
+# FORT-CRM — instância isolada em <IP-DO-SERVIDOR>.
+#
+# O host tem vinte contêineres de clientes, nginx em :80 e dois túneis
+# Cloudflare ativos. Tudo aqui é escrito para não encostar em nenhum deles:
+#
+#   - rede PRÓPRIA, sem `network_mode: host` e sem entrar na rede de ninguém.
+#     Assim o CRM não enxerga o Postgres do Palantyr Gov nem o Redis do WalChat,
+#     e nenhum deles o enxerga;
+#   - porta publicada só em 127.0.0.1. A superfície externa continua sendo
+#     apenas a 22 e a 80 — o ingresso é o túnel;
+#   - teto de memória e de CPU. Num host com 22 GB e 12 já em uso, um processo
+#     sem limite que vaze memória derruba o vizinho, não a si mesmo;
+#   - volume nomeado para os dados, separado do código. Um deploy novo troca o
+#     contêiner e não encosta na base.
+# =============================================================================
+name: fortcrm
+
+services:
+  crm:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: fortcrm:local
+    container_name: fortcrm-app
+    restart: unless-stopped
+
+    # 127.0.0.1 no lado do HOST: a porta não existe para a internet.
+    ports:
+      - "127.0.0.1:4310:4310"
+
+    env_file:
+      - /etc/fortcrm.env
+
+    volumes:
+      - fortcrm-dados:/dados
+
+    networks:
+      - fortcrm-rede
+
+    # Contenção. `no-new-privileges` impede escalada por binário setuid; o
+    # sistema de arquivos é somente leitura fora do volume de dados e do /tmp.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+    # O log não pode crescer sem fim num disco compartilhado com vinte stacks.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  fortcrm-dados:
+    name: fortcrm-dados
+
+networks:
+  fortcrm-rede:
+    name: fortcrm-rede

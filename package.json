@@ -1,0 +1,18 @@
+{
+  "name": "fort-crm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "FORT-CRM — federação de instâncias, uma empresa por banco, com conversão offline para Google Ads e Meta.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "seed": "node src/seed.mjs --reset",
+    "check": "node --check server.mjs && node src/selftest.mjs && node src/selftest-fed.mjs",
+    "export": "node src/exportar.mjs"
+  }
+}

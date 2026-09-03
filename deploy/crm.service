@@ -1,0 +1,39 @@
+# Serviço do CRM Multiempresas.
+# Instalado pelo deploy/instalar.sh em /etc/systemd/system/fort-crm.service
+#
+# HOST fica em 127.0.0.1 de propósito: o único caminho de entrada é o
+# Cloudflare Tunnel. Nenhuma porta é aberta no host, e o firewall não é tocado.
+
+[Unit]
+Description=FORT-CRM — federação de instâncias
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fortcrm
+Group=fortcrm
+WorkingDirectory=/opt/fort-crm
+ExecStart=/usr/bin/node server.mjs
+Restart=always
+RestartSec=5
+
+# Os segredos ficam num arquivo 0600 de root, gerado pelo instalador — nunca
+# em `Environment=` aqui, porque a unidade é legível por qualquer usuário do
+# sistema (`systemctl cat`) e este host tem 13 stacks de clientes.
+EnvironmentFile=/etc/fort-crm.env
+
+# Contenção: o processo não precisa de nada além do próprio diretório de dados.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/fort-crm
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1722 @@
+/**
+ * CRM Multiempresas — interface.
+ *
+ * Sem framework e sem passo de build: o protótipo precisa abrir num notebook
+ * sem npm install. O roteamento é por hash, o estado é um objeto e a
+ * renderização é string para innerHTML com escape em toda interpolação de dado.
+ *
+ * A empresa ativa vai no cabeçalho `x-empresa` de toda chamada. O servidor
+ * ainda verifica se o usuário tem acesso a ela — a interface nunca é a
+ * segurança, é só a conveniência.
+ */
+
+import { manualHtml, ligarManual } from './manual.js';
+import { telaCentral, telaConversoes, telaAtribuicao } from './telas-aquisicao.js';
+import { telaCanais } from './tela-canais.js';
+import { icone, aplicarTema, temaAtual, desenharSeletorDeTema } from './ui.js';
+import {
+  ehMobile, rotularTabelas, desenharNavBaixo, removerNavBaixo, revelarColuna,
+  ligarAutoCrescer, CORTE_MOBILE,
+} from './mobile.js';
+
+const raiz = document.getElementById('raiz');
+
+const estado = {
+  token: localStorage.getItem('fortcrm.token'),
+  usuario: null,
+  empresas: [],
+  empresa: null,
+  demoMode: true,
+  rota: 'painel',
+  cache: {},
+  selecionados: new Set(),
+};
+
+// ── Utilidades ──────────────────────────────────────────────────────────────
+const esc = (v) => String(v ?? '')
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+
+const moeda = (c) => (Number(c ?? 0) / 100).toLocaleString('pt-BR', {
+  style: 'currency', currency: 'BRL', maximumFractionDigits: 0,
+});
+
+const numero = (n) => Number(n ?? 0).toLocaleString('pt-BR');
+
+const data = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—');
+
+const dataHora = (iso) => (iso
+  ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  : '—');
+
+function diasAte(iso) {
+  if (!iso) return null;
+  return Math.round((Date.parse(iso) - Date.now()) / 86400000);
+}
+
+const PERFIS = {
+  particular: 'Particular', frota: 'Frota', produtor_rural: 'Produtor rural',
+  revenda: 'Revenda', consumidor: 'Consumidor',
+};
+const ETAPAS = {
+  novo: 'Novo', qualificado: 'Qualificado', orcamento: 'Orçamento',
+  negociacao: 'Negociação', ganho: 'Ganho', perdido: 'Perdido',
+};
+const CANAIS = {
+  whatsapp_cloud: 'WhatsApp oficial', whatsapp_evolution: 'WhatsApp (Evolution)',
+  instagram: 'Instagram', webchat: 'Webchat',
+};
+
+function toast(texto, sub, tipo = '') {
+  document.querySelector('.toast')?.remove();
+  const el = document.createElement('div');
+  el.className = `toast ${tipo}`;
+  el.innerHTML = `<div>${esc(texto)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5200);
+}
+
+// ── API ─────────────────────────────────────────────────────────────────────
+async function api(caminho, opcoes = {}) {
+  const cabecalhos = { 'content-type': 'application/json' };
+  if (estado.token) cabecalhos.authorization = `Bearer ${estado.token}`;
+  if (estado.empresa) cabecalhos['x-instancia'] = estado.empresa.instancia;
+
+  const r = await fetch(`/api${caminho}`, {
+    ...opcoes,
+    headers: { ...cabecalhos, ...(opcoes.headers ?? {}) },
+    body: opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined,
+  });
+  const json = await r.json().catch(() => ({ ok: false, erro: { mensagem: 'Resposta ilegível.' } }));
+
+  if (!json.ok) {
+    if (r.status === 401) sair();
+    const e = new Error(json.erro?.mensagem ?? 'Falha na requisição.');
+    e.codigo = json.erro?.codigo;
+    e.detalhe = json.erro?.detalhe;
+    throw e;
+  }
+  return json.dados;
+}
+
+function sair() {
+  localStorage.removeItem('fortcrm.token');
+  localStorage.removeItem('fortcrm.empresa');
+  // Limpar tudo, não só o token: sobrar `empresas` ou `empresa` em memória faz
+  // uma renderização tardia desenhar a casca do sistema com dados de quem já
+  // saiu — foi exatamente assim que a tela quebrou depois da recarga da demo.
+  estado.token = null;
+  estado.usuario = null;
+  estado.empresas = [];
+  estado.empresa = null;
+  estado.cache = {};
+  estado.selecionados.clear();
+  location.hash = '';
+  renderLogin();
+}
+
+// ── Login ───────────────────────────────────────────────────────────────────
+function renderLogin() {
+  raiz.innerHTML = `
+    <div class="login">
+      <form class="login-caixa" id="form-login">
+        <div class="login-marca">// FORT-CRM</div>
+        <h1>FORT-CRM</h1>
+        <p class="sub">Três empresas, três instâncias, três bancos separados — e uma tela só quando o dono quiser ver tudo.</p>
+
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input id="email" name="email" type="email" autocomplete="username" required>
+        </div>
+        <div class="campo">
+          <label for="senha">Senha</label>
+          <input id="senha" name="senha" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn bloco" type="submit" style="margin-top:8px">Entrar</button>
+        <div id="erro-login"></div>
+
+        <div class="atalhos">
+          <div class="t">ACESSOS DE DEMONSTRAÇÃO</div>
+          <button type="button" class="atalho" data-e="diretoria@fortgrupo.com.br" data-s="demo">
+            <b>Direção do Grupo</b> — as três instâncias
+          </button>
+          <button type="button" class="atalho" data-e="balcao@minaspecas.com.br" data-s="demo">
+            <b>Atendimento Minas Peças</b> — só a oficina
+          </button>
+          <button type="button" class="atalho" data-e="adenilde@agrofort.com.br" data-s="demo">
+            <b>Adenilde — Agrofort</b> — só a fazenda
+          </button>
+          <button type="button" class="atalho" data-e="loja@forttintas.com.br" data-s="demo">
+            <b>Loja — Fort Tintas</b> — só a loja
+          </button>
+        </div>
+      </form>
+    </div>`;
+
+  raiz.querySelectorAll('.atalho').forEach((b) => {
+    b.onclick = () => {
+      raiz.querySelector('#email').value = b.dataset.e;
+      raiz.querySelector('#senha').value = b.dataset.s;
+      raiz.querySelector('#form-login').requestSubmit();
+    };
+  });
+
+  raiz.querySelector('#form-login').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const alvo = ev.target;
+    try {
+      const d = await api('/sessao', {
+        method: 'POST',
+        corpo: { email: alvo.email.value, senha: alvo.senha.value },
+      });
+      estado.token = d.token;
+      estado.usuario = d.usuario;
+      estado.empresas = d.empresas;
+      estado.demoMode = d.demoMode;
+      estado.empresa = d.empresas.find((e) => e.instancia === localStorage.getItem('fortcrm.empresa')) ?? d.empresas[0];
+      localStorage.setItem('fortcrm.token', d.token);
+      localStorage.setItem('fortcrm.empresa', estado.empresa?.instancia ?? '');
+      location.hash = '#/painel';
+      renderShell();
+    } catch (e) {
+      alvo.querySelector('#erro-login').innerHTML =
+        `<div class="aviso crit" style="margin-top:14px">${esc(e.message)}</div>`;
+    }
+  };
+}
+
+// ── Shell ───────────────────────────────────────────────────────────────────
+/*
+ * Menu por papel.
+ *
+ * Medido no uso: o atendente de balcão via 16 itens, dos quais 6 eram de
+ * governança e aquisição — auditoria, conversões offline, importar base,
+ * painel consolidado. Ele não usa nenhum, e cada um deles é ruído entre ele e
+ * a fila do dia.
+ *
+ * `papeis` declara quem vê o quê. Ausente = todo mundo vê. Isto é organização
+ * de tela, NUNCA segurança: quem digitar a URL chega igual, e é o servidor que
+ * recusa o que não pode. Esconder no menu e confiar nisso seria o erro clássico.
+ */
+const MENU = [
+  { grupo: 'COMECE AQUI' },
+  { id: 'manual', nome: 'Manual do sistema', ic: 'manual' },
+  { grupo: 'OPERAÇÃO' },
+  { id: 'painel', nome: 'Painel', ic: 'painel' },
+  { id: 'regua', nome: 'Régua de contato', ic: 'regua', destaque: true },
+  { id: 'clientes', nome: 'Clientes', ic: 'clientes' },
+  { id: 'pipeline', nome: 'Pipeline', ic: 'pipeline' },
+  { grupo: 'POR EMPRESA' },
+  { id: 'frota', nome: 'Frota e veículos', ic: 'frota', empresas: ['MP'] },
+  { id: 'ordens', nome: 'Ordens de serviço', ic: 'ordens', empresas: ['MP'] },
+  { id: 'pedidos', nome: 'Pedidos e recompra', ic: 'pedidos', empresas: ['AF', 'FT'] },
+  { id: 'catalogo', nome: 'Catálogo', ic: 'catalogo' },
+  { grupo: 'AQUISIÇÃO' },
+  // Canais fica fora do recorte de papel: quem atende é justamente quem
+  // pergunta "como você chegou até a gente?", e a tela existe para isso.
+  { id: 'canais', nome: 'Canais de entrada', ic: 'canais' },
+  { id: 'atribuicao', nome: 'Origem dos leads', ic: 'atribuicao', papeis: ['soberano', 'gestor'] },
+  { id: 'conversoes', nome: 'Conversões offline', ic: 'conversoes', destaque: true, papeis: ['soberano', 'gestor'] },
+  { grupo: 'GRUPO E GOVERNANÇA', papeis: ['soberano', 'gestor'] },
+  { id: 'central', nome: 'Central do grupo', ic: 'central', papeis: ['soberano', 'gestor'], multiEmpresa: true },
+  { id: 'grupo', nome: 'Painel consolidado', ic: 'grupo', papeis: ['soberano', 'gestor'], multiEmpresa: true },
+  { id: 'gatilhos', nome: 'Gatilhos da régua', ic: 'gatilhos' },
+  { id: 'disparos', nome: 'Histórico de disparos', ic: 'disparos' },
+  { id: 'auditoria', nome: 'Auditoria', ic: 'auditoria', papeis: ['soberano', 'gestor'] },
+  { id: 'importar', nome: 'Importar base', ic: 'importar', papeis: ['soberano', 'gestor'] },
+];
+
+function visivelNoMenu(m) {
+  const papel = estado.usuario?.papel ?? 'operador';
+  if (m.papeis && !m.papeis.includes(papel)) return false;
+  if (m.multiEmpresa && estado.empresas.length < 2) return false;
+  if (m.empresas && !m.empresas.includes(estado.empresa?.codigo)) return false;
+  return true;
+}
+
+function renderShell() {
+  // Sem sessão ou sem vínculo com empresa nenhuma não existe casca a desenhar —
+  // e desenhar mesmo assim produz uma tela sem menu e sem saída.
+  if (!estado.token || !estado.empresas.length) return renderLogin();
+
+  /*
+   * Pinta a COR DA EMPRESA, não o acento final.
+   *
+   * Quem calcula o acento é o tema (`temas.css`): nos claros a cor da empresa
+   * é escurecida com `color-mix`, senão o ciano #00b8c4 da Minas Peças sobre
+   * fundo branco fica em 1.9:1 — ilegível. Escrever `--acento` daqui, como
+   * antes, atropelaria essa correção e devolveria o texto apagado.
+   */
+  const cor = estado.empresa?.cor ?? '#00b8c4';
+  document.documentElement.style.setProperty('--empresa-cor', cor);
+
+  raiz.innerHTML = `
+    <div class="shell">
+      <aside class="lado">
+        <div class="lado-topo">
+          <div>
+            <div class="marca">CRM <span>MULTIEMPRESAS</span></div>
+            <div class="marca-sub">${esc(estado.empresa?.nome ?? 'FORT-CRM')}</div>
+          </div>
+          <button class="abrir-menu" id="abrir-menu" aria-expanded="false" aria-controls="menu">
+            ☰ Menu
+          </button>
+        </div>
+
+        <div class="troca">
+          <div class="rot">${estado.empresas.length > 1 ? 'EMPRESA ATIVA' : 'EMPRESA'}</div>
+          ${estado.empresas.map((e) => `
+            <button class="empresa-btn ${e.instancia === estado.empresa?.instancia ? 'on' : ''}" data-instancia="${esc(e.instancia)}">
+              <span class="empresa-cod" style="background:${esc(e.cor)}">${esc(e.codigo)}</span>
+              <span>
+                <span class="empresa-nome">${esc(e.nome)}</span><br>
+                <span class="empresa-seg">instância própria · ${esc(e.cidade ?? '')}</span>
+              </span>
+            </button>`).join('')}
+          ${estado.empresas.length > 1 ? `
+            <div class="rot" style="margin-top:12px">TODAS AS INSTÂNCIAS</div>
+            <a class="empresa-btn grupo-btn" href="#/central">
+              <span class="empresa-cod" style="background:var(--txt-hi);color:#04121a">∑</span>
+              <span>
+                <span class="empresa-nome">Central do grupo</span><br>
+                <span class="empresa-seg">leads de todas as fontes</span>
+              </span>
+            </a>` : ''}
+        </div>
+
+        <div class="menu-busca" id="menu-busca"></div>
+        <nav class="menu" id="menu"></nav>
+
+        <div class="lado-rodape">
+          ${estado.demoMode ? `<div class="demo-fita">
+            <b>DEMO_MODE ligado.</b> Nenhuma mensagem sai para número real. Os disparos são registrados e auditados como simulação.
+          </div>` : ''}
+          <div class="eu">${esc(estado.usuario?.nome ?? '')}</div>
+          <div class="eu-email">${esc(estado.usuario?.email ?? '')}</div>
+          ${desenharSeletorDeTema()}
+          ${estado.demoMode ? `
+            <button class="btn quiet sm bloco" id="reancorar">Reancorar no tempo</button>
+            <button class="btn quiet sm bloco" id="recarregar">Recarregar demonstração</button>` : ''}
+          <button class="btn quiet sm bloco" id="sair">${icone('sair')} Sair</button>
+        </div>
+      </aside>
+      <main id="conteudo"><div class="carregando">carregando…</div></main>
+    </div>`;
+
+  raiz.querySelectorAll('[data-instancia]').forEach((b) => {
+    b.onclick = () => {
+      estado.empresa = estado.empresas.find((e) => e.instancia === b.dataset.instancia);
+      localStorage.setItem('fortcrm.empresa', estado.empresa.instancia);
+      estado.cache = {};
+      estado.selecionados.clear();
+      renderShell();
+    };
+  });
+  raiz.querySelector('#sair').onclick = sair;
+
+  // Delegação: `renderShell` reescreve a lateral inteira, e listener preso a
+  // botão morre junto — foi assim que o menu do celular parou de fechar antes.
+  raiz.querySelector('.lado-rodape')?.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-tema]');
+    if (!b) return;
+    aplicarTema(b.dataset.tema);
+    raiz.querySelectorAll('.tema-btn').forEach((x) => {
+      x.setAttribute('aria-pressed', String(x.dataset.tema === b.dataset.tema));
+    });
+  });
+
+  // No celular o menu nasce recolhido. Abrir e escolher fecha sozinho — deixar
+  // aberto empurraria a tela inteira para baixo de novo, que era o problema.
+  const lado = raiz.querySelector('.lado');
+  const botaoMenu = raiz.querySelector('#abrir-menu');
+  botaoMenu?.addEventListener('click', () => {
+    const aberto = lado.classList.toggle('aberto');
+    botaoMenu.setAttribute('aria-expanded', String(aberto));
+    botaoMenu.textContent = aberto ? '✕ Fechar' : '☰ Menu';
+  });
+  /*
+   * Delegação, e não listener por link: `desenharMenu()` reescreve o innerHTML
+   * do menu a cada navegação, e listeners presos aos elementos morrem junto.
+   * Foi exatamente esse o bug — no celular o menu abria e não fechava mais ao
+   * escolher, empurrando o conteúdo de volta para 812 px do topo.
+   */
+  lado.addEventListener('click', (ev) => {
+    if (!lado.classList.contains('aberto')) return;
+    if (!ev.target.closest('nav.menu a, .empresa-btn')) return;
+    lado.classList.remove('aberto');
+    botaoMenu.setAttribute('aria-expanded', 'false');
+    botaoMenu.textContent = '☰ Menu';
+  });
+
+  // Depois de disparar a fila, o cooldown esvazia a régua. Numa sequência de
+  // reuniões isso apaga justamente a tela que vende.
+  /*
+   * Reancorar antes de recarregar, sempre que der: a carga gera datas
+   * relativas ao instante em que roda, e o compliance vai fechando a janela de
+   * 24 h conforme o relógio anda. Medido: nove horas depois da carga, a fila da
+   * oficina já havia caído de 16 liberados para 9.
+   *
+   * Recarregar resolve, mas apaga o que foi demonstrado. Reancorar desliza a
+   * história e preserva.
+   */
+  raiz.querySelector('#reancorar')?.addEventListener('click', async (ev) => {
+    const botao = ev.currentTarget;
+    botao.disabled = true;
+    botao.textContent = 'Reancorando…';
+    try {
+      const r = await api('/demo/reancorar', { method: 'POST' });
+      const movidas = r.instancias.filter((i) => i.deslocouSegundos > 0);
+      toast(
+        movidas.length ? `${movidas.length} instância(s) reancorada(s)` : 'Nada a reancorar',
+        movidas.length
+          ? `História deslocada em ${movidas[0].deslocouHoras} h. A fila volta a encher sem perder o que foi feito.`
+          : 'A demonstração ainda está no prazo.',
+      );
+      estado.cache = {};
+      navegar();
+    } catch (e) {
+      toast('Não foi possível reancorar', e.message, 'erro');
+    }
+    botao.disabled = false;
+    botao.textContent = 'Reancorar no tempo';
+  });
+
+  raiz.querySelector('#recarregar')?.addEventListener('click', async () => {
+    if (!confirm('Recarregar a base de demonstração? Todos os dados atuais são substituídos e você precisará entrar de novo.')) return;
+    try {
+      await api('/demo/reiniciar', { method: 'POST' });
+      // A recarga troca todos os identificadores, inclusive o do usuário da
+      // sessão. Desmontar a tela em memória deixaria estado apontando para
+      // linhas que não existem mais; recarregar a página é a única forma de
+      // garantir início limpo.
+      localStorage.clear();
+      location.replace('/');
+    } catch (e) {
+      toast('Não foi possível recarregar', e.message, 'erro');
+    }
+  });
+
+  montarBuscaDoMenu();
+  desenharMenu();
+  navegar();
+}
+
+/*
+ * Filtro do menu. Vive fora de `desenharMenu` porque a função é chamada a cada
+ * navegação e reescreve o `innerHTML` inteiro — guardar o texto aqui é o que
+ * faz o filtro sobreviver ao clique no resultado.
+ */
+let filtroMenu = '';
+
+/** Itens que o papel e a empresa ativa permitem, já sem os cabeçalhos. */
+function itensDoMenu() {
+  return MENU.filter((m) => !m.grupo && visivelNoMenu(m));
+}
+
+function desenharMenu() {
+  const menu = document.getElementById('menu');
+  if (!menu) return;
+
+  const alvo = filtroMenu.trim().toLowerCase();
+  const casa = (m) => !alvo || m.nome.toLowerCase().includes(alvo);
+
+  const item = (m) => {
+    const n = estado.cache.contadores?.[m.id];
+    const aqui = estado.rota === m.id;
+    return `<a href="#/${m.id}" class="${aqui ? 'on' : ''}" ${aqui ? 'aria-current="page"' : ''}>
+      ${icone(m.ic ?? 'painel')}
+      <span>${esc(m.nome)}</span>
+      ${n ? `<span class="badge-n ${m.destaque ? 'alerta' : ''}">${esc(n)}</span>` : '<span></span>'}
+    </a>`;
+  };
+
+  const linhas = [];
+  MENU.forEach((m, i) => {
+    if (m.grupo) {
+      // Cabeçalho de grupo cujos itens sumiram também some — por papel, por
+      // empresa ou pelo filtro. "GOVERNANÇA" sobre o vazio é pior que nada.
+      const adiante = MENU.slice(i + 1);
+      const ate = adiante.findIndex((p) => p.grupo);
+      const doGrupo = (ate === -1 ? adiante : adiante.slice(0, ate));
+      if (!visivelNoMenu(m)) return;
+      if (!doGrupo.some((p) => visivelNoMenu(p) && casa(p))) return;
+      linhas.push(`<div class="grupo">${esc(m.grupo)}</div>`);
+      return;
+    }
+    if (!visivelNoMenu(m) || !casa(m)) return;
+    linhas.push(item(m));
+  });
+
+  if (alvo && !linhas.some((l) => l.startsWith('<a'))) {
+    linhas.push(`<div class="sem-resultado">Nada com “${esc(filtroMenu)}”.</div>`);
+  }
+
+  menu.innerHTML = linhas.join('');
+}
+
+/*
+ * A busca só aparece quando o menu é grande o bastante para valer procurar.
+ * Para o operador, que vê 11 itens, ela seria mais um campo a ignorar; para a
+ * direção, que vê 18 espalhados por cinco grupos, é o caminho mais curto.
+ *
+ * Desenhada uma vez, fora de `desenharMenu`: se fosse reescrita junto, o campo
+ * perderia o foco e o texto a cada tecla digitada.
+ */
+function montarBuscaDoMenu() {
+  const caixa = document.getElementById('menu-busca');
+  if (!caixa) return;
+  if (itensDoMenu().length < 13) { caixa.innerHTML = ''; return; }
+
+  caixa.innerHTML = `<input type="search" id="filtro-menu" autocomplete="off"
+    placeholder="Filtrar telas…" aria-label="Filtrar telas do menu">`;
+  const campo = caixa.querySelector('input');
+  campo.value = filtroMenu;
+  campo.addEventListener('input', () => { filtroMenu = campo.value; desenharMenu(); });
+  campo.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') { filtroMenu = ''; campo.value = ''; desenharMenu(); }
+    // Enter abre o primeiro resultado — é o que se espera depois de filtrar.
+    if (ev.key === 'Enter') {
+      const primeiro = document.querySelector('nav.menu a');
+      if (primeiro) primeiro.click();
+    }
+  });
+}
+
+// ── Roteamento ──────────────────────────────────────────────────────────────
+const VISOES = {};
+
+async function navegar() {
+  /*
+   * No celular a rota padrão é a RÉGUA, não o painel.
+   *
+   * A pergunta que se faz com o telefone na mão, cliente na frente, é "com
+   * quem eu falo agora" — não "como foi o mês". O painel tem 2.868 px de
+   * altura num aparelho de 375: é leitura de mesa.
+   */
+  const padrao = ehMobile() ? 'regua' : 'painel';
+  const rota = (location.hash.replace('#/', '') || padrao).split('/')[0];
+  estado.rota = rota;
+  desenharMenu();
+  const alvo = document.getElementById('conteudo');
+  if (!alvo) return;
+
+  /*
+   * Tela que não pertence à empresa ativa abria uma tabela VAZIA, sem uma
+   * palavra. O atendente da fazenda entrava em "Frota" e via zero veículos —
+   * e a pergunta que se faz nessa hora é "cadê meus dados?", não "essa tela
+   * não é da minha empresa". Explicar custa três linhas e evita um chamado.
+   */
+  const definicao = MENU.find((m) => m.id === rota);
+  if (definicao?.empresas && !definicao.empresas.includes(estado.empresa?.codigo)) {
+    const donas = definicao.empresas
+      .map((c) => estado.empresas.find((e) => e.codigo === c)?.nome ?? c);
+    alvo.innerHTML = `
+      <div class="vazio">
+        <div class="ic">↔</div>
+        <h3>“${esc(definicao.nome)}” não é uma tela da ${esc(estado.empresa?.nome ?? 'empresa atual')}</h3>
+        <p>Ela pertence a ${esc(donas.join(' e '))}.</p>
+        <div style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          ${definicao.empresas
+    .filter((c) => estado.empresas.some((e) => e.codigo === c))
+    .map((c) => `<button class="btn sm" data-ir-empresa="${esc(c)}">Ir para ${esc(c)}</button>`).join('')}
+          <a class="btn quiet sm" href="#/painel">Voltar ao painel</a>
+        </div>
+      </div>`;
+    alvo.querySelectorAll('[data-ir-empresa]').forEach((b) => {
+      b.onclick = () => {
+        estado.empresa = estado.empresas.find((e) => e.codigo === b.dataset.irEmpresa);
+        localStorage.setItem('fortcrm.empresa', estado.empresa.instancia);
+        estado.cache = {};
+        renderShell();
+      };
+    });
+    return;
+  }
+
+  alvo.innerHTML = '<div class="carregando">carregando…</div>';
+  try {
+    await (VISOES[rota] ?? VISOES.painel)(alvo);
+  } catch (e) {
+    alvo.innerHTML = `<div class="aviso crit">${esc(e.message)}</div>`;
+  }
+  desenharMenu();
+
+  /*
+   * Carimba o cabeçalho de cada coluna na própria célula, para que o CSS
+   * transforme tabela em cartão no celular.
+   *
+   * Roda aqui, depois da renderização, em vez de dentro de cada tela: são onze
+   * telas com tabela, e duplicar os rótulos em duas camadas é garantir que um
+   * dia divirjam. Vale no desktop também — o atributo fica lá, sem efeito.
+   */
+  rotularTabelas(alvo);
+  sincronizarNavBaixo();
+}
+
+/** A barra de polegar só existe no celular, e reflete a rota atual. */
+function sincronizarNavBaixo() {
+  if (!estado.token || !estado.empresas.length) { removerNavBaixo(); return; }
+  if (!ehMobile()) { removerNavBaixo(); return; }
+
+  desenharNavBaixo({
+    rotaAtual: estado.rota,
+    contadores: estado.cache.contadores ?? {},
+    aoAbrirMais: () => {
+      // "Mais" abre a mesma gaveta do menu — não uma segunda lista de telas
+      // que precisaria ser mantida em paralelo.
+      const lado = document.querySelector('.lado');
+      const botao = document.querySelector('#abrir-menu');
+      if (!lado) return;
+      const aberto = lado.classList.toggle('aberto');
+      if (botao) {
+        botao.setAttribute('aria-expanded', String(aberto));
+        botao.textContent = aberto ? '✕ Fechar' : '☰ Menu';
+      }
+      if (aberto) lado.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+  });
+}
+
+/*
+ * Atravessar o ponto de corte redesenha a casca.
+ *
+ * Girar o aparelho ou abrir a janela do navegador muda o que a tela é, e sem
+ * isto o celular ficaria com a barra de polegar num layout de desktop — ou
+ * pior, sem barra nenhuma e com o menu escondido.
+ */
+let eraMobile = null;
+window.addEventListener('resize', () => {
+  const agora = ehMobile();
+  if (eraMobile === null) { eraMobile = agora; return; }
+  if (agora === eraMobile) return;
+  eraMobile = agora;
+  if (estado.token && estado.empresas.length) renderShell();
+});
+
+window.addEventListener('hashchange', navegar);
+ligarAutoCrescer();
+
+// ── Painel ──────────────────────────────────────────────────────────────────
+VISOES.painel = async (el) => {
+  const [d, estadoDemo] = await Promise.all([
+    api('/painel'),
+    // O aviso de envelhecimento não pode derrubar o painel: se a rota falhar,
+    // a tela abre igual e só perde o alerta.
+    api('/demo/estado').catch(() => null),
+  ]);
+  estado.cache.contadores = { ...estado.cache.contadores, regua: d.regua.liberados };
+
+  const consentPct = d.base.clientes ? Math.round((d.base.comConsentimento / d.base.clientes) * 100) : 0;
+  const receita = d.operacao.receitaOs30d + d.operacao.receitaPedidos30d;
+
+  el.innerHTML = `
+    <div class="cabeca">
+      <div>
+        <div class="kicker">// ${esc(d.empresa.codigo)} · ${esc(d.empresa.segmento)}</div>
+        <h1 class="titulo">${esc(d.empresa.nome)}</h1>
+        <p class="chamada">O que está na base, o que está em operação e com quem falar hoje.</p>
+      </div>
+      <a class="btn" href="#/regua">Ver a fila de hoje →</a>
+    </div>
+
+    ${estadoDemo?.envelhecida ? `
+      <div class="aviso warn">
+        <strong>A demonstração está envelhecendo.</strong>
+        A carga foi feita há ${esc(estadoDemo.horasMaisVelha)} h, e o compliance já começou a
+        fechar a janela de 24 horas dos contatos — a fila encolhe sozinha conforme o relógio anda.
+        Clique em <strong>Reancorar no tempo</strong>, na lateral, para deslizar a história
+        e devolver a fila sem perder nada do que já foi feito aqui.
+      </div>` : ''}
+
+    <div class="grade g4">
+      <div class="cartao kpi acento">
+        <div class="r">FILA DA RÉGUA HOJE</div>
+        <div class="v ac">${numero(d.regua.liberados)}</div>
+        <div class="n">${numero(d.regua.bloqueados)} bloqueados pelo compliance</div>
+      </div>
+      <div class="cartao kpi">
+        <div class="r">CLIENTES NA BASE</div>
+        <div class="v">${numero(d.base.clientes)}</div>
+        <div class="n">${numero(d.base.optOut)} com descadastro</div>
+      </div>
+      <div class="cartao kpi">
+        <div class="r">CONSENTIMENTO LGPD</div>
+        <div class="v ${consentPct >= 90 ? 'ok' : consentPct >= 70 ? 'warn' : 'crit'}">${consentPct}%</div>
+        <div class="medidor"><i class="${consentPct >= 90 ? '' : consentPct >= 70 ? 'warn' : 'crit'}" style="width:${consentPct}%"></i></div>
+      </div>
+      <div class="cartao kpi">
+        <div class="r">RECEITA · 30 DIAS</div>
+        <div class="v">${moeda(receita)}</div>
+        <div class="n">${numero(d.operacao.osConcluidas30d)} OS · ${numero(d.operacao.pedidos30d)} pedidos</div>
+      </div>
+    </div>
+
+    <h2 class="secao">Operação</h2>
+    <div class="grade g4">
+      <div class="cartao kpi">
+        <div class="r">OS EM ABERTO</div><div class="v">${numero(d.operacao.osAbertas)}</div>
+      </div>
+      <div class="cartao kpi">
+        <div class="r">REVISÕES VENCENDO (30D)</div>
+        <div class="v ${d.operacao.revisoesVencendo > 0 ? 'warn' : ''}">${numero(d.operacao.revisoesVencendo)}</div>
+        <div class="n">projetadas pela média de rodagem</div>
+      </div>
+      <div class="cartao kpi">
+        <div class="r">VEÍCULOS CADASTRADOS</div><div class="v">${numero(d.base.veiculos)}</div>
+      </div>
+      <div class="cartao kpi">
+        <div class="r">PIPELINE PONDERADO</div>
+        <div class="v ac">${moeda(d.pipeline.abertoPonderado)}</div>
+        <div class="n">de ${moeda(d.pipeline.abertoTotal)} em aberto</div>
+      </div>
+    </div>
+
+    <h2 class="secao">O que dispara hoje, por gatilho</h2>
+    ${d.regua.porGatilho.length ? `
+      <div class="tabela-caixa">
+        <table>
+          <thead><tr><th>Gatilho</th><th class="num">Candidatos</th><th class="num">Liberados</th><th class="num">Bloqueados</th></tr></thead>
+          <tbody>${d.regua.porGatilho.map((g) => `
+            <tr><td class="forte">${esc(g.nome)}</td>
+              <td class="num">${numero(g.n)}</td>
+              <td class="num" style="color:var(--ok)">${numero(g.liberados)}</td>
+              <td class="num" style="color:var(--dim)">${numero(g.n - g.liberados)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : '<div class="aviso">Nenhum gatilho com candidatos hoje.</div>'}
+
+    <h2 class="secao">Pipeline por etapa</h2>
+    <div class="grade g3">
+      ${d.pipeline.porEtapa.filter((p) => p.n > 0).map((p) => `
+        <div class="cartao kpi">
+          <div class="r">${esc((ETAPAS[p.etapa] ?? p.etapa).toUpperCase())}</div>
+          <div class="v" style="font-size:22px">${moeda(p.total)}</div>
+          <div class="n">${numero(p.n)} oportunidade(s) · ponderado ${moeda(p.ponderado)}</div>
+        </div>`).join('')}
+    </div>
+
+    <h2 class="secao">Saída de mensagens</h2>
+    <div class="grade g4">
+      <div class="cartao kpi"><div class="r">ÚLTIMOS 7 DIAS</div><div class="v">${numero(d.disparos.ultimos7d)}</div></div>
+      <div class="cartao kpi"><div class="r">ENVIADAS</div><div class="v ok">${numero(d.disparos.enviados)}</div></div>
+      <div class="cartao kpi"><div class="r">BLOQUEADAS</div><div class="v">${numero(d.disparos.bloqueados)}</div></div>
+      <div class="cartao kpi">
+        <div class="r">AMBÍGUAS (UNKNOWN)</div>
+        <div class="v ${d.disparos.desconhecidos ? 'crit' : 'ok'}">${numero(d.disparos.desconhecidos)}</div>
+        <div class="n">exigem conferência humana</div>
+      </div>
+    </div>`;
+};
+
+// ── Régua de contato ────────────────────────────────────────────────────────
+VISOES.regua = async (el) => {
+  const d = await api('/regua');
+  estado.cache.regua = d;
+  estado.cache.contadores = { ...estado.cache.contadores, regua: d.resumo.liberados };
+
+  el.innerHTML = `
+    <div class="cabeca">
+      <div>
+        <div class="kicker">// RÉGUA DE CONTATO</div>
+        <h1 class="titulo">Com quem falar hoje</h1>
+        <p class="chamada">
+          Cada linha é um cliente que o sistema identificou sozinho, com a mensagem já escrita e o motivo à mostra.
+          Tudo passa pelo compliance <strong>antes</strong> de aparecer aqui — o que está bloqueado diz por quê.
+        </p>
+      </div>
+    </div>
+
+    ${estado.demoMode ? `<div class="aviso warn">
+      <strong>DEMO_MODE ligado.</strong> Disparar registra a intenção, grava a auditoria e marca como simulado.
+      Nenhuma mensagem chega a número real. Para valer, é preciso conectar o canal — e isso exige aprovação nominal.
+    </div>` : ''}
+
+    <div class="regua-topo">
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="marcar-todos" style="width:17px;height:17px;accent-color:var(--acento)">
+        <span style="font-size:13.5px">Marcar todos os liberados</span>
+      </label>
+      <span class="conta"><b id="conta-sel">0</b> selecionados</span>
+      <span style="flex:1"></span>
+      <span class="conta">
+        <b style="color:var(--ok)">${numero(d.resumo.liberados)}</b> liberados ·
+        <b style="color:var(--dim)">${numero(d.resumo.bloqueados)}</b> bloqueados
+      </span>
+      <button class="btn" id="disparar" disabled>Disparar selecionados</button>
+    </div>
+
+    ${d.resumo.motivos.length ? `
+      <div class="aviso">
+        <strong>Por que ${numero(d.resumo.bloqueados)} não saem:</strong>
+        ${d.resumo.motivos.map((m) => `<br>· <code style="color:var(--crit);font-family:var(--mono);font-size:12px">${esc(m.motivo)}</code> — ${esc(m.explicacao)} <span class="tag">${numero(m.n)}</span>`).join('')}
+      </div>` : ''}
+
+    <div id="fila">
+      ${d.fila.length ? d.fila.map(itemRegua).join('')
+        : `<div class="vazio"><div class="ic">✓</div><h3>Nenhum contato pendente hoje</h3>
+             <p>A régua já cobriu todo mundo que atendia às regras. Volte amanhã.</p></div>`}
+    </div>`;
+
+  ligarRegua(el);
+};
+
+/**
+ * Link de conversa já com o texto dentro.
+ *
+ * Enquanto não há adaptador de canal, ESTE é o uso prático do sistema: o
+ * atendente lê o motivo, ajusta a frase e abre a conversa com tudo pronto.
+ * Sem isto a régua vira um beco sem saída — mostra a mensagem certa e não
+ * deixa fazer nada com ela.
+ */
+function linkWhatsApp(telefone, texto) {
+  const numero = String(telefone ?? '').replace(/[^0-9]/g, '');
+  if (!numero) return '#';
+  return `https://wa.me/${numero}?text=${encodeURIComponent(texto ?? '')}`;
+}
+
+function itemRegua(f) {
+  const dias = diasAte(f.vencimentoEm);
+  const urg = { vencido: ['crit', 'VENCIDO'], alta: ['warn', 'ALTA'], media: ['', 'MÉDIA'], baixa: ['', 'BAIXA'] }[f.urgencia] ?? ['', ''];
+  return `
+    <div class="item ${f.decisao.permitido ? '' : 'bloqueado'}" data-item="${esc(f.id)}">
+      <div class="item-check">
+        <input type="checkbox" data-check="${esc(f.id)}" ${f.decisao.permitido ? '' : 'disabled'}>
+      </div>
+      <div>
+        <h4>${esc(f.cliente.nome)}</h4>
+        <div class="linha-meta">
+          <span class="tag ac">${esc(f.gatilho.nome)}</span>
+          ${urg[1] ? `<span class="tag ${urg[0]}">${urg[1]}</span>` : ''}
+          <span class="tag">${esc(PERFIS[f.cliente.perfil] ?? f.cliente.perfil)}</span>
+          ${f.cliente.cidade ? `<span class="fraco">${esc(f.cliente.cidade)}</span>` : ''}
+          ${dias !== null ? `<span class="fraco">${dias < 0 ? `venceu há ${Math.abs(dias)}d` : `vence em ${dias}d`}</span>` : ''}
+        </div>
+        <div class="contexto">${esc(f.contexto)}</div>
+        <textarea class="mensagem editavel" data-texto="${esc(f.id)}"
+          rows="4" spellcheck="true"
+          aria-label="Mensagem para ${esc(f.cliente.nome)}">${esc(f.corpo)}</textarea>
+        <div class="acoes-msg">
+          <button class="btn quiet sm" data-copiar="${esc(f.id)}">Copiar texto</button>
+          ${f.cliente.telefone ? `
+            <a class="btn quiet sm" target="_blank" rel="noopener"
+               data-zap="${esc(f.id)}" href="${esc(linkWhatsApp(f.cliente.telefone, f.corpo))}">
+              Abrir no WhatsApp
+            </a>` : '<span class="fraco">sem telefone cadastrado</span>'}
+          <span class="fraco marca-edicao" data-edicao="${esc(f.id)}"></span>
+        </div>
+      </div>
+      <div class="veredito">
+        <div class="r">DECISÃO DO COMPLIANCE</div>
+        ${f.decisao.permitido
+          ? `<span class="tag ok">LIBERADO</span>
+             <div class="motivo">Política aplicada: <code style="color:var(--ok)">${esc(f.decisao.politica)}</code>.
+             O contato interagiu dentro da janela e o gatilho está fora do cooldown.</div>`
+          : `<span class="tag crit">BLOQUEADO</span>
+             <div class="motivo"><code>${esc(f.decisao.motivo)}</code><br>${esc(f.decisao.explicacao ?? '')}</div>`}
+        <div class="motivo" style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px">
+          Canal: ${esc(CANAIS[f.canal?.tipo] ?? '—')}
+          ${f.canal?.conectado ? '' : ' <span class="tag crit">desconectado</span>'}
+        </div>
+        <button class="btn quiet sm" style="margin-top:10px" data-ficha="${esc(f.cliente.id)}">Ver ficha</button>
+      </div>
+    </div>`;
+}
+
+function ligarRegua(el) {
+  const atualizar = () => {
+    el.querySelector('#conta-sel').textContent = estado.selecionados.size;
+    el.querySelector('#disparar').disabled = estado.selecionados.size === 0;
+    el.querySelectorAll('[data-item]').forEach((n) => {
+      n.classList.toggle('selecionado', estado.selecionados.has(n.dataset.item));
+    });
+  };
+
+  el.querySelectorAll('[data-check]').forEach((c) => {
+    c.checked = estado.selecionados.has(c.dataset.check);
+    c.onchange = () => {
+      if (c.checked) estado.selecionados.add(c.dataset.check);
+      else estado.selecionados.delete(c.dataset.check);
+      atualizar();
+    };
+  });
+
+  el.querySelector('#marcar-todos').onchange = (ev) => {
+    el.querySelectorAll('[data-check]:not([disabled])').forEach((c) => {
+      c.checked = ev.target.checked;
+      if (ev.target.checked) estado.selecionados.add(c.dataset.check);
+      else estado.selecionados.delete(c.dataset.check);
+    });
+    atualizar();
+  };
+
+  el.querySelectorAll('[data-ficha]').forEach((b) => {
+    b.onclick = () => abrirFicha(b.dataset.ficha);
+  });
+
+  // Texto editado: o link do WhatsApp precisa acompanhar, senão o atendente
+  // ajusta a frase, abre a conversa e cola a versão antiga sem perceber.
+  const textos = new Map();
+  el.querySelectorAll('[data-texto]').forEach((ta) => {
+    const id = ta.dataset.texto;
+    textos.set(id, ta.defaultValue);
+
+    ta.addEventListener('input', () => {
+      const mudou = ta.value.trim() !== ta.defaultValue.trim();
+      el.querySelector(`[data-edicao="${CSS.escape(id)}"]`).textContent = mudou ? 'texto ajustado' : '';
+
+      const zap = el.querySelector(`[data-zap="${CSS.escape(id)}"]`);
+      if (zap) {
+        const tel = zap.getAttribute('href').split('?')[0].replace('https://wa.me/', '');
+        zap.href = linkWhatsApp(tel, ta.value);
+      }
+      // Editar sem marcar é o gesto de quem vai mandar aquele texto.
+      const check = el.querySelector(`[data-check="${CSS.escape(id)}"]`);
+      if (mudou && check && !check.disabled && !check.checked) {
+        check.checked = true;
+        estado.selecionados.add(id);
+        atualizar();
+      }
+    });
+  });
+
+  el.querySelectorAll('[data-copiar]').forEach((b) => {
+    b.onclick = async () => {
+      const ta = el.querySelector(`[data-texto="${CSS.escape(b.dataset.copiar)}"]`);
+      try {
+        await navigator.clipboard.writeText(ta.value);
+        const antes = b.textContent;
+        b.textContent = 'Copiado ✓';
+        setTimeout(() => { b.textContent = antes; }, 1600);
+      } catch {
+        // Área de transferência bloqueada (contexto não seguro, permissão
+        // negada). Selecionar o texto deixa o Ctrl+C a um toque.
+        ta.focus();
+        ta.select();
+        toast('Não consegui copiar', 'O texto está selecionado — use Ctrl+C.', 'erro');
+      }
+    };
+  });
+
+  el.querySelector('#disparar').onclick = async (ev) => {
+    const botao = ev.currentTarget;
+    botao.disabled = true;
+    botao.textContent = 'Disparando…';
+    try {
+      const r = await api('/regua/disparar', {
+        method: 'POST',
+        corpo: {
+          itens: [...estado.selecionados].map((id) => {
+            const ta = el.querySelector(`[data-texto="${CSS.escape(id)}"]`);
+            const editado = ta && ta.value.trim() !== ta.defaultValue.trim();
+            return editado ? { id, corpo: ta.value } : { id };
+          }),
+        },
+      });
+      estado.selecionados.clear();
+      const repetidas = r.repetidos
+        ? ` ${r.repetidos} já tinham saído hoje e não foram repetidas.`
+        : '';
+      const editadasBloqueadas = r.resultado.filter((x) => x.editado && x.status === 'blocked');
+      if (editadasBloqueadas.length) {
+        // O texto ajustado volta pelo compliance. Bloquear em silêncio faria
+        // o atendente achar que mandou.
+        toast(
+          `${editadasBloqueadas.length} mensagem(ns) editada(s) foram bloqueadas`,
+          `Motivo: ${[...new Set(editadasBloqueadas.map((x) => x.motivo))].join(', ')}.`,
+          'erro',
+        );
+      }
+      toast(
+        `${r.enviados} mensagem(ns) registrada(s)`,
+        (r.demoMode
+          ? 'DEMO_MODE: nada saiu para número real. Tudo consta na auditoria.'
+          : 'Enviadas de verdade.') + repetidas,
+      );
+      navegar();
+    } catch (e) {
+      toast('Falha ao disparar', e.message, 'erro');
+      botao.disabled = false;
+      botao.textContent = 'Disparar selecionados';
+    }
+  };
+
+  atualizar();
+}
+
+// ── Clientes ────────────────────────────────────────────────────────────────
+VISOES.clientes = async (el) => {
+  const desenhar = async (q = '', perfil = '') => {
+    const lista = await api(`/clientes?q=${encodeURIComponent(q)}&perfil=${encodeURIComponent(perfil)}`);
+    const corpo = el.querySelector('#lista-clientes');
+    corpo.innerHTML = lista.length ? `
+      <div class="tabela-caixa">
+        <table>
+          <thead><tr><th>Cliente</th><th>Perfil</th><th>Cidade</th><th>Telefone</th><th>Origem</th><th>LGPD</th><th>Último contato</th></tr></thead>
+          <tbody>${lista.map((c) => `
+            <tr class="clicavel" data-ficha="${esc(c.id)}">
+              <td class="forte">${esc(c.nome)}<div class="fraco">${esc(c.email ?? '')}</div></td>
+              <td><span class="tag">${esc(PERFIS[c.perfil] ?? c.perfil)}</span></td>
+              <td>${esc(c.cidade ?? '—')}</td>
+              <td style="font-family:var(--mono);font-size:12.5px">${esc(c.telefone ?? '—')}</td>
+              <td class="fraco">${esc(c.origem)}</td>
+              <td>${c.opt_out_em
+                ? '<span class="tag crit">descadastrado</span>'
+                : c.consentimento_lgpd ? '<span class="tag ok">consentido</span>' : '<span class="tag warn">sem consent.</span>'}</td>
+              <td class="fraco">${data(c.ultimo_inbound_em)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : '<div class="vazio"><h3>Nenhum cliente encontrado</h3></div>';
+
+    corpo.querySelectorAll('[data-ficha]').forEach((tr) => {
+      tr.onclick = () => abrirFicha(tr.dataset.ficha);
+    });
+  };
+
+  el.innerHTML = `
+    <div class="cabeca">
+      <div>
+        <div class="kicker">// BASE ÚNICA</div>
+        <h1 class="titulo">Clientes</h1>
+        <p class="chamada">Um cliente, um cadastro. A busca por telefone antes de criar é o que impede a base duplicar.</p>
+      </div>
+      <button class="btn" id="novo-cliente">Novo cliente</button>
+    </div>
+    <div class="barra-busca">
+      <input id="q" placeholder="Buscar por nome, telefone ou e-mail…">
+      <select id="perfil">
+        <option value="">Todos os perfis</option>
+        ${Object.entries(PERFIS).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('')}
+      </select>
+    </div>
+    <div id="lista-clientes"><div class="carregando">carregando…</div></div>`;
+
+  let debounce;
+  const disparar = () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => desenhar(el.querySelector('#q').value, el.querySelector('#perfil').value), 220);
+  };
+  el.querySelector('#q').oninput = disparar;
+  el.querySelector('#perfil').onchange = disparar;
+  el.querySelector('#novo-cliente').onclick = formularioCliente;
+
+  await desenhar();
+};
+
+function formularioCliente() {
+  abrirGaveta(`
+    <div class="gaveta-topo">
+      <div><div class="kicker">// CADASTRO</div><h2>Novo cliente</h2></div>
+      <button class="fechar" data-fechar>fechar</button>
+    </div>
+    <form id="form-cliente" style="margin-top:18px">
+      <div class="campo"><label>Nome *</label><input name="nome" required></div>
+      <div class="campo"><label>Telefone (com DDI)</label><input name="telefone" placeholder="5538998112233"></div>
+      <div class="campo"><label>E-mail</label><input name="email" type="email"></div>
+      <div class="campo"><label>Cidade</label><input name="cidade"></div>
+      <div class="campo"><label>Perfil</label>
+        <select name="perfil">${Object.entries(PERFIS).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('')}</select>
+      </div>
+      <label style="display:flex;gap:9px;align-items:flex-start;margin:16px 0;cursor:pointer">
+        <input type="checkbox" name="consentimento" style="width:17px;height:17px;margin-top:2px;accent-color:var(--acento)">
+        <span style="font-size:13.5px;color:var(--dim)">
+          O cliente autorizou receber mensagens.
+          <strong style="color:var(--txt)">Sem esta marcação ele entra na base, mas fica fora da régua.</strong>
+        </span>
+      </label>
+      <div id="erro-cliente"></div>
+      <button class="btn bloco" type="submit">Cadastrar</button>
+    </form>`);
+
+  document.querySelector('#form-cliente').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    try {
+      await api('/clientes', {
+        method: 'POST',
+        corpo: {
+          nome: f.nome.value, telefone: f.telefone.value || null, email: f.email.value || null,
+          cidade: f.cidade.value || null, perfil: f.perfil.value,
+          consentimento_lgpd: f.consentimento.checked,
+        },
+      });
+      fecharGaveta();
+      toast('Cliente cadastrado');
+      navegar();
+    } catch (e) {
+      f.querySelector('#erro-cliente').innerHTML = `<div class="aviso crit">${esc(e.message)}</div>`;
+    }
+  };
+}
+
+// ── Ficha do cliente ────────────────────────────────────────────────────────
+async function abrirFicha(id) {
+  abrirGaveta('<div class="carregando">carregando ficha…</div>');
+  const d = await api(`/clientes/${id}`);
+  const c = d.cliente;
+
+  const eventos = [
+    ...d.atividades.map((a) => ({ q: a.criado_em, d: a.descricao, t: a.tipo })),
+    ...d.disparos.map((x) => ({
+      q: x.criado_em,
+      d: `Régua "${x.gatilho_chave}" — ${x.status}${x.motivo ? ` (${x.motivo})` : ''}`,
+      t: 'regua',
+    })),
+  ].sort((a, b) => Date.parse(b.q) - Date.parse(a.q)).slice(0, 25);
+
+  abrirGaveta(`
+    <div class="gaveta-topo">
+      <div>
+        <div class="kicker">// FICHA DO CLIENTE</div>
+        <h2>${esc(c.nome)}</h2>
+        <div style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
+          <span class="tag">${esc(PERFIS[c.perfil] ?? c.perfil)}</span>
+          ${c.opt_out_em ? '<span class="tag crit">DESCADASTRADO</span>'
+            : c.consentimento_lgpd ? '<span class="tag ok">CONSENTIDO</span>' : '<span class="tag warn">SEM CONSENTIMENTO</span>'}
+          <span class="tag">origem: ${esc(c.origem)}</span>
+        </div>
+      </div>
+      <button class="fechar" data-fechar>fechar</button>
+    </div>
+
+    <form id="form-ficha" style="margin-top:18px">
+      <div class="grade g2" style="gap:10px">
+        <div class="campo"><label>Nome</label><input name="nome" value="${esc(c.nome)}" required></div>
+        <div class="campo"><label>Telefone</label><input name="telefone" value="${esc(c.telefone ?? '')}" placeholder="5538998112233"></div>
+        <div class="campo"><label>E-mail</label><input name="email" type="email" value="${esc(c.email ?? '')}"></div>
+        <div class="campo"><label>Cidade</label><input name="cidade" value="${esc(c.cidade ?? '')}"></div>
+        <div class="campo"><label>Perfil</label>
+          <select name="perfil">
+            ${Object.entries(PERFIS).map(([k, v]) =>
+    `<option value="${esc(k)}" ${k === c.perfil ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="campo"><label>Observação</label><input name="observacao" value="${esc(c.observacao ?? '')}"></div>
+      </div>
+      <label style="display:flex;gap:9px;align-items:flex-start;margin:6px 0 14px;cursor:pointer">
+        <input type="checkbox" name="consentimento" ${c.consentimento_lgpd ? 'checked' : ''}
+          ${c.opt_out_em ? 'disabled' : ''} style="width:17px;height:17px;margin-top:2px;accent-color:var(--acento)">
+        <span style="font-size:13.5px;color:var(--dim)">
+          Autorizou receber mensagens.
+          ${c.opt_out_em
+    ? '<strong style="color:var(--crit)">Descadastro registrado — não é possível reativar por aqui.</strong>'
+    : '<strong style="color:var(--txt)">Sem isto, ele fica fora da régua.</strong>'}
+        </span>
+      </label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn sm" type="submit">Salvar alterações</button>
+        <span class="fraco" id="ficha-estado"></span>
+      </div>
+      <div id="erro-ficha"></div>
+    </form>
+
+    <dl style="margin-top:16px">
+      <div class="par"><dt>Último contato recebido</dt><dd>${data(c.ultimo_inbound_em)}</dd></div>
+      <div class="par"><dt>Consentimento em</dt><dd>${data(c.consentimento_em)}</dd></div>
+      <div class="par"><dt>Cliente desde</dt><dd>${data(c.criado_em)}</dd></div>
+    </dl>
+
+    ${d.veiculos.length ? `
+      <h2 class="secao">Veículos</h2>
+      ${d.veiculos.map((v) => {
+        const r = v.revisao;
+        const cor = !r ? '' : r.diasFaltando < 0 ? 'crit' : r.diasFaltando <= 15 ? 'warn' : 'ok';
+        return `<div class="cartao" style="margin-bottom:9px">
+          <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div>
+              <span class="forte" style="font-family:var(--mono);letter-spacing:1px">${esc(v.placa)}</span>
+              <div class="fraco">${esc([v.marca, v.modelo, v.ano].filter(Boolean).join(' '))} · ${esc(v.motorizacao ?? '')}</div>
+            </div>
+            <div style="text-align:right">
+              ${r ? `<span class="tag ${cor}">${r.diasFaltando < 0 ? `revisão venceu há ${Math.abs(r.diasFaltando)}d` : `revisão em ${r.diasFaltando}d`}</span>
+                     <div class="fraco">${numero(r.kmEstimadoHoje)} km estimados</div>`
+                  : '<span class="tag">sem média de rodagem</span>'}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}` : ''}
+
+    ${d.ordens.length ? `
+      <h2 class="secao">Ordens de serviço</h2>
+      <div class="tabela-caixa"><table>
+        <thead><tr><th>OS</th><th>Componente</th><th>Status</th><th class="num">Valor</th><th></th></tr></thead>
+        <tbody>${d.ordens.map((o) => `
+          <tr><td style="font-family:var(--mono)">${esc(o.numero)}</td>
+            <td>${esc(o.componente)}<div class="fraco">${data(o.concluida_em ?? o.aberta_em)}</div></td>
+            <td><span class="tag ${o.status === 'concluida' ? 'ok' : 'warn'}">${esc(o.status)}</span></td>
+            <td class="num">${moeda(o.valor_centavos)}</td>
+            <td>${o.status === 'concluida'
+              ? `<a class="btn quiet sm" target="_blank" rel="noopener" href="/api/ordens/${esc(o.id)}/laudo?t=${encodeURIComponent(estado.token)}&e=${esc(estado.empresa.id)}">Laudo</a>`
+              : ''}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+
+    ${d.pedidos.length ? `
+      <h2 class="secao">Pedidos</h2>
+      <div class="tabela-caixa"><table>
+        <thead><tr><th>Pedido</th><th>Itens</th><th>Canal</th><th class="num">Valor</th></tr></thead>
+        <tbody>${d.pedidos.map((p) => `
+          <tr><td style="font-family:var(--mono)">${esc(p.numero)}<div class="fraco">${data(p.feito_em)}</div></td>
+            <td>${esc(JSON.parse(p.itens || '[]').map((i) => `${i.qtd}× ${i.nome}`).join(', '))}</td>
+            <td class="fraco">${esc(p.canal)}</td>
+            <td class="num">${moeda(p.valor_centavos)}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+
+    ${eventos.length ? `
+      <h2 class="secao">Linha do tempo</h2>
+      <div class="linha-tempo">
+        ${eventos.map((e) => `<div class="evento">
+          <div class="q">${dataHora(e.q)} · ${esc(e.t)}</div>
+          <div class="d">${esc(e.d)}</div>
+        </div>`).join('')}
+      </div>` : ''}
+
+    ${!c.opt_out_em ? `
+      <h2 class="secao">LGPD</h2>
+      <button class="btn perigo sm" id="optout">Registrar descadastro</button>
+      <p class="fraco" style="margin-top:8px">
+        Bloqueia qualquer envio automático a este contato, sem exceção. A ação fica na auditoria.
+      </p>` : `<div class="aviso crit" style="margin-top:24px">
+        Descadastro registrado em ${data(c.opt_out_em)}. Nenhuma mensagem automática sai para este contato.
+      </div>`}
+  `);
+
+  const form = document.querySelector('#form-ficha');
+  if (form) {
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      const estadoTxt = f.querySelector('#ficha-estado');
+      estadoTxt.textContent = 'salvando…';
+      try {
+        await api(`/clientes/${id}`, {
+          method: 'PATCH',
+          corpo: {
+            nome: f.nome.value.trim(),
+            telefone: f.telefone.value.trim() || null,
+            email: f.email.value.trim() || null,
+            cidade: f.cidade.value.trim() || null,
+            perfil: f.perfil.value,
+            observacao: f.observacao.value.trim() || null,
+            ...(c.opt_out_em ? {} : { consentimento_lgpd: f.consentimento.checked }),
+          },
+        });
+        estadoTxt.textContent = 'salvo ✓';
+        toast('Cliente atualizado');
+        // A lista atrás da gaveta mostra nome, telefone e LGPD — deixá-la
+        // desatualizada faria o atendente achar que não salvou.
+        navegar();
+        setTimeout(() => { estadoTxt.textContent = ''; }, 2500);
+      } catch (e) {
+        estadoTxt.textContent = '';
+        f.querySelector('#erro-ficha').innerHTML =
+          `<div class="aviso crit" style="margin-top:12px">${esc(e.message)}</div>`;
+      }
+    };
+  }
+
+  document.querySelector('#optout')?.addEventListener('click', async () => {
+    if (!confirm(`Registrar descadastro de ${c.nome}? Não há envio automático depois disso.`)) return;
+    await api(`/clientes/${id}/opt-out`, { method: 'POST' });
+    toast('Descadastro registrado', 'O contato saiu de todas as réguas.');
+    fecharGaveta();
+    navegar();
+  });
+}
+
+// ── Frota ───────────────────────────────────────────────────────────────────
+VISOES.frota = async (el) => {
+  const lista = await api('/veiculos');
+  const alerta = lista.filter((v) => v.revisao && v.revisao.diasFaltando <= 15).length;
+
+  el.innerHTML = `
+    <div class="cabeca">
+      <div>
+        <div class="kicker">// MÓDULO FROTA E INJEÇÃO</div>
+        <h1 class="titulo">Veículos</h1>
+        <p class="chamada">
+          A chave do relacionamento é a placa. A previsão da próxima revisão é calculada pela média de rodagem
+          entre passagens — o veículo não avisa, o sistema estima.
+        </p>
+      </div>
+    </div>
+
+    ${alerta ? `<div class="aviso warn"><strong>${numero(alerta)} veículo(s)</strong> com revisão de injeção vencendo em 15 dias ou já vencida.</div>` : ''}
+
+    <div class="tabela-caixa">
+      <table>
+        <thead><tr>
+          <th>Placa</th><th>Veículo</th><th>Sistema</th><th>Responsável</th>
+          <th class="num">KM último</th><th class="num">Média/mês</th><th>Próxima revisão</th>
+        </tr></thead>
+        <tbody>${lista.map((v) => {
+          const r = v.revisao;
+          const cor = !r ? '' : r.diasFaltando < 0 ? 'crit' : r.diasFaltando <= 15 ? 'warn' : 'ok';
+          return `<tr class="clicavel" data-ficha="${esc(v.cliente_id)}">
+            <td class="forte" style="font-family:var(--mono);letter-spacing:1px">${esc(v.placa)}</td>
+            <td>${esc([v.marca, v.modelo].filter(Boolean).join(' '))}<div class="fraco">${esc(v.ano ?? '')} · ${esc(v.motorizacao ?? '')}</div></td>
+            <td class="fraco">${esc(v.sistema_injecao.replaceAll('_', ' '))}</td>
+            <td>${esc(v.cliente_nome)}<div class="fraco">${esc(PERFIS[v.cliente_perfil] ?? '')}</div></td>
+            <td class="num">${v.km_ultima ? numero(v.km_ultima) : `${numero(v.horimetro)} h`}</td>
+            <td class="num">${v.media_km_mes ? numero(v.media_km_mes) : '—'}</td>
+            <td>${r
+              ? `<span class="tag ${cor}">${r.diasFaltando < 0 ? `venceu há ${Math.abs(r.diasFaltando)}d` : `em ${r.diasFaltando}d`}</span>
+                 <div class="fraco">${data(r.dataPrevista)} · ${numero(r.alvoKm)} km</div>`
+              : '<span class="tag">sem projeção</span><div class="fraco">falta média de rodagem</div>'}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  el.querySelectorAll('[data-ficha]').forEach((tr) => { tr.onclick = () => abrirFicha(tr.dataset.ficha); });
+};
+
+// ── Ordens de serviço ───────────────────────────────────────────────────────
+VISOES.ordens = async (el) => {
+  const lista = await api('/ordens');
+  el.innerHTML = `
+    <div class="cabeca">
+      <div>
+        <div class="kicker">// OFICINA</div>
+        <h1 class="titulo">Ordens de serviço</h1>
+        <p class="chamada">
+          Todo serviço concluído gera laudo digital de bancada — pressão medida, peça aplicada, garantia e parecer,
+          num documento que o cliente guarda. É o que elimina a pergunta "será que trocaram mesmo?".
+        </p>
+      </div>
+    </div>
+    <div class="tabela-caixa">
+      <table>
+        <thead><tr><th>OS</th><th>Cliente</th><th>Veículo</th><th>Componente</th><th>Bancada</th>
+          <th class="num">Pressão</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead>
+        <tbody>${lista.map((o) => `
+          <tr>
+            <td class="forte" style="font-family:var(--mono)">${esc(o.numero)}<div class="fraco">${data(o.concluida_em ?? o.aberta_em)}</div></td>
+            <td>${esc(o.cliente_nome)}</td>
+            <td style="font-family:var(--mono);font-size:12.5px">${esc(o.placa ?? '—')}<div class="fraco">${esc([o.marca, o.modelo].filter(Boolean).join(' '))}</div></td>
+            <td>${esc(o.componente)}</td>
+            <td class="fraco">${esc(o.bancada ?? '—')}</td>
+            <td class="num">${o.pressao_bar ? `${numero(o.pressao_bar)} bar` : '—'}</td>
+            <td class="num">${moeda(o.valor_centavos)}</td>
+            <td><span class="tag ${o.status === 'concluida' ? 'ok' : o.status === 'em_bancada' ? 'warn' : ''}">${esc(o.status.replaceAll('_', ' '))}</span></td>
+            <td>${o.status === 'concluida'
+              ? `<a class="btn quiet sm" target="_blank" rel="noopener" href="/api/ordens/${esc(o.id)}/laudo?t=${encodeURIComponent(estado.token)}&e=${esc(estado.empresa.id)}">Laudo</a>`
+              : `<button class="btn sm" data-concluir="${esc(o.id)}">Concluir</button>`}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  el.querySelectorAll('[data-concluir]').forEach((b) => {
+    b.onclick = async () => {
+      const pressao = prompt('Pressão medida na bancada (bar). Deixe vazio se não se aplica:');
+      if (pressao === null) return;
+      await api(`/ordens/${b.dataset.concluir}/concluir`, {
+        method: 'POST',
+        corpo: {
+          pressao_bar: pressao ? Number(pressao) : null,
+          resultado_laudo: pressao
+            ? `Aprovado — pressão dentro da faixa Bosch (${pressao} bar).`
+            : 'Aprovado — sem falha registrada.',
+        },
+      });
+      toast('OS concluída', 'O laudo digital já pode ser gerado.');
+      navegar();
+    };
+  });
+};
+
+// ── Pedidos ─────────────────────────────────────────────────────────────────
+VISOES.pedidos = async (el) => {
+  const lista = await api('/pedidos');
+  el.innerHTML = `
+    <div class="cabeca">
+      <div>
+        <div class="kicker">// RECOMPRA</div>
+        <h1 class="titulo">Pedidos</h1>
+        <p class="chamada">
+          Queijo artesanal é consumo recorrente vendido hoje como compra única. Cada pedido registra o cliente e
+          agenda o próximo contato pelo ciclo do produto.
+        </p>
+      </div>
+    </div>
+    <div class="tabela-caixa">
+      <table>
+        <thead><tr><th>Pedido</th><th>Cliente</th><th>Itens</th><th>Canal</th>
+          <th class="num">Valor</th><th class="num">Ciclo</th><th>Próximo contato</th><th>Status</th></tr></thead>
+        <tbody>${lista.map((p) => {
+          const prox = diasAte(p.proximo_contato_em);
+          return `<tr class="clicavel" data-ficha="${esc(p.cliente_id)}">
+            <td class="forte" style="font-family:var(--mono)">${esc(p.numero)}<div class="fraco">${data(p.feito_em)}</div></td>
+            <td>${esc(p.cliente_nome)}<div class="fraco">${esc(p.cidade ?? '')}</div></td>
+            <td>${esc(JSON.parse(p.itens || '[]').map((i) => `${i.qtd}× ${i.nome}`).join(', '))}</td>
+            <td class="fraco">${esc(p.canal)}</td>
+            <td class="num">${moeda(p.valor_centavos)}</td>
+            <td class="num">${numero(p.ciclo_recompra_dias)}d</td>
+            <td>${prox === null ? '—'
+              : prox <= 0 ? `<span class="tag warn">vencido há ${Math.abs(prox)}d</span>`
+              : `<span class="tag">em ${prox}d</span>`}</td>
+            <td><span class="tag ${p.status === 'entregue' ? 'ok' : 'warn'}">${esc(p.status)}</span></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  el.querySelectorAll('[data-ficha]').forEach((tr) => { tr.onclick = () => abrirFicha(tr.dataset.ficha); });
+};
+
+// ── Pipeline ────────────────────────────────────────────────────────────────
+VISOES.pipeline = async (el) => {
+  const d = await api('/pipeline');
+  el.innerHTML = `
+    <div class="cabeca">
+      <div>
+        <div class="kicker">// PIPELINE</div>
+        <h1 class="titulo">Oportunidades</h1>
+        <p class="chamada">Arraste para mover de etapa. Toda oportunidade perdida exige motivo — é o dado que ensina o que corrigir.</p>
+      </div>
+    </div>
+    <div class="kanban">
+      ${d.etapas.map((c) => `
+        <div class="coluna" data-etapa="${esc(c.etapa)}">
+          <div class="coluna-topo">
+            <span class="coluna-nome">${esc(ETAPAS[c.etapa] ?? c.etapa)}</span>
+            <span class="coluna-total">${moeda(c.total)}</span>
+          </div>
+          ${c.itens.map((o) => `
+            <div class="card-op" draggable="true" data-op="${esc(o.id)}">
+              <div class="t">${esc(o.titulo)}</div>
+              <div class="c">${esc(o.cliente_nome ?? 'sem cliente')}</div>
+              <div class="v">${moeda(o.valor_centavos)} <span style="color:var(--faint);font-weight:400">· ${esc(o.probabilidade)}%</span></div>
+              ${o.motivo_perda ? `<div class="c" style="color:var(--crit);margin-top:5px">${esc(o.motivo_perda)}</div>` : ''}
+              <select class="mover-etapa" data-mover="${esc(o.id)}"
+                aria-label="Mover ${esc(o.titulo)} para outra etapa">
+                ${Object.entries(ETAPAS).map(([k, v]) =>
+    `<option value="${esc(k)}" ${k === o.etapa ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+              </select>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+
+  /*
+   * Arrastar e soltar do HTML não tem equivalente por toque: no celular o
+   * kanban virava um quadro de leitura. O seletor em cada cartão é o caminho
+   * que funciona em tudo — dedo, mouse e teclado — e por isso ele existe no
+   * desktop também, não só no celular.
+   */
+  async function mover(id, etapa) {
+    const corpo = { etapa };
+    if (etapa === 'perdido') {
+      const motivo = prompt('Motivo da perda (preço, prazo, falta da peça, sumiço, concorrente):');
+      if (!motivo) { toast('Movimento cancelado', 'Perda exige motivo.', 'erro'); return false; }
+      corpo.motivo_perda = motivo;
+    }
+    try {
+      const r = await api(`/oportunidades/${id}`, { method: 'PATCH', corpo });
+      if (r.eventoConversao) {
+        toast('Etapa atualizada', `Gerou evento de conversão "${r.eventoConversao}" — veja em Conversões offline.`);
+      }
+      navegar();
+      return true;
+    } catch (e) {
+      toast('Não foi possível mover', e.message, 'erro');
+      return false;
+    }
+  }
+
+  el.querySelectorAll('[data-mover]').forEach((sel) => {
+    const original = sel.value;
+    sel.onchange = async () => {
+      if (sel.value === original) return;
+      const ok = await mover(sel.dataset.mover, sel.value);
+      if (!ok) sel.value = original;
+    };
+    // Sem isto, escolher a etapa também "pega" o cartão para arrastar.
+    sel.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+  });
+
+  let arrastando = null;
+  el.querySelectorAll('[data-op]').forEach((c) => {
+    c.ondragstart = () => { arrastando = c.dataset.op; c.style.opacity = '.4'; };
+    c.ondragend = () => { c.style.opacity = ''; };
+  });
+  el.querySelectorAll('[data-etapa]').forEach((col) => {
+    col.ondragover = (ev) => { ev.preventDefault(); col.classList.add('alvo'); };
+    col.ondragleave = () => col.classList.remove('alvo');
+    col.ondrop = async (ev) => {
+      ev.preventDefault();
+      col.classList.remove('alvo');
+      if (!arrastando) return;
+      const id = arrastando;
+      arrastando = null;
+      await mover(id, col.dataset.etapa);
+    };
+  });
+};
+
+// ── Catálogo ────────────────────────────────────────────────────────────────
+VISOES.catalogo = async (el) => {
+  const lista = await api('/catalogo');
+  el.innerHTML = `
+    <div class="cabeca"><div>
+      <div class="kicker">// REFERÊNCIA</div>
+      <h1 class="titulo">Catálogo</h1>
+      <p class="chamada">Serviços e produtos com preço e ciclo de recompra — a fonte que a régua usa para saber quando falar de novo.</p>
+    </div></div>
+    <div class="tabela-caixa"><table>
+      <thead><tr><th>SKU</th><th>Item</th><th>Categoria</th><th>Tipo</th><th class="num">Preço</th><th class="num">Ciclo</th></tr></thead>
+      <tbody>${lista.map((i) => `
+        <tr><td style="font-family:var(--mono);font-size:12.5px">${esc(i.sku)}</td>
+          <td class="forte">${esc(i.nome)}</td>
+          <td class="fraco">${esc(i.categoria)}</td>
+          <td><span class="tag">${esc(i.tipo)}</span></td>
+          <td class="num">${moeda(i.preco_centavos)}</td>
+          <td class="num">${i.ciclo_recompra_dias ? `${i.ciclo_recompra_dias}d` : '—'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+};
+
+// ── Gatilhos ────────────────────────────────────────────────────────────────
+VISOES.gatilhos = async (el) => {
+  const lista = await api('/gatilhos');
+  el.innerHTML = `
+    <div class="cabeca"><div>
+      <div class="kicker">// CONFIGURAÇÃO</div>
+      <h1 class="titulo">Gatilhos da régua</h1>
+      <p class="chamada">
+        A regra é código; o texto é dado. Dá para reescrever a mensagem sem tocar no sistema — as variáveis entre
+        chaves são preenchidas na hora do envio.
+      </p>
+    </div></div>
+    ${lista.map((g) => `
+      <div class="cartao" style="margin-bottom:11px">
+        <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start">
+          <div style="flex:1;min-width:260px">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span class="forte" style="font-size:15px">${esc(g.nome)}</span>
+              <span class="tag ${g.ativo ? 'ok' : 'crit'}">${g.ativo ? 'ativo' : 'desligado'}</span>
+              <span class="tag">cooldown ${esc(g.cooldown_dias)}d</span>
+            </div>
+            <div class="fraco" style="margin-top:5px">${esc(g.descricao)}</div>
+            <div class="contexto" style="margin-top:4px;color:var(--acento)">${esc(g.regra)}</div>
+          </div>
+          <button class="btn quiet sm" data-toggle="${esc(g.id)}" data-ativo="${g.ativo}">
+            ${g.ativo ? 'Desligar' : 'Ligar'}
+          </button>
+        </div>
+        <div class="mensagem" style="margin-top:12px">${esc(g.template)}</div>
+      </div>`).join('')}`;
+
+  el.querySelectorAll('[data-toggle]').forEach((b) => {
+    b.onclick = async () => {
+      await api(`/gatilhos/${b.dataset.toggle}`, {
+        method: 'PATCH', corpo: { ativo: b.dataset.ativo !== '1' },
+      });
+      navegar();
+    };
+  });
+};
+
+// ── Disparos ────────────────────────────────────────────────────────────────
+VISOES.disparos = async (el) => {
+  const lista = await api('/disparos');
+  const cores = { sent: 'ok', blocked: '', unknown: 'crit', failed: 'crit', claimed: 'warn' };
+  el.innerHTML = `
+    <div class="cabeca"><div>
+      <div class="kicker">// SAÍDA</div>
+      <h1 class="titulo">Histórico de disparos</h1>
+      <p class="chamada">
+        A intenção é gravada antes de tocar a rede. Por isso existe o estado <code style="font-family:var(--mono);color:var(--crit)">unknown</code>:
+        quando a resposta é ambígua, o sistema não repete — chama um humano. Errar para "não repetir" custa uma
+        mensagem atrasada; errar para o outro lado custa uma mensagem duplicada num cliente, e isso não se desfaz.
+      </p>
+    </div></div>
+    ${lista.length ? `<div class="tabela-caixa"><table>
+      <thead><tr><th>Quando</th><th>Cliente</th><th>Gatilho</th><th>Canal</th><th>Status</th><th>Motivo</th></tr></thead>
+      <tbody>${lista.map((d) => `
+        <tr><td class="fraco">${dataHora(d.criado_em)}</td>
+          <td class="forte">${esc(d.cliente_nome)}</td>
+          <td>${esc(d.gatilho_chave)}</td>
+          <td class="fraco">${esc(CANAIS[d.canal_tipo] ?? d.canal_tipo)}</td>
+          <td><span class="tag ${cores[d.status] ?? ''}">${esc(d.status)}</span></td>
+          <td class="fraco">${esc(d.motivo ?? d.politica ?? '—')}</td></tr>`).join('')}
+      </tbody></table></div>`
+      : '<div class="vazio"><h3>Nenhum disparo ainda</h3><p>Vá à régua de contato e dispare a fila do dia.</p></div>'}`;
+};
+
+// ── Visão do grupo ──────────────────────────────────────────────────────────
+VISOES.grupo = async (el) => {
+  const d = await api('/painel/grupo');
+  el.innerHTML = `
+    <div class="cabeca"><div>
+      <div class="kicker">// CONSOLIDADO</div>
+      <h1 class="titulo">Visão do grupo</h1>
+      <p class="chamada">
+        As empresas operam com marca, funil e atendimento independentes. A leitura consolidada atravessa a fronteira
+        de propósito e por isso exige motivo declarado, que fica na auditoria.
+      </p>
+    </div></div>
+
+    <div class="aviso">
+      <strong>Motivo declarado desta leitura:</strong> ${esc(d.motivo)}
+    </div>
+
+    <div class="grade g4">
+      <div class="cartao kpi acento"><div class="r">RECEITA DO GRUPO · 30D</div><div class="v ac">${moeda(d.consolidado.receita30d)}</div></div>
+      <div class="cartao kpi"><div class="r">CLIENTES</div><div class="v">${numero(d.consolidado.clientes)}</div>
+        <div class="n">${numero(d.consolidado.consentidos)} com consentimento</div></div>
+      <div class="cartao kpi"><div class="r">VEÍCULOS</div><div class="v">${numero(d.consolidado.veiculos)}</div></div>
+      <div class="cartao kpi"><div class="r">PIPELINE ABERTO</div><div class="v">${moeda(d.consolidado.pipelineAberto)}</div></div>
+    </div>
+
+    <h2 class="secao">Por empresa</h2>
+    <div class="tabela-caixa"><table>
+      <thead><tr><th>Empresa</th><th class="num">Clientes</th><th class="num">Consentidos</th>
+        <th class="num">Veículos</th><th class="num">Receita 30d</th><th class="num">Pipeline aberto</th></tr></thead>
+      <tbody>${d.empresas.map((e) => `
+        <tr><td>
+            <span class="empresa-cod" style="background:${esc(e.cor)};display:inline-grid;vertical-align:middle;margin-right:8px">${esc(e.codigo)}</span>
+            <span class="forte">${esc(e.nome)}</span>
+          </td>
+          <td class="num">${numero(e.clientes)}</td>
+          <td class="num">${numero(e.consentidos)}</td>
+          <td class="num">${numero(e.veiculos)}</td>
+          <td class="num">${moeda(e.receita_os_30d + e.receita_pedidos_30d)}</td>
+          <td class="num">${moeda(e.pipeline_aberto)}</td></tr>`).join('')}
+      </tbody></table></div>
+
+    <div class="aviso" style="margin-top:20px">
+      <strong>Como o isolamento funciona.</strong> Cada linha acima veio de uma consulta filtrada por empresa.
+      Um operador da oficina não enxerga nada da fazenda — o servidor recusa a troca de empresa que não esteja
+      no vínculo do usuário, e a interface nunca decide isso sozinha.
+    </div>`;
+};
+
+// ── Auditoria ───────────────────────────────────────────────────────────────
+VISOES.auditoria = async (el) => {
+  const [linhas, v] = await Promise.all([api('/auditoria'), api('/auditoria/verificar')]);
+  el.innerHTML = `
+    <div class="cabeca"><div>
+      <div class="kicker">// GOVERNANÇA</div>
+      <h1 class="titulo">Auditoria</h1>
+      <p class="chamada">Registro append-only encadeado por SHA-256. Cada linha carrega o hash da anterior.</p>
+    </div></div>
+
+    <div class="aviso ${v.integra ? 'ok' : 'crit'}">
+      <strong>${v.integra ? 'Cadeia íntegra' : `${v.quebras.length} quebra(s) detectada(s)`}</strong>
+      — ${numero(v.total)} registros verificados.
+      <div style="color:var(--dim);margin-top:8px;font-size:12.5px">${esc(v.observacao)}</div>
+    </div>
+
+    <div class="tabela-caixa"><table>
+      <thead><tr><th class="num">#</th><th>Quando</th><th>Ator</th><th>Ação</th><th>Entidade</th><th>Hash</th></tr></thead>
+      <tbody>${linhas.map((l) => `
+        <tr><td class="num fraco">${esc(l.seq)}</td>
+          <td class="fraco">${dataHora(l.criado_em)}</td>
+          <td>${esc(l.ator)}</td>
+          <td class="forte">${esc(l.acao)}</td>
+          <td class="fraco">${esc(l.entidade ?? '—')}</td>
+          <td class="fraco" style="font-family:var(--mono);font-size:11px">${esc(String(l.hash).slice(0, 16))}…</td></tr>`).join('')}
+      </tbody></table></div>`;
+};
+
+// ── Importação ──────────────────────────────────────────────────────────────
+VISOES.importar = async (el) => {
+  el.innerHTML = `
+    <div class="cabeca"><div>
+      <div class="kicker">// MIGRAÇÃO</div>
+      <h1 class="titulo">Importar base de clientes</h1>
+      <p class="chamada">
+        Cole o CSV da base existente. Colunas reconhecidas: <code style="font-family:var(--mono)">nome</code>,
+        <code style="font-family:var(--mono)">telefone</code>, <code style="font-family:var(--mono)">email</code>,
+        <code style="font-family:var(--mono)">cidade</code>, <code style="font-family:var(--mono)">consentimento</code>.
+      </p>
+    </div></div>
+
+    <div class="aviso warn">
+      <strong>Regra de operação.</strong> Contato sem consentimento registrado entra na base como histórico, mas
+      fica <strong>fora da régua</strong> até alguém coletar a autorização. A régua não é para onde se joga uma
+      lista comprada — é para quem já falou com a empresa.
+    </div>
+
+    <div class="campo">
+      <label>CSV (com cabeçalho na primeira linha)</label>
+      <textarea id="csv" rows="12" placeholder="nome,telefone,email,cidade,consentimento
+João da Silva,5538998112233,joao@exemplo.com,Januária,sim"
+        style="font-family:var(--mono);font-size:12.5px"></textarea>
+    </div>
+    <button class="btn" id="importar">Importar</button>
+    <div id="resultado" style="margin-top:18px"></div>`;
+
+  el.querySelector('#importar').onclick = async (ev) => {
+    ev.currentTarget.disabled = true;
+    try {
+      const r = await api('/importar/clientes', {
+        method: 'POST', corpo: { csv: el.querySelector('#csv').value },
+      });
+      el.querySelector('#resultado').innerHTML = `
+        <div class="aviso ok">
+          <strong>${numero(r.criados)} cliente(s) importado(s).</strong>
+          ${r.duplicados ? `${numero(r.duplicados)} ignorado(s) por telefone já cadastrado.` : ''}
+        </div>
+        ${r.aviso ? `<div class="aviso warn">${esc(r.aviso)}</div>` : ''}`;
+    } catch (e) {
+      el.querySelector('#resultado').innerHTML = `<div class="aviso crit">${esc(e.message)}</div>`;
+    }
+    ev.currentTarget.disabled = false;
+  };
+};
+
+// ── Telas de aquisição e central ────────────────────────────────────────────
+// As telas recebem só o que usam. A lista explícita é o contrato: no dia em
+// que ela crescer demais, é sinal de que a tela virou outra coisa.
+const UI = {
+  api, esc, moeda, numero, data, dataHora, toast,
+  abrirGaveta: (html) => abrirGaveta(html),
+  navegar: () => navegar(),
+};
+
+VISOES.central = telaCentral(UI);
+VISOES.conversoes = telaConversoes(UI);
+VISOES.atribuicao = telaAtribuicao(UI);
+VISOES.canais = telaCanais(UI);
+
+// ── Manual ──────────────────────────────────────────────────────────────────
+VISOES.manual = async (el) => {
+  el.innerHTML = manualHtml(estado.empresa?.codigo);
+  ligarManual(el, (rota) => { location.hash = rota; });
+};
+
+// ── Gaveta ──────────────────────────────────────────────────────────────────
+function abrirGaveta(html) {
+  fecharGaveta();
+  const veu = document.createElement('div');
+  veu.className = 'veu';
+  veu.onclick = fecharGaveta;
+  const g = document.createElement('aside');
+  g.className = 'gaveta';
+  g.innerHTML = html;
+  document.body.append(veu, g);
+  g.querySelector('[data-fechar]')?.addEventListener('click', fecharGaveta);
+}
+
+function fecharGaveta() {
+  document.querySelector('.veu')?.remove();
+  document.querySelector('.gaveta')?.remove();
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharGaveta(); });
+
+// ── Início ──────────────────────────────────────────────────────────────────
+(async function iniciar() {
+  if (!estado.token) return renderLogin();
+  try {
+    const d = await api('/sessao');
+    estado.usuario = d.usuario;
+    estado.empresas = d.empresas;
+    estado.demoMode = d.demoMode;
+    estado.empresa = d.empresas.find((e) => e.instancia === localStorage.getItem('fortcrm.empresa')) ?? d.empresas[0];
+    renderShell();
+  } catch {
+    renderLogin();
+  }
+})();

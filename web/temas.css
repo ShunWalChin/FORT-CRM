@@ -1,0 +1,241 @@
+/* =============================================================================
+   FORT-CRM — temas.
+   Carregado DEPOIS de styles.css: os blocos abaixo sobrescrevem os tokens do
+   `:root`, nunca as regras de layout.
+
+   Cada tema existe por um contexto de uso real, não por variedade de cor:
+
+     cockpit     escuro, herança Palantyr — demonstração e uso noturno
+     oficina     claro industrial — balcão de peças sob luz fluorescente
+     cerrado     claro quente — fazenda, tela vista sob sol
+     papel       contraste máximo, corpo em serifa — vista cansada, impressão
+     meia-noite  escuro quente, pouco azul — plantão de guincho 24h
+
+   O acento é a COR DA EMPRESA (`--empresa-cor`, pintada pelo JS) — é o sinal
+   periférico de qual tenant está na tela. Nos temas claros ele é escurecido
+   com `color-mix`, senão o ciano #00b8c4 da Minas Peças sobre fundo claro fica
+   em 1.9:1, abaixo de qualquer mínimo.
+
+   As proporções da mistura e os tons de `--faint` foram MEDIDOS no navegador,
+   pintando a cor num canvas e lendo o pixel — `getComputedStyle` devolve
+   `oklab(...)` para valores vindos de `color-mix`, e calcular luminância em
+   cima desses números como se fossem RGB dá resultado sem sentido. Alvo:
+   4.5:1 para texto e 3:1 para elemento de interface.
+   ============================================================================= */
+
+/* ── 1. Cockpit — o padrão ────────────────────────────────────────────────── */
+:root,
+[data-tema="cockpit"] {
+  --ground: #06060e;
+  --surface: #0b0b18;
+  --surface-2: #0f1020;
+  --surface-3: #14152a;
+  --line: #171b33;
+  --line-strong: #232849;
+
+  --txt: #d6deea;
+  --txt-hi: #ffffff;
+  --dim: #7c88a6;
+  --faint: #737fa0;
+
+  --ok: #35d6a4;
+  --warn: #e8a33d;
+  --crit: #ff2d78;
+
+  --acento: var(--empresa-cor, #00b8c4);
+  --sobre-acento: #04121a;
+  --sobre-crit: #12000a;
+  --veu: rgba(3, 3, 10, .72);
+  --sombra: 0 18px 44px rgba(0, 0, 0, .5);
+  --brilho-hover: 1.12;
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* ── 2. Oficina — claro industrial ────────────────────────────────────────── */
+/* Concreto e tinta. O balcão de peças é o lugar mais iluminado da operação e
+   o tema escuro vira espelho ali. */
+[data-tema="oficina"] {
+  --ground: #eceae4;
+  --surface: #f7f6f2;
+  --surface-2: #e6e3db;
+  --surface-3: #dbd7cd;
+  --line: #cfcabd;
+  --line-strong: #b3ac9c;
+
+  --txt: #2b2a27;
+  --txt-hi: #111110;
+  --dim: #6a675f;
+  --faint: #6e6a61;
+
+  --ok: #1c7a52;
+  --warn: #9a5b06;
+  --crit: #b21f45;
+
+  --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 58%, #000);
+  --sobre-acento: #ffffff;
+  --sobre-crit: #ffffff;
+  --veu: rgba(30, 28, 24, .55);
+  --sombra: 0 14px 34px rgba(60, 55, 45, .18);
+  --brilho-hover: .92;
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* ── 3. Cerrado — claro quente ────────────────────────────────────────────── */
+/* Osso, mata e ocre. É a fazenda: a tela é vista em varanda, sob sol oblíquo. */
+[data-tema="cerrado"] {
+  --ground: #f4efe2;
+  --surface: #fbf8ef;
+  --surface-2: #eee7d5;
+  --surface-3: #e3dac3;
+  --line: #d9cfb6;
+  --line-strong: #bfb191;
+
+  --txt: #322d22;
+  --txt-hi: #1a1710;
+  --dim: #6e6552;
+  --faint: #746b56;
+
+  --ok: #2f6b32;
+  --warn: #8a5710;
+  --crit: #a33127;
+
+  --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 50%, #2a1f10);
+  --sobre-acento: #fdfaf2;
+  --sobre-crit: #fdfaf2;
+  --veu: rgba(45, 38, 24, .55);
+  --sombra: 0 14px 34px rgba(90, 74, 44, .2);
+  --brilho-hover: .92;
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.6;
+}
+
+/* ── 4. Papel — legibilidade acima de tudo ────────────────────────────────── */
+/* Corpo em serifa, um ponto maior, entrelinha aberta, contraste no teto.
+   Para quem enxerga mal, para sol direto na tela e para o que vai ser
+   impresso — o laudo de OS sai daqui. */
+[data-tema="papel"] {
+  --ground: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f2f2f0;
+  --surface-3: #e6e6e3;
+  --line: #d2d2ce;
+  --line-strong: #9b9b96;
+
+  --txt: #16161a;
+  --txt-hi: #000000;
+  --dim: #4d4d52;
+  --faint: #6e6e73;
+
+  --ok: #10603c;
+  --warn: #7a4300;
+  --crit: #97102e;
+
+  --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 62%, #000);
+  --sobre-acento: #ffffff;
+  --sobre-crit: #ffffff;
+  --veu: rgba(0, 0, 0, .5);
+  --sombra: 0 10px 26px rgba(0, 0, 0, .16);
+  --brilho-hover: .9;
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --corpo-tam: 16.5px;
+  --corpo-altura: 1.68;
+}
+
+/* ── 5. Meia-noite — escuro quente ────────────────────────────────────────── */
+/* Cinzas quentes, âmbar no lugar do ciano, azul reduzido. O plantão do guincho
+   é literalmente de madrugada, e é a tela que fica ligada a noite inteira. */
+[data-tema="meia-noite"] {
+  --ground: #14110f;
+  --surface: #1c1815;
+  --surface-2: #241f1a;
+  --surface-3: #2e2721;
+  --line: #332c25;
+  --line-strong: #473d33;
+
+  --txt: #e4dbd0;
+  --txt-hi: #fff8f0;
+  --dim: #9c8f81;
+  --faint: #968678;
+
+  --ok: #7fbf6a;
+  --warn: #e0a35c;
+  --crit: #e8705a;
+
+  --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 55%, #f0a860);
+  --sobre-acento: #1a1410;
+  --sobre-crit: #1a0d08;
+  --veu: rgba(12, 9, 7, .74);
+  --sombra: 0 18px 44px rgba(0, 0, 0, .55);
+  --brilho-hover: 1.12;
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* ── Derivados ────────────────────────────────────────────────────────────── */
+/* Calculados a partir dos tokens acima para que um tema novo só precise
+   declarar as cores-base. `color-mix` no lugar de rgba fixo: o mesmo verde
+   sobre fundo claro e sobre fundo escuro precisa de opacidades diferentes
+   para ter o mesmo peso visual. */
+:root {
+  --acento-dim: color-mix(in srgb, var(--acento) 14%, transparent);
+  --acento-borda: color-mix(in srgb, var(--acento) 42%, transparent);
+  --ok-dim: color-mix(in srgb, var(--ok) 13%, transparent);
+  --warn-dim: color-mix(in srgb, var(--warn) 13%, transparent);
+  --crit-dim: color-mix(in srgb, var(--crit) 13%, transparent);
+  --ok-borda: color-mix(in srgb, var(--ok) 34%, transparent);
+  --warn-borda: color-mix(in srgb, var(--warn) 36%, transparent);
+  --crit-borda: color-mix(in srgb, var(--crit) 36%, transparent);
+}
+
+body {
+  background: var(--ground);
+  color: var(--txt);
+  font: var(--corpo-tam) / var(--corpo-altura) var(--corpo);
+}
+h1, h2, h3, .marca, .kpi .v, th, .btn, nav.menu a, .rot, .kicker {
+  font-family: var(--sans);
+}
+
+/* ── Seletor de tema ──────────────────────────────────────────────────────── */
+.temas { display: flex; gap: 6px; margin-bottom: 10px; }
+.tema-btn {
+  flex: 1; height: 26px; border-radius: var(--radius); cursor: pointer;
+  border: 1px solid var(--line-strong); padding: 0; position: relative;
+  display: grid; place-items: center;
+}
+.tema-btn:hover { border-color: var(--acento); }
+.tema-btn[aria-pressed="true"] {
+  border-color: var(--acento); box-shadow: 0 0 0 1px var(--acento);
+}
+.tema-btn i {
+  width: 11px; height: 11px; border-radius: 50%; display: block;
+  border: 1px solid rgba(128, 128, 128, .5);
+}
+
+/*
+ * No celular a bolinha de tema é um alvo de toque como qualquer outro. Medido
+ * em 375 px, ela saía com 26 px de altura — abaixo do piso que o resto do
+ * sistema usa (32 px nos botões `.sm`). Aqui elas ganham 38 px, porque o
+ * rodapé da lateral é justamente onde o polegar alcança pior.
+ */
+@media (max-width: 860px) {
+  .temas { gap: 8px; margin-bottom: 12px; }
+  .tema-btn { height: 38px; }
+  .tema-btn i { width: 14px; height: 14px; }
+}

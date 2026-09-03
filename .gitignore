@@ -1,0 +1,32 @@
+# Bases SQLite — dados de demonstração e de produção nunca vão para o repo.
+# O sistema recria a carga sozinho na primeira subida.
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Pacote de exportação: artefato gerado, não fonte.
+export/
+
+# Segredos. Nunca versionar.
+.env
+.env.*
+*.key
+*.pem
+*.crt
+cred.json
+credentials.json
+
+# Logs locais
+*.log
+*.err
+srv.log
+srv.err
+
+# Sistema operacional e editor
+node_modules/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

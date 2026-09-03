@@ -1,0 +1,321 @@
+/* =============================================================================
+   FORT-CRM — versão mobile.
+   Carregado depois de styles.css e temas.css.
+
+   Não é o desktop encolhido. Medido antes de escrever uma linha daqui, num
+   aparelho de 375 px:
+
+     Clientes         tabela de 936 px numa caixa de 343 — 593 px escondidos
+     Ordens de serviço 903 px de tabela, 9 colunas
+     Régua de contato  12.136 px de altura para 16 itens
+     Painel            2.868 px antes de qualquer ação
+
+   Quem usa isto no celular é o atendente de balcão com o cliente na frente e o
+   pintor no telefone. Ele precisa de três coisas: a fila de hoje, achar um
+   cliente e mandar a mensagem. O resto pode esperar o computador.
+
+   Duas decisões estruturais:
+
+   1. TABELA VIRA CARTÃO. Rolar de lado, linha por linha, para ler sete colunas
+      é trabalho, não interface. Vertical é o eixo que sobra num celular.
+   2. NAVEGAÇÃO NO RODAPÉ. O polegar alcança a base da tela, não o topo. Menu
+      atrás de um botão no alto custa dois toques e uma rolagem para tudo.
+   ============================================================================= */
+
+@media (max-width: 820px) {
+
+  /* ── Barra de topo: identidade e empresa ───────────────────────────────── */
+  .lado-topo { padding: 10px 14px; }
+  .marca { font-size: 13.5px; }
+  .marca-sub { font-size: 10px; }
+
+  /* ── Navegação de polegar ──────────────────────────────────────────────── */
+  /* Fica FORA da lateral de propósito: a lateral recolhe, e a navegação
+     principal não pode recolher junto. */
+  .nav-baixo {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    background: var(--surface);
+    border-top: 1px solid var(--line-strong);
+    /* Área segura do iPhone: sem isto o último item fica sob a barra de
+       gestos e o toque abre o multitarefa em vez do botão. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, .16);
+  }
+  .nav-baixo a {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; padding: 9px 4px 8px; min-height: 56px;
+    color: var(--dim); text-decoration: none;
+    font-size: 10.5px; letter-spacing: .2px; font-weight: 600;
+    border-top: 2px solid transparent;
+    position: relative;
+  }
+  .nav-baixo a svg { width: 21px; height: 21px; }
+  .nav-baixo a.on { color: var(--acento); border-top-color: var(--acento); }
+  .nav-baixo a:active { background: var(--surface-2); }
+  .nav-baixo .contador {
+    position: absolute; top: 5px; left: 50%; margin-left: 4px;
+    background: var(--crit); color: var(--sobre-crit);
+    font: 700 9.5px var(--mono); line-height: 1;
+    padding: 3px 5px; border-radius: 20px; min-width: 16px; text-align: center;
+  }
+
+  /* O conteúdo termina acima da barra, senão o último item fica inalcançável. */
+  main { padding: 16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
+
+  /* ── Painel: menos números grandes, mais atalho ────────────────────────── */
+  .grade.g4 { grid-template-columns: repeat(2, 1fr); gap: 9px; }
+  .cartao { padding: 13px 14px; }
+  .kpi .v { font-size: 22px; }
+  .kpi .r { font-size: 9.5px; }
+  .kpi .n { font-size: 11px; }
+  .cabeca .btn { width: 100%; }
+
+  h1.titulo { font-size: 21px; }
+  p.chamada { font-size: 13.5px; }
+  h2.secao { margin: 22px 0 9px; }
+
+  /* ── Manual: índice recolhido ──────────────────────────────────────────── */
+  .manual-indice { padding: 10px; }
+  .manual-tela { padding: 15px 16px; }
+
+  /* ── Barra de busca ────────────────────────────────────────────────────── */
+  .barra-busca { gap: 8px; }
+  .barra-busca input, .barra-busca select { min-width: 0; flex: 1 1 100%; min-height: 42px; }
+
+  /* Toque confortável em tudo que é clicável dentro do conteúdo. */
+  .btn { min-height: 42px; }
+  .btn.sm { min-height: 36px; }
+
+  /* O aviso de simulação ocupava a lateral inteira; no celular vira discreto. */
+  .demo-fita { font-size: 10px; padding: 6px 8px; }
+}
+
+/* Telas bem estreitas: o rótulo do cartão vai para cima do valor. */
+
+
+/* =============================================================================
+   Segundo corte: 640 px.
+
+   O primeiro corte (820 px) trata do FORMATO DA JANELA — a lateral não cabe
+   ao lado do conteúdo, e o polegar precisa da barra de baixo. Um tablet
+   deitado, com 812 px, se beneficia dos dois.
+
+   Este trata da LARGURA DO CONTEÚDO. Transformar tabela em cartão a 812 px
+   seria destruir uma tabela que cabe folgada — a de Clientes tem 936 px de
+   conteúdo, e a 812 rola um pouco; a 375 esconde 593 px. Só abaixo de 640 a
+   tabela deixa de ser legível e o cartão passa a ser o formato certo.
+
+   Dois números porque são duas perguntas diferentes. Um número só respondia
+   mal a uma delas.
+   ============================================================================= */
+@media (max-width: 640px) {
+  /* ── Tabela vira cartão ────────────────────────────────────────────────── */
+  /* Os rótulos vêm de `data-rot`, carimbado pelo JS a partir do `<th>`. Fazer
+     isso depois da renderização evita reescrever as onze telas que têm tabela
+     — e mantém uma fonte de verdade só para os cabeçalhos. */
+  .tabela-caixa { border: none; background: none; overflow: visible; }
+  .tabela-caixa table,
+  .tabela-caixa thead,
+  .tabela-caixa tbody,
+  .tabela-caixa tr,
+  .tabela-caixa td { display: block; width: auto; }
+  .tabela-caixa thead { display: none; }
+
+  .tabela-caixa tr {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius-lg); padding: 13px 15px; margin-bottom: 9px;
+  }
+  .tabela-caixa tr.clicavel:active { border-color: var(--acento); background: var(--surface-2); }
+
+  .tabela-caixa td {
+    display: grid; grid-template-columns: minmax(84px, 38%) 1fr;
+    gap: 12px; align-items: baseline;
+    padding: 5px 0; border-bottom: none; text-align: left;
+  }
+  .tabela-caixa td::before {
+    content: attr(data-rot);
+    font: 10px var(--mono); letter-spacing: .9px; text-transform: uppercase;
+    color: var(--faint); padding-top: 2px;
+  }
+  /* Célula vazia não vira linha de rótulo órfão. */
+  .tabela-caixa td:empty { display: none; }
+  /* Coluna de ação tem cabeçalho vazio de propósito. Sem rótulo, ela ocupa a
+     largura toda em vez de reservar 84 px para um rótulo que não existe. */
+  .tabela-caixa td:not([data-rot]) { display: block; }
+  .tabela-caixa td:not([data-rot])::before { display: none; }
+  .tabela-caixa td.num, .tabela-caixa td.num { text-align: left; }
+
+  /* A primeira célula é o título do cartão: sem rótulo, maior, com régua
+     embaixo. É o nome do cliente, a placa, o SKU — o que identifica a linha. */
+  .tabela-caixa td:first-child {
+    display: block; font-size: 16px; color: var(--txt-hi); font-weight: 600;
+    padding: 0 0 9px; margin-bottom: 7px; border-bottom: 1px solid var(--line);
+  }
+  .tabela-caixa td:first-child::before { display: none; }
+  .tabela-caixa td:first-child .fraco { font-size: 12.5px; font-weight: 400; }
+
+  /* Botões dentro da tabela ganham a largura toda no cartão. */
+  .tabela-caixa td .btn { width: 100%; margin-top: 4px; }
+  .tabela-caixa td:has(> .btn) { display: block; }
+  .tabela-caixa td:has(> .btn)::before { display: none; }
+
+  /*
+   * Cartão resumido: três campos, o resto atrás de um toque.
+   *
+   * Medido: o cartão de cliente com os sete campos abertos dá 335 px, e a lista
+   * inteira passou de 1.136 px (tabela) para 4.463 px (cartões). Trocar rolagem
+   * lateral por uma página quatro vezes mais longa não é conserto.
+   *
+   * Três campos é o que identifica a linha sem exigir decisão de leitura. E na
+   * maioria das listas a própria linha abre a ficha — onde está tudo.
+   */
+  /*
+   * A célula de AÇÃO fica de fora do resumo.
+   *
+   * Em Ordens de serviço o botão "Ver laudo" é a nona coluna, e a regra de
+   * resumo o escondia junto com o resto — a ação principal da linha só
+   * aparecia depois de expandir. Esconder informação secundária é o objetivo;
+   * esconder o botão é quebrar a tela.
+   *
+   * O filtro é duplo de propósito: `[data-rot]` deixa passar a coluna sem
+   * cabeçalho (que é sempre ação), e `:not(:has(.btn))` deixa passar qualquer
+   * célula que contenha botão, mesmo que a coluna tenha nome.
+   */
+  .tabela-caixa tr:not(.aberto) td:nth-child(n+4)[data-rot]:not(:has(.btn)) { display: none; }
+  .abrir-linha {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 8px; padding: 6px 10px; min-height: 34px;
+    background: none; border: 1px solid var(--line-strong); border-radius: var(--radius);
+    color: var(--dim); font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .abrir-linha:active { border-color: var(--acento); color: var(--txt-hi); }
+  .abrir-linha .seta { transition: transform .15s; font-size: 10px; }
+  tr.aberto .abrir-linha .seta { transform: rotate(180deg); }
+
+  /* ── Régua: o item cabia em 750 px; agora cabe em um terço disso ───────── */
+  /*
+   * O cabeçalho da fila é fixo e media 176 px — quase um quarto de uma tela de
+   * 812, ocupado o tempo todo por dois botões e uma contagem. Numa lista que se
+   * percorre rolando, o que fica preso no topo tem de ganhar o espaço.
+   */
+  .regua-topo {
+    padding: 9px 12px; gap: 7px; border-radius: var(--radius);
+    top: 0; margin-bottom: 10px;
+  }
+  /* Grade em vez de flex: em flex os cinco filhos quebravam em quatro linhas.
+     Aqui sao tres — marcar todos, as contagens, e o botao inteiro. */
+  .regua-topo { display: grid; grid-template-columns: auto 1fr; align-items: center; }
+  .regua-topo label { grid-column: 1 / -1; font-size: 13px; }
+  /* O espacador so existia para empurrar no flex. */
+  .regua-topo span[style*="flex"] { display: none; }
+  .regua-topo .conta { font-size: 11.5px; line-height: 1.3; white-space: nowrap; }
+  .regua-topo .conta b { font-size: 14px; }
+  .regua-topo .conta:last-of-type { text-align: right; }
+  .regua-topo .btn { grid-column: 1 / -1; min-height: 40px; font-size: 13px; margin-top: 3px; }
+
+  .item { padding: 13px 14px; gap: 10px; grid-template-columns: 26px 1fr; }
+  .item h4 { font-size: 15px; line-height: 1.3; }
+  .item .contexto { font-size: 12px; }
+  .item .linha-meta { margin: 5px 0 7px; gap: 6px; }
+
+  /*
+   * A mensagem nasce com duas linhas e abre ao receber o foco.
+   *
+   * Medido: 108 px por item, 22 itens. E no celular quase ninguém edita aqui —
+   * toca em "Abrir no WhatsApp", que já leva o texto, e ajusta lá se precisar.
+   * Duas linhas bastam para reconhecer a mensagem; quem quiser reescrever toca
+   * no campo e ele cresce.
+   */
+  /* `height`, e nao `min-height`: o campo vem com rows=4 do HTML, e um minimo
+     menor nao encolhe nada — so um piso que ja estava satisfeito. */
+  textarea.mensagem.editavel {
+    height: 50px; min-height: 0; font-size: 13px; padding: 8px 11px;
+    transition: height .15s;
+  }
+  textarea.mensagem.editavel:focus { height: 170px; }
+
+  /*
+   * Uma linha só: o WhatsApp com o dobro da largura, porque é a ação real do
+   * celular. Empilhados eles custavam 86 px por item.
+   */
+  .acoes-msg { display: grid; grid-template-columns: 1.7fr 1fr; gap: 7px; margin-top: 8px; }
+  .acoes-msg .btn { width: 100%; min-height: 40px; padding: 0 10px; font-size: 12.5px; }
+  .acoes-msg [data-zap] { order: -1; }
+
+  /*
+   * O veredito era o maior pedaço do item: 160 px dos 556 medidos.
+   *
+   * Num item LIBERADO ele só confirma o que já se sabe — a linha está na fila
+   * porque passou. Vira tarja de uma linha. Num item BLOQUEADO ele é a
+   * informação principal, e continua inteiro: é ali que se lê por que aquele
+   * cliente não pode receber mensagem.
+   */
+  .veredito { padding: 9px 0 0; margin-top: 9px; }
+  .veredito .r { display: inline; margin-right: 8px; font-size: 9.5px; }
+  .veredito .motivo { font-size: 12px; margin-top: 5px; }
+
+  .item:not(.bloqueado) .veredito .r { display: none; }
+  .item:not(.bloqueado) .veredito .motivo { display: none; }
+  .item:not(.bloqueado) .veredito [data-ficha] { margin-top: 0 !important; }
+  .item:not(.bloqueado) .veredito {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+
+  /* Contexto e etiquetas somavam 93 px de informação secundária por item. */
+  .item .contexto { font-size: 11.5px; line-height: 1.4; }
+  .item .linha-meta { margin: 3px 0 5px; gap: 5px; }
+  .item .linha-meta .tag { font-size: 9.5px; padding: 1px 6px; }
+  .item { padding: 12px 13px; }
+
+  /* ── Ficha do cliente: folha que sobe, não gaveta lateral ──────────────── */
+  .gaveta {
+    top: auto; height: 92vh; width: 100%;
+    border-left: none; border-top: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 8px 18px calc(30px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Alça: diz que a folha se fecha puxando, antes de qualquer instrução. */
+  .gaveta::before {
+    content: ''; display: block; width: 40px; height: 4px; border-radius: 3px;
+    background: var(--line-strong); margin: 6px auto 14px;
+  }
+  .gaveta-topo { position: sticky; top: 0; background: var(--surface); padding-bottom: 10px; z-index: 2; }
+  .gaveta h2 { font-size: 18px; }
+  .par { flex-direction: column; gap: 2px; align-items: flex-start; }
+  .par dd { text-align: left; }
+
+  /* ── Kanban: uma coluna por vez, deslizando ────────────────────────────── */
+  .kanban {
+    grid-auto-flow: column; grid-auto-columns: 86%;
+    grid-template-columns: none;
+    scroll-snap-type: x mandatory; gap: 10px;
+    margin: 0 -14px; padding: 0 14px 14px;
+  }
+  .coluna { scroll-snap-align: start; }
+}
+
+/*
+ * Telas bem estreitas: o rótulo do cartão vai para cima do valor.
+ *
+ * As AÇÕES continuam lado a lado. Empilhá-las aqui desfazia, num aparelho de
+ * 375 px — que é a maioria —, justamente a economia de altura que a regra de
+ * cima acabou de fazer.
+ */
+@media (max-width: 400px) {
+  .tabela-caixa td { grid-template-columns: 1fr; gap: 1px; }
+  .tabela-caixa td::before { padding-top: 0; }
+  .acoes-msg .btn { font-size: 12px; padding: 0 8px; }
+}
+
+/* Em pé e deitado o polegar muda de lugar; deitado, a barra encolhe. */
+@media (max-width: 820px) and (orientation: landscape) {
+  .nav-baixo a { min-height: 46px; font-size: 10px; padding: 5px 4px; }
+  .nav-baixo a svg { width: 18px; height: 18px; }
+  main { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* Acima do ponto de corte a navegação de polegar não existe. */
+@media (min-width: 821px) {
+  .nav-baixo { display: none; }
+}

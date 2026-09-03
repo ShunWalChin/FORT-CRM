@@ -1,0 +1,17 @@
+# Configuração do túnel do CRM.
+# Instalar em /etc/cloudflared/config.yml
+#
+# O cloudflared abre uma conexão de SAÍDA para a Cloudflare. Nenhuma porta é
+# aberta no servidor; a origem continua em loopback.
+
+tunnel: <TUNNEL-ID>
+credentials-file: /etc/cloudflared/<TUNNEL-ID>.json
+
+ingress:
+  - hostname: crm.fattech.com.br
+    service: http://127.0.0.1:4501
+    originRequest:
+      connectTimeout: 10s
+      noHappyEyeballs: true
+  # Regra final obrigatória: o que não casar acima é recusado.
+  - service: http_status:404
