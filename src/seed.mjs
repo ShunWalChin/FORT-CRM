@@ -355,8 +355,15 @@ function semearInterno(banco, codigo, reset) {
    */
   const senhaInicial = process.env.FORTCRM_SENHA_INICIAL || 'demo';
   const usuarios = [
+    // `root` existe alem da `diretoria` porque sao coisas diferentes: um e o
+    // acesso tecnico, o outro e uma pessoa da empresa. Confundir os dois faz
+    // ninguem querer revogar o acesso tecnico quando o diretor sai.
+    ['Root do sistema', 'root@fortgrupo.com.br', senhaInicial, 'soberano'],
     ['Direção do Grupo', 'diretoria@fortgrupo.com.br', senhaInicial, 'soberano'],
     ['Gerência Comercial', 'comercial@fortgrupo.com.br', senhaInicial, 'gestor'],
+    // Somente leitura: ve o que o balcao ve e nao grava nada. Serve para
+    // contador, auditor externo e para quem esta aprendendo o sistema.
+    ['Consulta (somente leitura)', 'consulta@fortgrupo.com.br', senhaInicial, 'leitura'],
     [`Atendimento ${meta.nome}`, operadorDe(codigo), senhaInicial, 'operador'],
   ];
   for (const [nome, email, senha, papel] of usuarios) {

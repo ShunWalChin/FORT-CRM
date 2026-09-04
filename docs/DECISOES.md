@@ -276,6 +276,36 @@ a string e o arquivo deixa de fazer parse. Aconteceu duas vezes.
 
 ## Segurança
 
+### O papel filtrava o menu e não recusava nada
+
+`papel` estava no schema desde o início, `visivelNoMenu()` o usava para esconder
+telas — e **o servidor nunca o verificava**. Verificado chamando as rotas: um
+`operador` acessava `/api/auditoria`, `/api/conversoes`, `/api/central/resumo` e
+**executava** `POST /api/central/sincronizar` digitando o endereço.
+
+Eu havia documentado "o menu por papel é organização, não segurança: quem
+digitar a URL chega igual, e é o servidor que recusa". A primeira metade estava
+certa; a segunda era falsa.
+
+Agora há uma tabela de papel mínimo por rota, e a recusa acontece em
+`contexto()`. O despachante carimba `req.rotaChave` com o **padrão** da rota
+(`GET /api/clientes/:id`), não com o caminho pedido — senão cada id viraria uma
+entrada diferente na tabela.
+
+**O padrão de rota não declarada é `operador`**, o mais restrito que ainda deixa
+o sistema funcionar: esquecer de declarar uma rota nova a torna inacessível para
+`leitura`, e não acessível para todo mundo. Há teste varrendo a lista inteira de
+rotas de governança.
+
+### `leitura` não é um degrau abaixo de `operador`
+
+É outra coisa: vê o que o operador vê e **não escreve nada**. Tratado como
+degrau numa escala, seria recusado em quase tudo e a conta nasceria inútil — o
+que quase aconteceu. Qualquer método diferente de `GET` é recusado, declarado ou
+não.
+
+## Segurança
+
 ### Sem segredo, a porta fica **fechada**
 
 O webhook do WhatsApp recusa tudo quando `FORTCRM_META_APP_SECRET` não está

@@ -24,9 +24,10 @@ WORKDIR /app
 COPY --chown=node:node server.mjs ./
 COPY --chown=node:node src/ ./src/
 COPY --chown=node:node web/ ./web/
-# Rotina de manutenção: backup com VACUUM INTO e reancoragem da demonstração.
-# Roda por timer no host, via `docker exec`.
-COPY --chown=node:node deploy/manutencao.mjs ./deploy/
+# Scripts operacionais, rodados por timer ou `docker exec`: manutenção (backup
+# com VACUUM INTO e reancoragem) e definição de senhas. Só os .mjs — Dockerfile,
+# compose e config do túnel não têm o que fazer dentro do contêiner.
+COPY --chown=node:node deploy/*.mjs ./deploy/
 
 # Diretório de dados, montado como volume em produção.
 RUN mkdir -p /dados/instancias && chown -R node:node /dados

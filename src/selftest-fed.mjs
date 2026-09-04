@@ -33,7 +33,7 @@ import {
 import { drenarEventos, despacharConversoes, registrarMudancaDeEtapa } from './conversoes-servico.mjs';
 import { novoId, agora } from './db.mjs';
 import { reancorar, ancoraDe, diagnosticoDaAncora } from './reancorar.mjs';
-import { montarRegua } from './api.mjs';
+import { montarRegua, negarPorPapel } from './api.mjs';
 import { diagnosticarFilaVazia } from './regua.mjs';
 import { hashSenha, verificarSenha, ehHash, migrarSenhas, avaliarForca } from './senha.mjs';
 
@@ -1349,6 +1349,51 @@ teste('todo diagnostico diz o que fazer, ou por que nao ha o que fazer', () => {
   verdadeiro(d.texto && d.texto.length > 40, 'o texto precisa dizer o porque');
   // Ou ha acao, ou o motivo ja esta visivel noutro lugar da tela.
   verdadeiro(d.acao || d.causa === 'todos_bloqueados', 'beco sem saida');
+});
+
+/* ── Papel recusado no SERVIDOR, nao so escondido no menu ────────────────── */
+
+teste('a tabela de papeis cobre toda rota de governanca', () => {
+  // O padrao e `operador`. Uma rota de governanca esquecida na tabela ficaria
+  // aberta ao balcao — e o erro seria silencioso.
+  const governanca = [
+    'GET /api/auditoria', 'GET /api/auditoria/verificar', 'GET /api/painel/grupo',
+    'GET /api/central/resumo', 'GET /api/central/leads', 'POST /api/central/sincronizar',
+    'GET /api/atribuicao', 'GET /api/conversoes', 'POST /api/conversoes/processar',
+    'POST /api/propriedades', 'DELETE /api/propriedades/:id', 'POST /api/importar/clientes',
+    'POST /api/demo/reiniciar',
+  ];
+  for (const r of governanca) {
+    verdadeiro(negarPorPapel(r, 'operador'), `operador NAO pode chamar ${r}`);
+    igual(negarPorPapel(r, 'gestor'), null, `gestor pode chamar ${r}`);
+    igual(negarPorPapel(r, 'soberano'), null, `soberano pode chamar ${r}`);
+  }
+});
+
+teste('rota de operacao continua aberta a quem atende', () => {
+  for (const r of ['GET /api/regua', 'GET /api/clientes', 'PATCH /api/clientes/:id',
+    'GET /api/pipeline', 'POST /api/regua/disparar', 'GET /api/canais']) {
+    igual(negarPorPapel(r, 'operador'), null, `operador precisa chamar ${r}`);
+  }
+});
+
+teste('rota nao declarada cai para o lado seguro', () => {
+  // O padrao e `operador`. Uma rota de GOVERNANCA esquecida na tabela ficaria
+  // aberta ao balcao — e por isso o teste acima varre a lista inteira.
+  igual(negarPorPapel('GET /api/rota/nova', 'operador'), null);
+
+  // Para `leitura`, o padrao ainda protege a escrita: qualquer metodo que nao
+  // seja GET e recusado, declarado ou nao.
+  igual(negarPorPapel('GET /api/rota/nova', 'leitura'), null, 'leitura le o que o operador le');
+  verdadeiro(negarPorPapel('POST /api/rota/nova', 'leitura'),
+    'leitura nunca escreve, mesmo em rota que ninguem declarou');
+  igual(negarPorPapel('DELETE /api/rota/nova', 'leitura').motivo, 'somente_leitura');
+});
+
+teste('a recusa diz o papel exigido e o que a pessoa tem', () => {
+  const n = negarPorPapel('GET /api/auditoria', 'operador');
+  igual(n.exigido, 'gestor');
+  igual(n.papel, 'operador');
 });
 
 fed.fecharTudo();

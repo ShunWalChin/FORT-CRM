@@ -171,6 +171,10 @@ const servidor = createServer(async (req, res) => {
     for (const [padrao, mao] of Object.entries(ROTAS)) {
       const params = casar(padrao, req.method, caminho);
       if (params) {
+        // A chave da rota casada, para o contexto poder recusar por papel.
+        // Vem do PADRÃO (`GET /api/clientes/:id`), não do caminho pedido —
+        // senão cada id viraria uma entrada diferente na tabela de permissões.
+        req.rotaChave = padrao;
         const corpo = await lerCorpo(req);
         const saida = await mao(fed, req, params, corpo, url);
         // A verificacao do webhook da Meta espera o `hub.challenge` de volta

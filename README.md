@@ -10,7 +10,7 @@ fontes.
 🔗 **Sistema no ar: [fortcrm.fattech.com.br](https://fortcrm.fattech.com.br)**
 
 ```
-Node ≥ 23.4 · zero dependências · 133 testes · nenhum passo de build
+Node ≥ 23.4 · zero dependências · 139 testes · nenhum passo de build
 ```
 
 ---
@@ -53,7 +53,7 @@ flag a partir dessa versão. No Node 22 ele sobe e morre no primeiro `import`.
 
 ```bash
 node src/selftest.mjs       # 45 testes — CRM de uma empresa
-node src/selftest-fed.mjs   # 88 testes — federação, atribuição, conversão, CTWA
+node src/selftest-fed.mjs   # 94 testes — federação, atribuição, conversão, CTWA
 ```
 
 ### Entrar
@@ -67,6 +67,9 @@ instalador e nunca é `demo`.
 | `balcao@minaspecas.com.br` | operação | Minas Peças |
 | `adenilde@agrofort.com.br` | operação | Agrofort |
 | `loja@forttintas.com.br` | operação | Fort Tintas |
+| `root@fortgrupo.com.br` | soberano | acesso técnico, as três |
+| `comercial@fortgrupo.com.br` | gestor | as três |
+| `consulta@fortgrupo.com.br` | leitura | as três, **sem escrever nada** |
 
 ### A tela de Início
 
@@ -172,7 +175,7 @@ src/
   limite.mjs            teto de requisições por origem
   api.mjs               ~45 rotas
   seed.mjs              carga de demonstração
-  selftest*.mjs         133 testes
+  selftest*.mjs         139 testes
 web/
   app.js                SPA, sem framework
   ui.js                 ícones SVG e temas

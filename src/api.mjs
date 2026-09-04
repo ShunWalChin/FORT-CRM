@@ -146,6 +146,26 @@ function contexto(fed, req, { exigeEmpresa = true, url = null } = {}) {
     id: base.usuarioId, nome: base.usuarioNome, email, papel: base.papel,
   };
 
+  /*
+   * A recusa por papel acontece AQUI, e não na tela.
+   *
+   * `req.rotaChave` é carimbado pelo despachante. Sem ele — chamada interna,
+   * teste — nada é verificado, porque quem chama de dentro já passou por aqui.
+   *
+   * O papel usado é o DA INSTÂNCIA ativa (`base.papel`), não um papel global:
+   * a mesma pessoa pode ser gestora numa empresa e operadora noutra, e é o
+   * vínculo daquela instância que vale.
+   */
+  if (req.rotaChave) {
+    const negado = negarPorPapel(req.rotaChave, usuario.papel);
+    if (negado) {
+      throw new ErroHttp(403, 'papel_insuficiente',
+        negado.motivo === 'somente_leitura'
+          ? 'Seu acesso é somente de leitura — esta ação grava dados.'
+          : `Esta tela é de ${negado.exigido}. Seu acesso é de ${negado.papel}.`);
+    }
+  }
+
   return {
     usuario, empresa, permitidas, fed, banco,
     escopo: empresa ? banco.para(empresa.id) : null,
@@ -276,6 +296,71 @@ function montarRegua(banco, escopo, empresa, { incluirBloqueados = true } = {}) 
 }
 
 // ── Rotas ───────────────────────────────────────────────────────────────────
+/**
+ * Papel mínimo por rota.
+ *
+ * ISTO NÃO EXISTIA. O `papel` era declarado no schema, filtrava o menu no
+ * navegador — e nunca era verificado no servidor. Um `operador` chamava
+ * `/api/auditoria`, `/api/central/sincronizar` e `/api/importar/clientes`
+ * digitando o endereço: o menu escondia, o servidor entregava.
+ *
+ * O menu por papel continua sendo organização de tela. A recusa é aqui.
+ *
+ * Rota que não aparece na tabela exige `operador` — o padrão é o mais restrito
+ * que ainda deixa o sistema funcionar. Esquecer de declarar uma rota nova a
+ * torna inacessível para `leitura`, e não acessível para todo mundo: o erro
+ * cai para o lado seguro.
+ */
+const ORDEM_PAPEL = { leitura: 0, operador: 1, gestor: 2, soberano: 3 };
+
+const PAPEL_MINIMO = {
+  // Governança e dados do grupo inteiro.
+  'GET /api/auditoria': 'gestor',
+  'GET /api/auditoria/verificar': 'gestor',
+  'GET /api/painel/grupo': 'gestor',
+  'GET /api/central/resumo': 'gestor',
+  'GET /api/central/leads': 'gestor',
+  'POST /api/central/sincronizar': 'gestor',
+  'POST /api/central/entrada': 'gestor',
+
+  // Aquisição: decide verba, e o que sai daqui vai para plataforma de anúncio.
+  'GET /api/atribuicao': 'gestor',
+  'GET /api/conversoes': 'gestor',
+  'GET /api/conversoes/:id': 'gestor',
+  'POST /api/conversoes/processar': 'gestor',
+
+  // Escrita estrutural: muda o CRM para todo mundo, não um registro.
+  'POST /api/propriedades': 'gestor',
+  'DELETE /api/propriedades/:id': 'gestor',
+  'POST /api/importar/clientes': 'gestor',
+
+  // Apaga e refaz a base.
+  'POST /api/demo/reiniciar': 'gestor',
+  'POST /api/demo/reancorar': 'gestor',
+};
+
+/**
+ * Quem pode chamar `rota`? `null` quando pode.
+ *
+ * `leitura` nao e "um papel abaixo de operador" numa escala: e OUTRA coisa —
+ * ve o que o operador ve, e nao escreve nada. Tratado como degrau de escala,
+ * ele seria recusado em quase tudo e a conta nasceria inutil.
+ */
+function negarPorPapel(rota, papel) {
+  const exigido = PAPEL_MINIMO[rota] ?? 'operador';
+
+  if (papel === 'leitura') {
+    const metodo = String(rota).split(' ')[0];
+    if (metodo !== 'GET') return { exigido: 'operador', papel, motivo: 'somente_leitura' };
+    // Le o que o operador le. Governanca continua exigindo gestor.
+    return exigido === 'operador' ? null : { exigido, papel };
+  }
+
+  const tem = ORDEM_PAPEL[papel] ?? -1;
+  if (tem >= ORDEM_PAPEL[exigido]) return null;
+  return { exigido, papel };
+}
+
 export const ROTAS = {
   /**
    * Login federado: as credenciais são conferidas em CADA instância, e o
@@ -1747,4 +1832,4 @@ function iso(diasAtras) {
   return new Date(Date.now() - diasAtras * 24 * 60 * 60 * 1000).toISOString();
 }
 
-export { contexto, montarRegua, assinar };
+export { contexto, montarRegua, assinar, negarPorPapel, PAPEL_MINIMO };
