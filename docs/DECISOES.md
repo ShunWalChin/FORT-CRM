@@ -63,6 +63,28 @@ Deliberadamente **não** remove coluna, não renomeia e não muda tipo: isso exi
 recriar a tabela, e essa operação tem de ser escrita e revisada uma a uma, nunca
 inferida por diferença.
 
+### Projeção que só acrescenta é acumulador
+
+A sincronização da central fazia insert-or-update e **nunca removia**. Uma
+projeção cujo cliente de origem sumiu ficava para sempre.
+
+Medido em produção depois de uma recarga da demonstração — que gera ids novos:
+**76 linhas na central para 38 clientes reais**. Metade apontando para gente
+que não existe mais, e a tela do grupo mostrando o dobro do faturamento.
+
+A remoção usa um **carimbo de execução**, e não `not in (lista de ids)`: a
+lista cresce com a base e um dia estoura o limite de parâmetros. O carimbo
+custa dois parâmetros com dez ou com dez mil clientes.
+
+Duas proteções que o teste cobre:
+
+- **`cliente_id is not null`** — o lead que chegou pela porta de captação e
+  ainda está em triagem não é projeção de instância nenhuma. Apagá-lo aqui
+  destruiria a fila de quem ainda não foi atendido.
+- **A remoção só roda depois de a leitura ter dado certo.** Instância fora do
+  ar lança antes, então indisponibilidade de minutos nunca vira perda de dado
+  permanente.
+
 ### Recarregar uma instância exige re-sincronizar a central
 
 A carga gera IDs novos, e a central é uma projeção das três instâncias.

@@ -10,7 +10,7 @@ fontes.
 🔗 **Sistema no ar: [fortcrm.fattech.com.br](https://fortcrm.fattech.com.br)**
 
 ```
-Node ≥ 23.4 · zero dependências · 128 testes · nenhum passo de build
+Node ≥ 23.4 · zero dependências · 133 testes · nenhum passo de build
 ```
 
 ---
@@ -53,7 +53,7 @@ flag a partir dessa versão. No Node 22 ele sobe e morre no primeiro `import`.
 
 ```bash
 node src/selftest.mjs       # 45 testes — CRM de uma empresa
-node src/selftest-fed.mjs   # 83 testes — federação, atribuição, conversão, CTWA
+node src/selftest-fed.mjs   # 88 testes — federação, atribuição, conversão, CTWA
 ```
 
 ### Entrar
@@ -161,7 +161,7 @@ src/
   limite.mjs            teto de requisições por origem
   api.mjs               ~45 rotas
   seed.mjs              carga de demonstração
-  selftest*.mjs         128 testes
+  selftest*.mjs         133 testes
 web/
   app.js                SPA, sem framework
   ui.js                 ícones SVG e temas

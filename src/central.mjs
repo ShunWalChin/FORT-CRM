@@ -40,6 +40,7 @@ export function sincronizarCentral(fed, { codigos = null } = {}) {
   const inicio = agora();
 
   let total = 0;
+  let orfas = 0;
   const porInstancia = [];
 
   for (const cod of alvos) {
@@ -65,6 +66,16 @@ export function sincronizarCentral(fed, { codigos = null } = {}) {
          where c.{ESCOPO}`,
       );
 
+      /*
+       * Marca desta execução. Toda linha tocada recebe ela; o que sobrar com
+       * marca antiga não existe mais na origem e sai. Ver a remoção abaixo.
+       *
+       * Um carimbo em vez de um `not in (...)` com a lista de ids: a lista
+       * cresce com a base e um dia estoura o limite de parâmetros da consulta.
+       * O carimbo custa dois parâmetros, com dez ou dez mil clientes.
+       */
+      const marca = agora();
+
       // Uma transação por instância: 300 linhas em 300 commits é o mesmo erro
       // que já custou 25 segundos na carga inicial.
       central.transacao(() => {
@@ -87,7 +98,7 @@ export function sincronizarCentral(fed, { codigos = null } = {}) {
             valor_centavos: l.ganho_centavos ?? 0,
             consentimento: l.consentimento_lgpd,
             criado_em: l.criado_em,
-            sincronizado_em: agora(),
+            sincronizado_em: marca,
           };
 
           // Índice único é PARCIAL na prática (cliente_id pode ser nulo em lead
@@ -111,6 +122,31 @@ export function sincronizarCentral(fed, { codigos = null } = {}) {
             ).run(novoId(), ...Object.keys(registro).map((c) => registro[c]));
           }
         }
+
+        /*
+         * Remove o que a origem não tem mais.
+         *
+         * A central é PROJEÇÃO das instâncias, e projeção que só acrescenta é
+         * acumulador. Sem isto, recarregar a demonstração — que gera ids novos
+         * — deixava as projeções antigas para trás: medido em produção, 76
+         * linhas para 38 clientes, metade apontando para gente que não existe
+         * mais. A tela do grupo mostrava o dobro do faturamento real.
+         *
+         * `cliente_id is not null` protege o lead que chegou pela porta de
+         * captação e ainda está em triagem: ele não é projeção de instância
+         * nenhuma, e apagá-lo aqui destruiria a fila de quem ainda não virou
+         * cliente.
+         *
+         * Só roda depois de a leitura ter dado certo — instância fora do ar
+         * lança antes de chegar aqui, e por isso indisponibilidade nunca apaga
+         * projeção. Esse é o ponto: o `catch` embaixo existe para que a falha
+         * de uma instância não vire perda de dado.
+         */
+        const removidas = sql.prepare(
+          `delete from leads_consolidados
+           where instancia = ? and cliente_id is not null and sincronizado_em < ?`,
+        ).run(cod, marca);
+        orfas += removidas.changes ?? 0;
       });
 
       total += linhas.length;
@@ -124,7 +160,7 @@ export function sincronizarCentral(fed, { codigos = null } = {}) {
     }
   }
 
-  return { linhas: total, porInstancia, iniciadoEm: inicio, concluidoEm: agora() };
+  return { linhas: total, orfasRemovidas: orfas, porInstancia, iniciadoEm: inicio, concluidoEm: agora() };
 }
 
 /** Leitura consolidada, com filtros de tela. */

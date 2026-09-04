@@ -1210,6 +1210,88 @@ teste('garantirCamposSistema e idempotente', () => {
     'rodar de novo nao pode duplicar');
 });
 
+/* ── A central e PROJECAO, nao acumulador ────────────────────────────────── */
+
+teste('cliente removido da origem sai da central', () => {
+  const central = fed.abrirCentral();
+  const sis = central.sistema();
+
+  sincronizarCentral(fed, { codigos: ['MP'] });
+  const antes = sis.prepare("select count(*) n from leads_consolidados where instancia = 'MP'").get().n;
+  verdadeiro(antes > 0, 'a sincronizacao precisa ter projetado alguma coisa');
+
+  // Apaga um cliente NA ORIGEM.
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const esc = b.para(emp.id);
+  const alvo = esc.uma('select id, nome from clientes where {ESCOPO} limit 1');
+  esc.remover('clientes', alvo.id);
+
+  const r = sincronizarCentral(fed, { codigos: ['MP'] });
+
+  const depois = sis.prepare("select count(*) n from leads_consolidados where instancia = 'MP'").get().n;
+  igual(depois, antes - 1, 'a projecao do cliente apagado tinha de sair');
+  igual(r.orfasRemovidas, 1, 'e a remocao tem de ser reportada');
+
+  const sobrou = sis.prepare('select count(*) n from leads_consolidados where cliente_id = ?').get(alvo.id).n;
+  igual(sobrou, 0, `a linha de "${alvo.nome}" ficou orfa na central`);
+});
+
+teste('sincronizar de novo, sem mudanca, nao remove nada', () => {
+  const r1 = sincronizarCentral(fed, { codigos: ['AF'] });
+  const r2 = sincronizarCentral(fed, { codigos: ['AF'] });
+  igual(r2.orfasRemovidas, 0, 'execucao sem mudanca nao pode remover');
+  igual(r2.linhas, r1.linhas, 'e o total tem de bater');
+});
+
+teste('sincronizar uma instancia nao mexe nas outras', () => {
+  const sis = fed.abrirCentral().sistema();
+  sincronizarCentral(fed);
+  const antesFT = sis.prepare("select count(*) n from leads_consolidados where instancia = 'FT'").get().n;
+
+  sincronizarCentral(fed, { codigos: ['AF'] });
+
+  igual(sis.prepare("select count(*) n from leads_consolidados where instancia = 'FT'").get().n,
+    antesFT, 'sincronizar a AF nao pode encostar na FT');
+});
+
+teste('lead em triagem sobrevive a sincronizacao', () => {
+  // Ele chegou pela porta de captacao e ainda nao virou cliente de instancia
+  // nenhuma. Uma remocao que olhasse so para "nao esta na origem" o apagaria,
+  // destruindo a fila de quem ainda nao foi atendido.
+  const central = fed.abrirCentral();
+  const sis = central.sistema();
+
+  sis.prepare(
+    `insert into leads_consolidados (id, instancia, empresa_nome, cliente_id, nome, fonte,
+                                     valor_centavos, consentimento, criado_em, sincronizado_em)
+     values (?,?,?,?,?,?,?,?,?,?)`,
+  ).run(novoId(), 'MP', 'Minas Peças', null, 'Lead sem dono', 'site',
+    0, 0, agora(), '1970-01-01T00:00:00.000Z');
+
+  sincronizarCentral(fed, { codigos: ['MP'] });
+
+  const vivo = sis.prepare(
+    "select count(*) n from leads_consolidados where cliente_id is null and nome = 'Lead sem dono'",
+  ).get().n;
+  igual(vivo, 1, 'lead em triagem nao pode ser apagado pela projecao');
+});
+
+teste('instancia fora do ar NAO apaga as projecoes dela', () => {
+  // O caso perigoso: se a leitura falhar e a remocao rodasse assim mesmo, uma
+  // indisponibilidade de minutos viraria perda de dado permanente.
+  const sis = fed.abrirCentral().sistema();
+  sincronizarCentral(fed, { codigos: ['FT'] });
+  const antes = sis.prepare("select count(*) n from leads_consolidados where instancia = 'FT'").get().n;
+  verdadeiro(antes > 0);
+
+  const r = sincronizarCentral(fed, { codigos: ['INSTANCIA_QUE_NAO_EXISTE'] });
+  verdadeiro(r.porInstancia[0].erro, 'a instancia inexistente tem de reportar erro');
+
+  igual(sis.prepare("select count(*) n from leads_consolidados where instancia = 'FT'").get().n,
+    antes, 'falha numa instancia nao pode apagar projecao de ninguem');
+});
+
 fed.fecharTudo();
 rmSync(DIR, { recursive: true, force: true });
 
