@@ -1,0 +1,539 @@
+<title>FORT-CRM · Relatório Técnico</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root {
+  --papel: #f4f6f4;
+  --sup: #e8ebe8;
+  --sup-2: #dde1dd;
+  --linha: #ccd2cd;
+  --linha-forte: #a6b0a9;
+  --tinta: #121a1d;
+  --tinta-2: #2f3c40;
+  --neutro: #5c6a6d;
+  --tenue: #88948f;
+  --medida: #0d6354;
+  --medida-fraco: rgba(13, 99, 84, .09);
+  --alerta: #9d4425;
+  --alerta-fraco: rgba(157, 68, 37, .09);
+
+  --display: 'Bricolage Grotesque', 'Helvetica Neue', Arial, sans-serif;
+  --corpo: 'Public Sans', -apple-system, 'Segoe UI', sans-serif;
+  --dado: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --papel: #0d1214;
+    --sup: #141d20;
+    --sup-2: #1b2528;
+    --linha: #253134;
+    --linha-forte: #3a4a4e;
+    --tinta: #e6ecea;
+    --tinta-2: #bcc8c6;
+    --neutro: #8b9a9b;
+    --tenue: #6a7a7b;
+    --medida: #4fbfa5;
+    --medida-fraco: rgba(79, 191, 165, .12);
+    --alerta: #e08a5f;
+    --alerta-fraco: rgba(224, 138, 95, .12);
+  }
+}
+:root[data-theme="dark"] {
+  --papel: #0d1214;
+  --sup: #141d20;
+  --sup-2: #1b2528;
+  --linha: #253134;
+  --linha-forte: #3a4a4e;
+  --tinta: #e6ecea;
+  --tinta-2: #bcc8c6;
+  --neutro: #8b9a9b;
+  --tenue: #6a7a7b;
+  --medida: #4fbfa5;
+  --medida-fraco: rgba(79, 191, 165, .12);
+  --alerta: #e08a5f;
+  --alerta-fraco: rgba(224, 138, 95, .12);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--papel); color: var(--tinta-2);
+  font-family: var(--corpo); font-size: 16px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.env { max-width: 1060px; margin: 0 auto; padding: 0 26px 90px; }
+
+/* ── Abertura ───────────────────────────────────────────────────────────── */
+header {
+  padding: 52px 0 30px; border-bottom: 2px solid var(--tinta); margin-bottom: 30px;
+}
+.selo {
+  font-family: var(--dado); font-size: 11px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--medida); margin-bottom: 16px;
+}
+h1 {
+  font-family: var(--display); font-weight: 800;
+  font-size: clamp(38px, 6vw, 62px); line-height: .98; letter-spacing: -.03em;
+  color: var(--tinta); margin: 0 0 16px; text-wrap: balance;
+}
+.sub { font-size: 18.5px; max-width: 60ch; margin: 0; color: var(--tinta-2); }
+.sub a { color: var(--medida); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+/* ── Ficha técnica ──────────────────────────────────────────────────────── */
+.ficha {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 1px; background: var(--linha); border: 1px solid var(--linha);
+  margin: 34px 0 44px;
+}
+.ficha div { background: var(--sup); padding: 15px 16px; }
+.ficha .n {
+  font-family: var(--display); font-weight: 700; font-size: 27px;
+  color: var(--tinta); letter-spacing: -.03em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.ficha .r {
+  font-family: var(--dado); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--neutro); margin-top: 7px;
+}
+
+/* ── Seções ─────────────────────────────────────────────────────────────── */
+section { margin-bottom: 52px; }
+h2 {
+  font-family: var(--display); font-weight: 700; font-size: 27px;
+  letter-spacing: -.02em; color: var(--tinta); margin: 0 0 6px; text-wrap: balance;
+}
+.eyebrow {
+  font-family: var(--dado); font-size: 10.5px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--medida); margin-bottom: 9px;
+}
+h3 {
+  font-family: var(--display); font-weight: 600; font-size: 18px;
+  color: var(--tinta); margin: 26px 0 8px; letter-spacing: -.01em;
+}
+p { margin: 0 0 14px; max-width: 68ch; }
+strong { color: var(--tinta); font-weight: 600; }
+code {
+  font-family: var(--dado); font-size: .85em; background: var(--sup-2);
+  padding: 1px 5px; border-radius: 2px; color: var(--tinta);
+}
+.linha-mestra { color: var(--neutro); font-size: 17px; max-width: 66ch; margin-bottom: 22px; }
+
+/* ── Tabelas ────────────────────────────────────────────────────────────── */
+.quadro { border: 1px solid var(--linha); background: var(--sup); overflow-x: auto; margin: 18px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+th {
+  font-family: var(--dado); font-size: 10px; letter-spacing: .11em;
+  text-transform: uppercase; text-align: left; color: var(--neutro);
+  padding: 11px 15px; border-bottom: 1px solid var(--linha-forte);
+  white-space: nowrap; font-weight: 500;
+}
+td { padding: 12px 15px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td.mono { font-family: var(--dado); font-size: 12.5px; color: var(--tinta); white-space: nowrap; }
+td.num { font-family: var(--dado); text-align: right; font-variant-numeric: tabular-nums; }
+.sim { color: var(--medida); font-weight: 600; }
+.nao { color: var(--alerta); font-weight: 600; }
+
+/* ── Armadilha: o objeto que carrega o valor deste projeto ──────────────── */
+.armadilha {
+  border: 1px solid var(--linha); border-left: 3px solid var(--alerta);
+  background: var(--alerta-fraco); padding: 16px 20px; margin: 16px 0;
+}
+.armadilha .t {
+  font-family: var(--display); font-weight: 600; font-size: 15.5px;
+  color: var(--tinta); margin-bottom: 6px;
+}
+.armadilha p { margin: 0; font-size: 14.5px; max-width: none; }
+.armadilha p + p { margin-top: 8px; }
+.medido {
+  display: inline-block; font-family: var(--dado); font-size: 11.5px;
+  color: var(--alerta); border: 1px solid var(--alerta); border-radius: 2px;
+  padding: 2px 7px; margin-top: 10px; letter-spacing: .02em;
+}
+.verificado {
+  border-left-color: var(--medida); background: var(--medida-fraco);
+}
+.verificado .medido { color: var(--medida); border-color: var(--medida); }
+
+/* ── Lista de módulos ───────────────────────────────────────────────────── */
+.modulos { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1px; background: var(--linha); border: 1px solid var(--linha); margin: 18px 0; }
+.mod { background: var(--sup); padding: 13px 16px; }
+.mod b { font-family: var(--dado); font-size: 12.5px; color: var(--tinta); font-weight: 500; display: block; }
+.mod span { font-size: 13px; color: var(--neutro); display: block; margin-top: 3px; line-height: 1.45; }
+
+ul { margin: 0 0 14px; padding-left: 20px; max-width: 68ch; }
+li { margin-bottom: 7px; }
+li::marker { color: var(--medida); }
+
+.rodape {
+  margin-top: 56px; padding-top: 22px; border-top: 2px solid var(--tinta);
+  font-family: var(--dado); font-size: 11.5px; color: var(--neutro);
+  display: flex; flex-wrap: wrap; gap: 8px 26px;
+}
+@media (max-width: 620px) {
+  body { font-size: 15px; }
+  .env { padding: 0 18px 60px; }
+  header { padding: 34px 0 24px; }
+}
+</style>
+
+<div class="env">
+
+<header>
+  <div class="selo">Relatório técnico · 04 set 2026</div>
+  <h1>FORT-CRM</h1>
+  <p class="sub">
+    CRM multiempresas com compliance de mensageria e conversão offline para Google
+    Ads e Meta. Em produção em
+    <a href="https://fortcrm.fattech.com.br">fortcrm.fattech.com.br</a>, código em
+    <a href="https://github.com/ShunWalChin/FORT-CRM">ShunWalChin/FORT-CRM</a>.
+  </p>
+</header>
+
+<div class="ficha">
+  <div><div class="n">14.490</div><div class="r">linhas de código</div></div>
+  <div><div class="n">0</div><div class="r">dependências</div></div>
+  <div><div class="n">135</div><div class="r">testes</div></div>
+  <div><div class="n">24</div><div class="r">módulos</div></div>
+  <div><div class="n">26</div><div class="r">tabelas</div></div>
+  <div><div class="n">46</div><div class="r">rotas</div></div>
+  <div><div class="n">23</div><div class="r">telas</div></div>
+  <div><div class="n">11</div><div class="r">documentos</div></div>
+</div>
+
+<section>
+  <div class="eyebrow">O problema</div>
+  <h2>O cliente que precisava voltar, e ninguém chamou</h2>
+  <p class="linha-mestra">
+    O problema mais caro de um negócio de recorrência não é guardar cadastro —
+    planilha faz isso. É o cliente que precisava voltar, ninguém lembrou de
+    chamar, e ele foi no concorrente.
+  </p>
+  <p>
+    O FORT-CRM monta sozinho a fila de quem falar hoje, com a mensagem escrita e o
+    motivo à vista — e <strong>recusa o envio quando não pode enviar</strong>. É
+    essa recusa que protege o número de WhatsApp da empresa.
+  </p>
+  <p>
+    E fecha o outro lado: devolve ao Google e à Meta o que aconteceu depois do
+    clique, para que a campanha que traz gente deixe de parecer que não traz.
+  </p>
+
+  <div class="quadro">
+    <table>
+      <thead><tr><th>Empresa</th><th>Segmento</th><th>O que tem de próprio</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Minas Peças</strong></td><td>Injeção diesel — Bosch Car Service</td><td>frota, ordens de serviço, laudo de bancada</td></tr>
+        <tr><td><strong>Fazenda Agrofort</strong></td><td>Queijo artesanal</td><td>pedidos, recompra, clube de assinatura</td></tr>
+        <tr><td><strong>Fort Tintas</strong></td><td>Tintas e vernizes</td><td>pedidos, pintor parceiro, obra</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Arquitetura</div>
+  <h2>Isolamento físico, não lógico</h2>
+  <p>
+    Cada empresa é um <strong>arquivo SQLite separado</strong>. Quem atende o
+    balcão da oficina não enxerga um pedido de queijo porque aquele dado não está
+    no sistema que ele abriu — não porque uma cláusula <code>where</code> o
+    escondeu. O escopo por <code>empresa_id</code> continua como segunda barreira.
+  </p>
+  <p>
+    A consulta federada <strong>não usa <code>ATTACH DATABASE</code></strong>: ela
+    consulta cada instância e junta em memória. É mais trabalho, e é deliberado —
+    o desenho previsto é cada empresa poder virar outra máquina, e
+    <code>ATTACH</code> só funciona no mesmo sistema de arquivos. Instância fora do
+    ar some da lista e as outras seguem; numa federação, indisponibilidade de uma
+    é evento normal, não erro.
+  </p>
+
+  <div class="armadilha verificado">
+    <div class="t">A central é projeção, e projeção que só acrescenta é acumulador</div>
+    <p>
+      A sincronização fazia <em>insert-or-update</em> e nunca removia. Recarregar a
+      demonstração gera IDs novos, e as projeções antigas ficavam para trás.
+    </p>
+    <p>
+      A remoção usa carimbo de execução, não <code>not in (lista)</code> — a lista
+      cresce com a base e estoura o limite de parâmetros. Duas proteções: o lead em
+      triagem sobrevive, e a remoção só roda após a leitura dar certo, para que
+      instância fora do ar não vire perda de dado.
+    </p>
+    <div class="medido">Medido em produção: 76 linhas para 38 clientes reais — a tela do grupo mostrava o dobro do faturamento</div>
+  </div>
+
+  <h3>Os 24 módulos</h3>
+  <div class="modulos">
+    <div class="mod"><b>federacao.mjs</b><span>catálogo de instâncias, consulta federada</span></div>
+    <div class="mod"><b>db.mjs</b><span>SQLite, escopo por empresa, cadeia de auditoria</span></div>
+    <div class="mod"><b>schema · schema-extra</b><span>26 tabelas</span></div>
+    <div class="mod"><b>migracoes.mjs</b><span>colunas novas em base existente</span></div>
+    <div class="mod"><b>compliance.mjs</b><span>as 9 checagens — puro, sem I/O</span></div>
+    <div class="mod"><b>regua.mjs</b><span>17 gatilhos, mensagem e diagnóstico da fila</span></div>
+    <div class="mod"><b>atribuicao.mjs</b><span>parâmetros de clique, normalização, SHA-256</span></div>
+    <div class="mod"><b>conversoes.mjs</b><span>payloads do Google Ads e da Meta CAPI</span></div>
+    <div class="mod"><b>conversoes-servico.mjs</b><span>fila, avaliação e despacho</span></div>
+    <div class="mod"><b>ctwa.mjs</b><span>Click-to-WhatsApp, HMAC, Business Messaging</span></div>
+    <div class="mod"><b>canais.mjs</b><span>catálogo de canais de entrada por empresa</span></div>
+    <div class="mod"><b>propriedades.mjs</b><span>campos do sistema e da empresa</span></div>
+    <div class="mod"><b>central.mjs</b><span>consolidação e chaves de captação</span></div>
+    <div class="mod"><b>senha.mjs</b><span>scrypt, migração automática</span></div>
+    <div class="mod"><b>limite.mjs</b><span>teto de requisições por origem</span></div>
+    <div class="mod"><b>reancorar.mjs</b><span>desliza a demonstração no tempo</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">O motor</div>
+  <h2>Régua de contato e compliance</h2>
+  <p>
+    <strong>17 gatilhos</strong> — 7 na oficina, 5 na fazenda, 5 na loja. Cada um é
+    uma pergunta que o dono faria se tivesse tempo de olhar cliente por cliente. O
+    mais específico é <em>obra parada no meio</em>: comprou massa e selador e não
+    voltou para a tinta.
+  </p>
+  <p>
+    <strong>Nove checagens ordenadas</strong> — canal conectado, consentimento
+    LGPD, descadastro, janela de 24 h, template aprovado, cooldown do gatilho,
+    blocklist, teto de caracteres, idempotência. A primeira que falha bloqueia e
+    diz o motivo na tela.
+  </p>
+
+  <div class="quadro">
+    <table>
+      <thead><tr><th>Canal</th><th>Escapa da janela de 24 h?</th></tr></thead>
+      <tbody>
+        <tr><td>WhatsApp Cloud API</td><td class="sim">sim, com template aprovado</td></tr>
+        <tr><td>Evolution API (não-oficial)</td><td class="nao">não</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Tratar os dois igual é o erro que queima número.</p>
+
+  <div class="armadilha verificado">
+    <div class="t">Ambiguidade nunca se repete sozinha</div>
+    <p>
+      Cinco estados de envio: <code>claimed</code>, <code>sent</code>,
+      <code>blocked</code>, <code>unknown</code>, <code>failed</code>. Um
+      <code>timeout</code> não diz se a mensagem saiu, e repetir arrisca mandar duas
+      vezes para o mesmo cliente.
+    </p>
+    <div class="medido">Uma mensagem atrasada custa um dia. Uma duplicada custa a confiança do cliente</div>
+  </div>
+
+  <h3>O texto é rascunho, não palavra final</h3>
+  <p>
+    A mensagem é editável na linha, com <em>Copiar</em> e <em>Abrir no WhatsApp</em>
+    com o texto já dentro. E o texto editado <strong>volta a passar pelo compliance
+    no servidor</strong> — aceitar o que o navegador mandou daria ao operador um
+    caminho para furar a própria regra da empresa sem perceber.
+  </p>
+</section>
+
+<section>
+  <div class="eyebrow">Aquisição</div>
+  <h2>Do clique no anúncio à conversão devolvida</h2>
+  <p>
+    O parâmetro de clique existe na primeira página aberta, ou na primeira mensagem
+    enviada, e some na navegação seguinte. Ou é capturado na chegada, ou aquele
+    cliente é para sempre anônimo para o anúncio que o trouxe.
+  </p>
+
+  <div class="quadro">
+    <table>
+      <thead><tr><th>Identificador</th><th>Origem</th><th>Chega por</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">gclid</td><td>Google Ads</td><td>URL</td><td>o padrão da busca</td></tr>
+        <tr><td class="mono">gbraid / wbraid</td><td>Google Ads</td><td>URL</td><td>travessia app↔web no iOS; nunca junto com <code>gclid</code></td></tr>
+        <tr><td class="mono">fbclid</td><td>Meta</td><td>URL</td><td>anúncio que abre <em>página</em></td></tr>
+        <tr><td class="mono">ctwa_clid</td><td>Meta</td><td>Webhook</td><td>anúncio que abre <em>conversa</em> — não passa por navegador</td></tr>
+        <tr><td class="mono">utm_*</td><td>quem montou o link</td><td>URL</td><td>declaração, não prova</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="armadilha">
+    <div class="t">A falha mais silenciosa de todo o sistema</div>
+    <p>
+      Google e Meta pedem o <strong>mesmo telefone em formatos diferentes</strong>:
+      o Google quer E.164 com o sinal, a Meta quer só dígitos. Hash do formato
+      errado não casa com nada — <strong>e não dá erro</strong>. A campanha
+      simplesmente "não converte".
+    </p>
+    <div class="medido">O CRM guarda as duas formas, em colunas separadas</div>
+  </div>
+
+  <p>
+    <strong>Origem não é local de conversão.</strong> O cliente chega pelo WhatsApp
+    e fecha na loja. <code>action_source</code> descreve onde a conversão aconteceu,
+    não de onde o lead veio — e a decisão é gravada em coluna própria, porque a
+    pergunta de auditoria é "vocês disseram à Meta que esta venda foi no chat?".
+  </p>
+
+  <h3>A cadeia</h3>
+  <p>
+    Mudança de etapa → <code>event_log</code> → worker enfileira uma conversão por
+    destino → cinco checagens → payload real. Um gatilho de banco nunca faz chamada
+    de rede: decidir consentimento e destino dentro da transação que grava a
+    oportunidade deixaria a venda refém de uma regra de marketing.
+  </p>
+
+  <div class="quadro">
+    <table>
+      <thead><tr><th>Resposta</th><th>Estado</th><th>Repete sozinho?</th><th>Por quê</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">429</td><td>limitado</td><td class="sim">sim</td><td>o evento está certo; foi só rápido demais</td></tr>
+        <tr><td class="mono">400</td><td>falhou</td><td class="nao">não</td><td>repetir produz o mesmo 400 para sempre</td></tr>
+        <tr><td class="mono">401 / 403</td><td>sem permissão</td><td class="nao">não</td><td>token não se conserta sozinho</td></tr>
+        <tr><td class="mono">5xx · timeout</td><td>desconhecido</td><td class="nao">não</td><td>a conversão <em>pode</em> ter sido registrada do outro lado</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Canais</div>
+  <h2>Por onde o cliente chega, e o teto do que dá para medir</h2>
+  <p>
+    Catálogo <strong>por empresa</strong> — 11 na oficina, 10 na fazenda, 10 na
+    loja. Cada canal declara se carrega parâmetro de clique, e esse campo é o
+    divisor de águas: o que não é atribuível nunca vai render conversão importada.
+  </p>
+
+  <div class="armadilha">
+    <div class="t">As três empresas compartilhavam a mesma lista de origens</div>
+    <p>
+      <code>guincho_24h</code> e <code>site_diagnostico</code> — canais de oficina de
+      injeção diesel — apareciam na fazenda de queijo e na loja de tintas. Pior:
+      origem e atribuição eram sorteadas de forma independente, o que produzia
+      cliente com <code>origem: 'balcao'</code> carregando <code>gclid</code>.
+    </p>
+    <div class="medido">Quem entra pela porta não clicou em anúncio</div>
+  </div>
+
+  <p>
+    A cobertura atribuível fica em torno de <strong>50%</strong>, e isso não é
+    defeito. Balcão, telefone, guincho e pintor parceiro não carregam parâmetro de
+    clique e nunca vão carregar. Na Minas Peças, o guincho que traz o veículo de
+    madrugada é o maior ticket e a pior rastreabilidade. Nesses canais a única
+    atribuição possível é <strong>perguntar</strong> — e a pergunta está na tela.
+  </p>
+
+  <h3>A porta de entrada não existia</h3>
+  <p>
+    <code>POST /api/central/entrada</code> estava documentada como entrada externa e
+    exigia sessão. Um formulário de site não faz login. Hoje
+    <code>POST /api/entrada/:chave</code> é pública de verdade: a chave só roteia,
+    20 req/min por origem, corpo em 1 MB, e a resposta é <strong>idêntica</strong>
+    para chave válida, inválida, desativada e tentativa de travessia — variar
+    transformaria a porta num oráculo de enumeração.
+  </p>
+</section>
+
+<section>
+  <div class="eyebrow">Interface</div>
+  <h2>Medida, não estimada</h2>
+  <p>
+    Cinco temas, cada um por um contexto de uso real — balcão sob luz fluorescente,
+    varanda ao sol, plantão de madrugada. <strong>Contraste medido pintando num
+    canvas e lendo o pixel</strong>, porque <code>getComputedStyle</code> devolve
+    <code>oklab()</code> para valores de <code>color-mix</code>. Pior caso: 4,9:1.
+  </p>
+
+  <div class="quadro">
+    <table>
+      <thead><tr><th>Tela</th><th>Antes</th><th>Depois</th></tr></thead>
+      <tbody>
+        <tr><td>Clientes, no celular</td><td>tabela de 936 px numa caixa de 343 — <strong>593 px escondidos</strong></td><td>cartão de 214 px, sem rolagem lateral</td></tr>
+        <tr><td>Régua de contato</td><td class="num">12.136 px</td><td class="num">8.182 px</td></tr>
+        <tr><td>Cabeçalho fixo da fila</td><td class="num">176 px</td><td class="num">116 px</td></tr>
+        <tr><td>Início, no celular</td><td>ação principal a 332 px do topo</td><td class="num">255 px</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="armadilha verificado">
+    <div class="t">Um ponto de corte era o erro</div>
+    <p>
+      <strong>820 px</strong> é sobre o formato da janela — a lateral não cabe ao
+      lado do conteúdo. <strong>640 px</strong> é sobre a largura do conteúdo —
+      abaixo disso a tabela vira cartão.
+    </p>
+    <div class="medido">A 812 px um tablet deitado recebia layout de telefone sem precisar</div>
+  </div>
+
+  <h3>A tela de Início</h3>
+  <p>
+    O painel responde "como estamos" — a segunda pergunta. A primeira é "o que eu
+    faço aqui", e um menu de dezessete itens lista sem priorizar. Cada cartão é
+    nomeado pelo que a pessoa quer fazer e carrega estado vivo: <em>7 pessoas
+    esperando</em>, <em>R$ 14.300 em negociação</em>. O número ensina o que a tela é
+    sem uma linha de explicação.
+  </p>
+
+  <h3>Estado vazio com saída</h3>
+  <p>
+    A régua vazia dizia "já cobriu todo mundo, volte amanhã" — afirmando uma causa
+    que ninguém verificou. O servidor agora diagnostica cinco causas na ordem em que
+    se resolvem, e cada uma leva onde se resolve. Base vazia vem antes de
+    consentimento; consentimento antes de "todos bloqueados".
+  </p>
+</section>
+
+<section>
+  <div class="eyebrow">Produção</div>
+  <h2>Contêiner isolado num host com 75 vizinhos</h2>
+  <p>
+    O host roda <strong>Node v22.22.2</strong>, e <code>node:sqlite</code> só existe
+    sem flag a partir do 23.4. O instalador systemd teria atualizado o Node do
+    sistema — com 75 contêineres de clientes ali, qualquer coisa que dependa daquele
+    runtime quebraria junto, e <strong>o sintoma apareceria noutro serviço</strong>.
+    No contêiner, o runtime pertence à aplicação.
+  </p>
+
+  <div class="quadro">
+    <table>
+      <thead><tr><th>Recurso</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td><code>fortcrm-app</code></td><td><code>node:24-alpine</code>, <code>read_only</code>, <code>cap_drop: ALL</code>, 512 MB / 1 cpu — usa <strong>31 MB</strong></td></tr>
+        <tr><td>Porta</td><td><code>127.0.0.1:4310</code> — não existe para a internet</td></tr>
+        <tr><td>Rede</td><td>própria; não enxerga o Postgres nem o Redis dos vizinhos</td></tr>
+        <tr><td>Túnel</td><td>dedicado, com credencial e unidade próprias</td></tr>
+        <tr><td>Manutenção</td><td>04:10 diário, <code>Persistent=true</code> — backup e reancoragem</td></tr>
+        <tr><td>Superfície externa</td><td>22, 80, 111, 443 — <strong>nenhuma porta nova</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="armadilha">
+    <div class="t">Backup com <code>cp</code> produz um banco íntegro e vazio</div>
+    <p>
+      O SQLite em modo WAL mantém as escritas recentes no arquivo lateral. Copiar o
+      <code>.db</code> gera um arquivo que abre normalmente e não tem nada dentro —
+      <strong>e o erro só aparece na restauração</strong>. A rotina usa
+      <code>VACUUM INTO</code> e aborta se o backup sair com menos de 8 KB.
+    </p>
+    <div class="medido">Medido no servidor: .db com 4 KB, -wal com 832 KB</div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Limites</div>
+  <h2>O que o sistema ainda não é</h2>
+  <p>Escrito para que ninguém prometa ao cliente o que ele não entrega.</p>
+  <ul>
+    <li><strong>Nada sai para fora.</strong> <code>DEMO_MODE</code> ligado: mensagem não chega a número real, conversão não chega ao Google nem à Meta. O payload é montado e gravado — é ele que mostra numa reunião exatamente o que iria.</li>
+    <li><strong>Não há MFA, bloqueio por tentativas nem revogação de sessão.</strong> Num endereço público permanente, Cloudflare Access na frente do hostname é obrigatório — e ainda não está posto.</li>
+    <li>WhatsApp orgânico, Instagram e Mercado Livre dependem de conector que não existe.</li>
+    <li>Não dá para adiar um item da régua, nem cadastrar veículo ou ordem de serviço pela interface.</li>
+    <li>A base é fictícia. Nenhum dado real de cliente está no sistema.</li>
+  </ul>
+</section>
+
+<div class="rodape">
+  <span>135 testes · 45 unidade + 90 federação</span>
+  <span>Zero dependências de terceiros</span>
+  <span>Januária/MG</span>
+</div>
+
+</div>
