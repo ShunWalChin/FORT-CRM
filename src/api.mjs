@@ -7,7 +7,9 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { agora, novoId } from './db.mjs';
 import { avaliarCompliance, comRodape, POLITICAS_CANAL, EXPLICACAO_MOTIVO } from './compliance.mjs';
-import { GATILHOS, projetarRevisao, renderizar, saudacao } from './regua.mjs';
+import {
+  GATILHOS, projetarRevisao, renderizar, saudacao, diagnosticarFilaVazia,
+} from './regua.mjs';
 import { laudoHtml } from './laudo.mjs';
 import { semear } from './seed.mjs';
 import { DEMO_MODE } from './api-modo.mjs';
@@ -802,6 +804,14 @@ export const ROTAS = {
             .reduce((a, f) => ({ ...a, [f.decisao.motivo]: (a[f.decisao.motivo] ?? 0) + 1 }), {}),
         ).map(([motivo, n]) => ({ motivo, n, explicacao: EXPLICACAO_MOTIVO[motivo] ?? motivo })),
       },
+      /*
+       * So quando nao ha o que fazer. O diagnostico custa quatro contagens, e
+       * fazer isso em toda abertura da tela seria pagar por resposta que
+       * ninguem le — na fila cheia, o operador quer a fila.
+       */
+      diagnostico: fila.some((f) => f.decisao.permitido)
+        ? null
+        : diagnosticarFilaVazia(escopo, { fila }),
     });
   },
 

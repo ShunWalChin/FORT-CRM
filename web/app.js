@@ -629,6 +629,27 @@ ligarAutoCrescer();
  *    44px. É a razão de o sistema existir; deixá-la do mesmo tamanho das outras
  *    seria fingir que tudo tem o mesmo peso.
  */
+/*
+ * Estado vazio com saída.
+ *
+ * Tela vazia sem explicação é o pior lugar do sistema: quem chega nela não sabe
+ * se acabou o trabalho, se filtrou demais ou se algo está desligado. E dizer o
+ * motivo sem oferecer o que fazer resolve metade do problema.
+ *
+ * `tranquilo` distingue "não há nada e está tudo certo" de "não há nada porque
+ * algo precisa de você". Pintar as duas iguais faz o operador ignorar as duas.
+ */
+function vazio({ ic = '·', titulo, texto = '', acoes = [], tranquilo = false }) {
+  return `<div class="vazio ${tranquilo ? 'ok' : ''}">
+    <div class="ic">${ic}</div>
+    <h3>${esc(titulo)}</h3>
+    ${texto ? `<p>${esc(texto)}</p>` : ''}
+    ${acoes.length ? `<div class="vazio-acoes">
+      ${acoes.map((a, i) => `<a class="btn ${i ? 'quiet' : ''} sm" href="#/${a.rota}">${esc(a.rotulo)}</a>`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
 VISOES.inicio = async (el) => {
   const d = await api('/painel');
   estado.cache.contadores = { ...estado.cache.contadores, regua: d.regua.liberados };
@@ -954,9 +975,14 @@ VISOES.regua = async (el) => {
       </div>` : ''}
 
     <div id="fila">
-      ${d.fila.length ? d.fila.map(itemRegua).join('')
-        : `<div class="vazio"><div class="ic">✓</div><h3>Nenhum contato pendente hoje</h3>
-             <p>A régua já cobriu todo mundo que atendia às regras. Volte amanhã.</p></div>`}
+      ${d.fila.length ? d.fila.map(itemRegua).join('') : ''}
+      ${!d.fila.length && d.diagnostico ? vazio({
+    ic: d.diagnostico.tranquilo ? '✓' : '!',
+    titulo: d.diagnostico.titulo,
+    texto: d.diagnostico.texto,
+    tranquilo: d.diagnostico.tranquilo,
+    acoes: [d.diagnostico.acao, d.diagnostico.segunda].filter(Boolean),
+  }) : ''}
     </div>`;
 
   ligarRegua(el);
@@ -1168,10 +1194,30 @@ VISOES.clientes = async (el) => {
             </tr>`).join('')}
           </tbody>
         </table>
-      </div>` : '<div class="vazio"><h3>Nenhum cliente encontrado</h3></div>';
+      </div>` : vazio({
+      ic: '?',
+      titulo: q || perfil ? 'Nenhum cliente com esse filtro' : 'A base ainda está vazia',
+      texto: q || perfil
+        ? `Nada casou com ${q ? `"${q}"` : 'o perfil escolhido'}. Vale conferir a grafia — a `
+          + 'busca também aceita telefone e e-mail.'
+        : 'Cadastre o primeiro cliente ou importe uma base existente.',
+      acoes: q || perfil ? [] : [
+        { rota: 'clientes', rotulo: 'Novo cliente' },
+        { rota: 'importar', rotulo: 'Importar base' },
+      ],
+    })
+      + (q || perfil
+        ? '<div class="vazio-acoes" style="margin-top:-18px"><button class="btn quiet sm" id="limpar-filtro">Limpar a busca</button></div>'
+        : '');
 
     corpo.querySelectorAll('[data-ficha]').forEach((tr) => {
       tr.onclick = () => abrirFicha(tr.dataset.ficha);
+    });
+    // Limpar o filtro sem ter de achar e apagar o campo à mão.
+    corpo.querySelector('#limpar-filtro')?.addEventListener('click', () => {
+      el.querySelector('#q').value = '';
+      el.querySelector('#perfil').value = '';
+      desenhar();
     });
   };
 
@@ -1844,7 +1890,14 @@ VISOES.disparos = async (el) => {
           <td><span class="tag ${cores[d.status] ?? ''}">${esc(d.status)}</span></td>
           <td class="fraco">${esc(d.motivo ?? d.politica ?? '—')}</td></tr>`).join('')}
       </tbody></table></div>`
-      : '<div class="vazio"><h3>Nenhum disparo ainda</h3><p>Vá à régua de contato e dispare a fila do dia.</p></div>'}`;
+      : vazio({
+      ic: '↗',
+      titulo: 'Nenhum disparo registrado',
+      texto: 'Este histórico se enche quando alguém dispara a fila. Cada linha guarda o '
+        + 'que saiu, para quem e com qual decisão do compliance.',
+      acoes: [{ rota: 'regua', rotulo: 'Ir para a fila de hoje' }],
+      tranquilo: true,
+    })}`;
 };
 
 // ── Visão do grupo ──────────────────────────────────────────────────────────

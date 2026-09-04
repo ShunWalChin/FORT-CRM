@@ -664,3 +664,14 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
   .acao-numero .n { font-size: 34px; }
   .inicio-frase { font-size: 15px; margin-bottom: 18px; }
 }
+
+/* ── Estado vazio ─────────────────────────────────────────────────────────── */
+/* Tela vazia sem explicação é o pior lugar do sistema. `.ok` marca o vazio
+   tranquilo — "não há nada e está tudo certo" — para não pintar igual ao vazio
+   que precisa de alguém. */
+.vazio-acoes {
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 16px;
+}
+.vazio.ok .ic { color: var(--ok); opacity: 1; }
+.vazio:not(.ok) .ic { color: var(--warn); opacity: 1; }
+.vazio p { max-width: 52ch; margin: 0 auto; font-size: 14px; line-height: 1.6; }

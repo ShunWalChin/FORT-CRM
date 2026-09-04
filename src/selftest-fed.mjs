@@ -34,6 +34,7 @@ import { drenarEventos, despacharConversoes, registrarMudancaDeEtapa } from './c
 import { novoId, agora } from './db.mjs';
 import { reancorar, ancoraDe, diagnosticoDaAncora } from './reancorar.mjs';
 import { montarRegua } from './api.mjs';
+import { diagnosticarFilaVazia } from './regua.mjs';
 import { hashSenha, verificarSenha, ehHash, migrarSenhas, avaliarForca } from './senha.mjs';
 
 let passou = 0;
@@ -1290,6 +1291,64 @@ teste('instancia fora do ar NAO apaga as projecoes dela', () => {
 
   igual(sis.prepare("select count(*) n from leads_consolidados where instancia = 'FT'").get().n,
     antes, 'falha numa instancia nao pode apagar projecao de ninguem');
+});
+
+/* ── Fila vazia: dizer POR QUE, e nao adivinhar ──────────────────────────── */
+
+teste('a fila vazia acusa a causa certa, na ordem em que se resolve', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+
+  // Estado normal: gatilhos ativos, gente com consentimento, ninguem vencendo.
+  const ok = diagnosticarFilaVazia(e, { fila: [] });
+  igual(ok.causa, 'coberto');
+  igual(ok.tranquilo, true, 'vazio tranquilo nao pode alarmar');
+
+  // Ha gente na fila, e o compliance recusou todos. Diferente de fila vazia.
+  const bloq = diagnosticarFilaVazia(e, {
+    fila: [{ decisao: { permitido: false } }, { decisao: { permitido: false } }],
+  });
+  igual(bloq.causa, 'todos_bloqueados');
+  verdadeiro(bloq.titulo.includes('2'), 'precisa dizer quantos');
+  igual(bloq.acao, null, 'os motivos ja estao na tela — acao aqui seria ruido');
+
+  // Gatilhos desligados: a fila NUNCA vai encher sozinha, e mandar "volte
+  // amanha" seria pedir que a pessoa espere por algo que nao acontece.
+  const ids = e.todas('select id from gatilhos where {ESCOPO}');
+  ids.forEach((g) => e.atualizar('gatilhos', g.id, { ativo: 0 }));
+  const desl = diagnosticarFilaVazia(e, { fila: [] });
+  igual(desl.causa, 'gatilhos_desligados');
+  igual(desl.acao.rota, 'gatilhos', 'tem de levar onde se resolve');
+  ids.forEach((g) => e.atualizar('gatilhos', g.id, { ativo: 1 }));
+
+  // Sem consentimento vem ANTES de "todos bloqueados": e a causa raiz, e a
+  // mais acionavel das duas.
+  const cli = e.todas('select id, consentimento_lgpd from clientes where {ESCOPO}');
+  cli.forEach((c) => e.atualizar('clientes', c.id, { consentimento_lgpd: 0 }));
+  igual(diagnosticarFilaVazia(e, { fila: [{ decisao: { permitido: false } }] }).causa,
+    'sem_consentimento', 'a causa raiz vence a consequencia');
+  cli.forEach((c) => e.atualizar('clientes', c.id, { consentimento_lgpd: c.consentimento_lgpd }));
+
+  // Base vazia vem antes de tudo: nao adianta falar de consentimento para quem
+  // nao tem cliente nenhum.
+  const guardados = e.todas('select * from clientes where {ESCOPO}');
+  guardados.forEach((c) => e.remover('clientes', c.id));
+  const vazia = diagnosticarFilaVazia(e, { fila: [] });
+  igual(vazia.causa, 'base_vazia');
+  verdadeiro(vazia.segunda, 'importar base tem de ser oferecido como segunda saida');
+});
+
+teste('todo diagnostico diz o que fazer, ou por que nao ha o que fazer', () => {
+  const b = fed.abrir('AF');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const d = diagnosticarFilaVazia(e, { fila: [] });
+
+  verdadeiro(d.titulo && d.titulo.length > 8, 'titulo vazio nao explica nada');
+  verdadeiro(d.texto && d.texto.length > 40, 'o texto precisa dizer o porque');
+  // Ou ha acao, ou o motivo ja esta visivel noutro lugar da tela.
+  verdadeiro(d.acao || d.causa === 'todos_bloqueados', 'beco sem saida');
 });
 
 fed.fecharTudo();

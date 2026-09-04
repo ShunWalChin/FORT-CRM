@@ -698,3 +698,78 @@ export function renderizar(template, variaveis) {
     variaveis[chave] === undefined || variaveis[chave] === null ? '' : String(variaveis[chave]),
   );
 }
+
+/**
+ * Por que a fila está vazia.
+ *
+ * A tela dizia "a régua já cobriu todo mundo — volte amanhã". Isso AFIRMA uma
+ * causa que ninguém verificou: a fila também fica vazia quando os gatilhos
+ * estão desligados, quando ninguém na base tem consentimento, ou quando a base
+ * está vazia. Mandar o operador voltar amanhã nesses casos é pedir que ele
+ * espere por algo que nunca vai acontecer sozinho.
+ *
+ * As causas são checadas na ordem em que se resolvem: não adianta falar de
+ * consentimento para quem não tem cliente nenhum cadastrado.
+ *
+ * Cada causa devolve uma AÇÃO — a tela vazia sem saída é o problema; dizer o
+ * motivo sem dizer o que fazer resolve metade dele.
+ */
+export function diagnosticarFilaVazia(escopo, { fila = [] } = {}) {
+  const clientes = escopo.contar('clientes');
+  const comConsentimento = escopo.contar('clientes', 'and consentimento_lgpd = 1 and opt_out_em is null');
+  const gatilhos = escopo.contar('gatilhos');
+  const gatilhosAtivos = escopo.contar('gatilhos', 'and ativo = 1');
+  const bloqueados = fila.filter((f) => !f.decisao?.permitido).length;
+
+  if (!clientes) {
+    return {
+      causa: 'base_vazia',
+      titulo: 'Ainda não há clientes cadastrados',
+      texto: 'A régua monta a fila a partir da base. Sem cliente, não há de quem falar.',
+      acao: { rota: 'clientes', rotulo: 'Cadastrar o primeiro cliente' },
+      segunda: { rota: 'importar', rotulo: 'Ou importar uma base' },
+    };
+  }
+
+  if (!gatilhosAtivos) {
+    return {
+      causa: 'gatilhos_desligados',
+      titulo: gatilhos
+        ? `Os ${gatilhos} gatilhos estão desligados`
+        : 'Não há gatilhos configurados',
+      texto: 'São eles que decidem quem entra na fila. Com todos desligados, ela fica '
+        + 'vazia mesmo com a base cheia — e isso não se resolve esperando.',
+      acao: { rota: 'gatilhos', rotulo: 'Ligar os gatilhos' },
+    };
+  }
+
+  if (!comConsentimento) {
+    return {
+      causa: 'sem_consentimento',
+      titulo: `Nenhum dos ${clientes} clientes autorizou receber mensagem`,
+      texto: 'Sem consentimento LGPD registrado, o compliance bloqueia antes de a fila se '
+        + 'formar. O consentimento é marcado na ficha de cada cliente.',
+      acao: { rota: 'clientes', rotulo: 'Ver a base' },
+    };
+  }
+
+  if (bloqueados) {
+    return {
+      causa: 'todos_bloqueados',
+      titulo: `${bloqueados} ${bloqueados === 1 ? 'contato está bloqueado' : 'contatos estão bloqueados'}, nenhum liberado`,
+      texto: 'Há gente na fila, mas o compliance recusou todos. Os motivos estão logo acima — '
+        + 'e recusa não é defeito: é o que protege o número da empresa.',
+      acao: null,
+    };
+  }
+
+  return {
+    causa: 'coberto',
+    titulo: 'Nada para hoje',
+    texto: `Os ${gatilhosAtivos} gatilhos estão ativos e ${comConsentimento} clientes podem `
+      + 'receber mensagem — ninguém se encaixa nas regras neste momento. A fila se refaz '
+      + 'sozinha conforme os prazos vencem.',
+    acao: { rota: 'gatilhos', rotulo: 'Rever as regras' },
+    tranquilo: true,
+  };
+}
