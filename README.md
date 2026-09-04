@@ -101,6 +101,7 @@ que o sistema ainda não faz. Cada seção tem um botão que abre a tela de verd
 | [Deploy](docs/DEPLOY.md) | Contêiner isolado, túnel, backup, manutenção |
 | [Decisões e armadilhas](docs/DECISOES.md) | Os bugs encontrados e por que a solução é essa |
 | [Roteiro de demonstração](docs/DEMONSTRACAO.md) | 12 minutos, passo a passo |
+| [Relatório técnico](docs/RELATORIO-TECNICO.md) | Levantamento completo: números, arquitetura, funcionalidades e defeitos encontrados |
 | [Roadmap](ROADMAP.md) | O que faz hoje e as 50 próximas implementações |
 
 ---
