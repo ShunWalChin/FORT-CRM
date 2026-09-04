@@ -13,6 +13,29 @@
 /** Cada tela do sistema, explicada na mesma estrutura de quatro perguntas. */
 export const TELAS = [
   {
+    id: 'inicio',
+    nome: 'Início',
+    rota: '#/inicio',
+    destaque: true,
+    oQueE:
+      'A primeira tela depois de entrar. Ela não mostra números — ela mostra o que fazer.',
+    paraQue:
+      'Responder a pergunta de quem abre o sistema pela primeira vez: "o que eu faço aqui?". '
+      + 'Um menu com dezessete itens lista as telas, mas não diz por onde começar nem onde '
+      + 'está o trabalho de hoje.',
+    comoUsar: [
+      'O botão grande no topo é a fila do dia, com o número de pessoas esperando. É a razão de o sistema existir, e por isso ocupa a largura toda.',
+      'Cada botão é nomeado pelo que você quer FAZER — "Achar um cliente", e não "Clientes".',
+      'No botão de clientes há um campo de busca embutido: com o cliente no balcão, digite o nome ali e tecle Enter para cair direto na lista filtrada.',
+      'Os blocos mudam conforme a empresa ativa: a oficina mostra frota e ordens de serviço, a fazenda e a loja mostram pedidos e catálogo.',
+      'Quem dirige vê também Conversões, Central do grupo e Auditoria. Quem atende não vê — são telas de mesa.',
+    ],
+    observar:
+      'Os números nos botões são de verdade e mudam sozinhos. Se "pessoas esperando" está em '
+      + 'zero, ou todo mundo já foi contatado hoje, ou os gatilhos estão desligados — vale '
+      + 'conferir em "Gatilhos da régua" antes de concluir que não há trabalho.',
+  },
+  {
     id: 'painel',
     nome: 'Painel',
     rota: '#/painel',
@@ -533,6 +556,16 @@ export const RECEITAS = [
       'Clique na que quiser — muda na hora e fica salva neste navegador.',
       'No balcão, sob luz forte, "Oficina" costuma ser o mais legível; para quem enxerga mal ou vai imprimir, use "Papel"; no plantão de madrugada, "Meia-noite" cansa menos a vista.',
       'A cor do acento continua sendo a da empresa em todos eles — é o aviso de canto de olho de qual empresa está na tela.',
+    ],
+  },
+  {
+    titulo: 'Atender alguém que está no balcão agora',
+    passos: [
+      'Na tela de Início, use o campo de busca dentro do botão "Achar um cliente".',
+      'Digite o nome ou o telefone e tecle Enter.',
+      'A lista já abre filtrada; clique na linha para abrir a ficha.',
+      'A ficha traz histórico, veículos, pedidos e o que já foi conversado — e os dados de contato são editáveis ali mesmo.',
+      'O endereço da ficha é compartilhável: copie a URL e mande para um colega.',
     ],
   },
   {

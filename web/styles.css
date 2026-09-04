@@ -569,3 +569,98 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
   font-size: 13px; color: var(--txt); cursor: pointer; min-height: 30px;
 }
 .opcao input { width: 16px; height: 16px; accent-color: var(--acento); }
+
+/* ── Início: o que fazer agora ────────────────────────────────────────────── */
+/*
+ * Existe porque o painel responde "como estamos" e não "o que eu faço aqui" —
+ * e quem abre o sistema pela primeira vez faz a segunda pergunta.
+ *
+ * Cada cartão é nomeado pelo que a PESSOA quer fazer, não pelo nome da
+ * funcionalidade: "Falar com clientes hoje", não "Régua de contato". E carrega
+ * estado vivo, porque é o número que torna óbvio onde está o trabalho — um
+ * cartão que diz "16 esperando" ensina o que a tela é sem nenhuma explicação.
+ */
+.inicio-frase {
+  font-size: 16.5px; line-height: 1.6; color: var(--dim);
+  max-width: 62ch; margin-bottom: 26px;
+}
+.inicio-frase strong { color: var(--txt); font-weight: 600; }
+
+.acoes { display: grid; gap: 12px; margin-bottom: 26px; }
+.acoes.tres { grid-template-columns: repeat(3, 1fr); }
+.acoes.dois { grid-template-columns: repeat(2, 1fr); }
+
+.acao {
+  display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 18px 20px;
+  text-decoration: none; color: inherit;
+  transition: border-color .12s, background .12s, transform .12s;
+}
+.acao:hover { border-color: var(--acento); background: var(--surface-2); }
+.acao:active { transform: translateY(1px); }
+.acao .ic {
+  width: 44px; height: 44px; border-radius: var(--radius);
+  display: grid; place-items: center;
+  background: var(--acento-dim); color: var(--acento);
+  border: 1px solid var(--acento-borda);
+}
+.acao .ic svg { width: 22px; height: 22px; }
+.acao h3 { font-size: 16.5px; color: var(--txt-hi); letter-spacing: -.2px; line-height: 1.25; }
+.acao p { font-size: 13.5px; color: var(--dim); line-height: 1.5; margin-top: 5px; }
+.acao .estado {
+  display: inline-flex; align-items: baseline; gap: 6px; margin-top: 9px;
+  font: 600 12.5px var(--mono); color: var(--acento);
+}
+.acao .estado b { font-size: 19px; font-weight: 800; letter-spacing: -.5px; }
+.acao .estado.quieto { color: var(--faint); }
+
+/* A ação principal ganha a largura toda e o número grande: é a razão de o
+   sistema existir, e não pode competir por atenção com as outras. */
+.acao.principal {
+  grid-column: 1 / -1;
+  grid-template-columns: 60px 1fr auto;
+  align-items: center;
+  border-color: var(--acento); background: var(--acento-dim);
+  padding: 22px 24px;
+}
+.acao.principal .ic { width: 60px; height: 60px; background: var(--acento); color: var(--sobre-acento); border-color: var(--acento); }
+.acao.principal .ic svg { width: 28px; height: 28px; }
+.acao.principal h3 { font-size: 21px; }
+.acao.principal p { font-size: 14.5px; max-width: 52ch; }
+.acao-numero { text-align: right; }
+.acao-numero .n { font-size: 44px; font-weight: 800; letter-spacing: -2px; line-height: 1; color: var(--acento); }
+.acao-numero .r { font: 10.5px var(--mono); letter-spacing: 1.1px; color: var(--dim); margin-top: 4px; }
+
+/* Busca embutida no cartão de clientes: no balcão o cliente está na frente, e
+   digitar o nome aqui evita duas telas até a ficha. */
+.acao-busca { display: flex; gap: 7px; margin-top: 11px; }
+.acao-busca input {
+  flex: 1; min-width: 0; background: var(--ground); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); padding: 8px 11px; color: var(--txt-hi);
+  font-size: 13px; outline: none;
+}
+.acao-busca input:focus { border-color: var(--acento); }
+
+.inicio-faixa {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-left: 3px solid var(--acento);
+  border-radius: var(--radius); padding: 14px 18px; margin-top: 8px;
+}
+.inicio-faixa p { font-size: 13.5px; color: var(--dim); flex: 1; min-width: 220px; }
+.inicio-faixa strong { color: var(--txt-hi); }
+
+@media (max-width: 900px) {
+  .acoes.tres { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .acoes.tres, .acoes.dois { grid-template-columns: 1fr; }
+  .acao.principal { grid-template-columns: 48px 1fr; padding: 16px 17px; }
+  .acao.principal .ic { width: 48px; height: 48px; }
+  .acao.principal h3 { font-size: 18px; }
+  /* O número desce para baixo do texto em vez de espremer a coluna. */
+  .acao-numero { grid-column: 1 / -1; text-align: left; margin-top: 4px; }
+  .acao-numero .n { font-size: 34px; }
+  .inicio-frase { font-size: 15px; margin-bottom: 18px; }
+}

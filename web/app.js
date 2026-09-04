@@ -176,7 +176,8 @@ function renderLogin() {
       estado.empresa = d.empresas.find((e) => e.instancia === localStorage.getItem('fortcrm.empresa')) ?? d.empresas[0];
       localStorage.setItem('fortcrm.token', d.token);
       localStorage.setItem('fortcrm.empresa', estado.empresa?.instancia ?? '');
-      location.hash = '#/painel';
+      // Depois de entrar, cai no Inicio — a tela que diz o que fazer.
+      location.hash = '#/inicio';
       renderShell();
     } catch (e) {
       alvo.querySelector('#erro-login').innerHTML =
@@ -200,6 +201,7 @@ function renderLogin() {
  */
 const MENU = [
   { grupo: 'COMECE AQUI' },
+  { id: 'inicio', nome: 'Início', ic: 'painel' },
   { id: 'manual', nome: 'Manual do sistema', ic: 'manual' },
   { grupo: 'OPERAÇÃO' },
   { id: 'painel', nome: 'Painel', ic: 'painel' },
@@ -487,13 +489,17 @@ const VISOES = {};
 
 async function navegar() {
   /*
-   * No celular a rota padrão é a RÉGUA, não o painel.
+   * A rota padrão é o INÍCIO, no computador e no celular.
    *
-   * A pergunta que se faz com o telefone na mão, cliente na frente, é "com
-   * quem eu falo agora" — não "como foi o mês". O painel tem 2.868 px de
-   * altura num aparelho de 375: é leitura de mesa.
+   * Antes era o painel (e a régua no celular). O problema não era o painel
+   * estar errado — é que ele responde "como estamos", e quem abre o sistema
+   * pela primeira vez pergunta "o que eu faço aqui". Um menu de dezessete
+   * itens não responde isso; ele lista, não prioriza.
+   *
+   * O Início responde, e o primeiro cartão dele é a própria fila com o número
+   * do dia — quem já usa continua a um toque do trabalho.
    */
-  const padrao = ehMobile() ? 'regua' : 'painel';
+  const padrao = 'inicio';
   // `split('?')` antes de tudo: a gaveta vive em `#/clientes?ficha=abc`, e sem
   // isto a rota viraria "clientes?ficha=abc" e nenhuma tela casaria.
   const rota = (location.hash.split('?')[0].replace('#/', '') || padrao).split('/')[0];
@@ -599,6 +605,198 @@ window.addEventListener('resize', () => {
 
 window.addEventListener('hashchange', navegar);
 ligarAutoCrescer();
+
+// ── Início ──────────────────────────────────────────────────────────────────
+/*
+ * A tela que diz O QUE FAZER, e não como estamos.
+ *
+ * O painel responde "como foi o mês". Essa é a segunda pergunta de quem abre o
+ * sistema — a primeira é "o que eu faço aqui", e quem nunca viu a ferramenta
+ * não faz nem uma nem outra: ele fica olhando para um menu de dezessete itens
+ * sem saber por onde começar.
+ *
+ * Três regras que fazem esta tela funcionar:
+ *
+ * 1. CADA CARTÃO É NOMEADO PELO QUE A PESSOA QUER FAZER. "Falar com clientes
+ *    hoje", não "Régua de contato". O nome da funcionalidade só ensina quem já
+ *    sabe o que ela faz.
+ *
+ * 2. CADA CARTÃO CARREGA ESTADO VIVO. "16 esperando" ensina o que a tela é sem
+ *    uma linha de explicação, e mostra onde está o trabalho. Um menu não faz
+ *    isso — ele lista, não prioriza.
+ *
+ * 3. A AÇÃO PRINCIPAL NÃO COMPETE. Ela ocupa a largura toda, com o número em
+ *    44px. É a razão de o sistema existir; deixá-la do mesmo tamanho das outras
+ *    seria fingir que tudo tem o mesmo peso.
+ */
+VISOES.inicio = async (el) => {
+  const d = await api('/painel');
+  estado.cache.contadores = { ...estado.cache.contadores, regua: d.regua.liberados };
+
+  const cod = estado.empresa?.codigo;
+  const papel = estado.usuario?.papel ?? 'operador';
+  const manda = papel === 'soberano' || papel === 'gestor';
+  const receita = d.operacao.receitaOs30d + d.operacao.receitaPedidos30d;
+
+  const cartao = ({ rota, ic, titulo, texto, estadoTxt, n, quieto, extra = '' }) => `
+    <a class="acao" href="#/${rota}">
+      <span class="ic">${icone(ic)}</span>
+      <span>
+        <h3>${esc(titulo)}</h3>
+        <p>${texto}</p>
+        ${estadoTxt ? `<span class="estado ${quieto ? 'quieto' : ''}">
+          ${n !== undefined ? `<b>${numero(n)}</b>` : ''}${esc(estadoTxt)}
+        </span>` : ''}
+        ${extra}
+      </span>
+    </a>`;
+
+  // Por empresa: a oficina tem frota e ordem de serviço; a fazenda e a loja têm
+  // pedido. Mostrar as três a todo mundo seria oferecer tela que não existe.
+  const daEmpresa = cod === 'MP'
+    ? [
+      cartao({
+        rota: 'ordens', ic: 'ordens', titulo: 'Ordens de serviço',
+        texto: 'O que está na bancada, o que ficou pronto e o laudo para entregar ao cliente.',
+        estadoTxt: d.operacao.osAbertas === 1 ? ' aberta' : ' abertas', n: d.operacao.osAbertas,
+        quieto: !d.operacao.osAbertas,
+      }),
+      cartao({
+        rota: 'frota', ic: 'frota', titulo: 'Frota e veículos',
+        texto: 'Placa, quilometragem e a projeção de quando cada bomba vence revisão.',
+        estadoTxt: ' veículos', n: d.base.veiculos, quieto: true,
+      }),
+    ]
+    : [
+      cartao({
+        rota: 'pedidos', ic: 'pedidos', titulo: 'Pedidos e recompra',
+        texto: 'O que saiu nos últimos 30 dias e quem está passando do ciclo de recompra.',
+        estadoTxt: ' nos últimos 30 dias', n: d.operacao.pedidos30d, quieto: !d.operacao.pedidos30d,
+      }),
+      cartao({
+        rota: 'catalogo', ic: 'catalogo', titulo: 'Catálogo',
+        texto: 'Produtos e serviços, com o ciclo de recompra que alimenta os gatilhos.',
+        estadoTxt: 'ver itens', quieto: true,
+      }),
+    ];
+
+  el.innerHTML = `
+    <div class="cabeca">
+      <div>
+        <div class="kicker">// ${esc(cod ?? '')} · ${esc(d.empresa.segmento ?? '')}</div>
+        <h1 class="titulo">${esc(d.empresa.nome)}</h1>
+      </div>
+      <a class="btn quiet" href="#/manual">Como usar o sistema</a>
+    </div>
+
+    <p class="inicio-frase">
+      Este sistema tem uma função principal: <strong>avisar com quem falar
+      hoje</strong> — com a mensagem já escrita — e <strong>recusar o envio
+      quando não pode enviar</strong>. O resto existe para sustentar isso.
+    </p>
+
+    <div class="acoes">
+      <a class="acao principal" href="#/regua">
+        <span class="ic">${icone('regua')}</span>
+        <span>
+          <h3>Falar com clientes hoje</h3>
+          <p>
+            O sistema montou a fila sozinho: quem precisa ser chamado, por quê, e a
+            mensagem pronta para mandar no WhatsApp.
+            ${d.regua.bloqueados
+    ? `<strong>${numero(d.regua.bloqueados)}</strong> ${d.regua.bloqueados === 1 ? 'está bloqueado' : 'estão bloqueados'} pelo compliance — e o motivo aparece na tela.`
+    : ''}
+          </p>
+        </span>
+        <span class="acao-numero">
+          <div class="n">${numero(d.regua.liberados)}</div>
+          <div class="r">${d.regua.liberados === 1 ? 'PESSOA ESPERANDO' : 'PESSOAS ESPERANDO'}</div>
+        </span>
+      </a>
+    </div>
+
+    <div class="acoes tres">
+      ${cartao({
+    rota: 'clientes', ic: 'clientes', titulo: 'Achar um cliente',
+    texto: 'Histórico, veículos, pedidos e tudo o que já foi conversado.',
+    estadoTxt: ' na base', n: d.base.clientes, quieto: true,
+    extra: `<span class="acao-busca" onclick="event.preventDefault()">
+              <input id="busca-inicio" placeholder="Nome ou telefone…" aria-label="Buscar cliente">
+              <button class="btn sm" id="ir-busca">Buscar</button>
+            </span>`,
+  })}
+      ${cartao({
+    rota: 'pipeline', ic: 'pipeline', titulo: 'Mover o funil',
+    texto: 'Arraste o cartão de etapa. Ganhar ou perder aqui é o que ensina o anúncio.',
+    extra: `<span class="estado ${d.pipeline.abertoTotal ? '' : 'quieto'}">
+              <b>${moeda(d.pipeline.abertoTotal)}</b> em negociação
+            </span>`,
+  })}
+      ${cartao({
+    rota: 'painel', ic: 'painel', titulo: 'Ver os números',
+    texto: 'Faturamento, consentimento da base e o que disparou nos últimos dias.',
+    extra: `<span class="estado quieto"><b>${moeda(receita)}</b> em 30 dias</span>`,
+  })}
+    </div>
+
+    <h2 class="secao">Desta empresa</h2>
+    <div class="acoes dois">${daEmpresa.join('')}</div>
+
+    <h2 class="secao">De onde vêm os clientes</h2>
+    <div class="acoes ${manda ? 'tres' : 'dois'}">
+      ${cartao({
+    rota: 'canais', ic: 'canais', titulo: 'Canais de entrada',
+    texto: 'Por onde o cliente chega, quanto disso dá para medir, e o formulário pronto para o site.',
+    estadoTxt: 'ver canais', quieto: true,
+  })}
+      ${cartao({
+    rota: 'gatilhos', ic: 'gatilhos', titulo: 'Gatilhos da régua',
+    texto: 'As regras que montam a fila. Ligue, desligue e ajuste o texto de cada uma.',
+    estadoTxt: 'ver regras', quieto: true,
+  })}
+      ${manda ? cartao({
+    rota: 'conversoes', ic: 'conversoes', titulo: 'Conversões offline',
+    texto: 'O que volta para o Google e para a Meta quando uma venda fecha.',
+    estadoTxt: 'ver eventos', quieto: true,
+  }) : ''}
+    </div>
+
+    ${manda && estado.empresas.length > 1 ? `
+      <h2 class="secao">O grupo inteiro</h2>
+      <div class="acoes dois">
+        ${cartao({
+    rota: 'central', ic: 'central', titulo: 'Central do grupo',
+    texto: 'Os leads das três empresas num lugar só, com a origem preservada.',
+    estadoTxt: 'ver central', quieto: true,
+  })}
+        ${cartao({
+    rota: 'auditoria', ic: 'auditoria', titulo: 'Auditoria',
+    texto: 'Quem fez o quê, quando. Registro encadeado — alterar uma linha quebra a cadeia.',
+    estadoTxt: 'ver registro', quieto: true,
+  })}
+      </div>` : ''}
+
+    <div class="inicio-faixa">
+      <p>
+        <strong>Primeira vez aqui?</strong> O manual explica as telas uma a uma, com
+        um botão que abre cada uma de verdade. Leva uns dez minutos.
+      </p>
+      <a class="btn" href="#/manual">Abrir o manual</a>
+    </div>`;
+
+  // Busca do balcão: o cliente está na frente, e dois cliques até a ficha é um
+  // clique a mais. Enter vale tanto quanto o botão.
+  const campo = el.querySelector('#busca-inicio');
+  const irBuscar = (ev) => {
+    ev?.preventDefault();
+    ev?.stopPropagation();
+    const q = campo.value.trim();
+    location.hash = q ? `#/clientes?busca=${encodeURIComponent(q)}` : '#/clientes';
+  };
+  el.querySelector('#ir-busca').onclick = irBuscar;
+  campo.onkeydown = (ev) => { if (ev.key === 'Enter') irBuscar(ev); };
+  campo.onclick = (ev) => ev.preventDefault();
+};
 
 // ── Painel ──────────────────────────────────────────────────────────────────
 VISOES.painel = async (el) => {
@@ -1004,7 +1202,20 @@ VISOES.clientes = async (el) => {
   el.querySelector('#perfil').onchange = disparar;
   el.querySelector('#novo-cliente').onclick = formularioCliente;
 
-  await desenhar();
+  /*
+   * Termo vindo do Início (`#/clientes?busca=...`).
+   *
+   * O balcão é o caso: o cliente está na frente, o atendente digita o nome na
+   * tela inicial e já cai aqui filtrado. Sem isto seriam três passos — abrir
+   * Clientes, achar o campo, digitar de novo.
+   */
+  const q = new URLSearchParams(location.hash.split('?')[1] ?? '').get('busca');
+  if (q) {
+    el.querySelector('#q').value = q;
+    el.querySelector('#q').focus();
+  }
+
+  await desenhar(q ?? '');
 };
 
 function formularioCliente() {

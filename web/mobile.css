@@ -63,6 +63,21 @@
   /* O conteúdo termina acima da barra, senão o último item fica inalcançável. */
   main { padding: 16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
 
+  /*
+   * Início: a ação principal tem de subir.
+   *
+   * Medido a 375 px: o cartão começava a 332 px do topo — 40%% da tela gasta em
+   * cabeçalho antes da coisa que a pessoa veio fazer. Numa tela cujo propósito
+   * é "deixar na cara o que o sistema faz", isso trabalha contra.
+   *
+   * O botão "Como usar" sai daqui porque a faixa do rodapé já o tem: link
+   * repetido duas vezes na mesma tela é ruído, e no celular custa 54 px do que
+   * mais importa.
+   */
+  .inicio-frase { font-size: 14.5px; line-height: 1.5; margin-bottom: 14px; }
+  main > .cabeca:has(+ .inicio-frase) { margin-bottom: 12px; }
+  main > .cabeca:has(+ .inicio-frase) .btn { display: none; }
+
   /* ── Painel: menos números grandes, mais atalho ────────────────────────── */
   .grade.g4 { grid-template-columns: repeat(2, 1fr); gap: 9px; }
   .cartao { padding: 13px 14px; }

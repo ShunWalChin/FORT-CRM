@@ -50,9 +50,11 @@ export function ehCompacto() {
  * pergunta é "com quem eu falo agora", não "como foi o mês".
  */
 export const ABAS = [
+  // Inicio primeiro: e a tela que ensina o que o sistema faz. `Hoje` fica ao
+  // lado, para quem ja sabe continuar a um toque da fila.
+  { id: 'inicio', nome: 'Inicio', ic: 'painel' },
   { id: 'regua', nome: 'Hoje', ic: 'regua', contador: 'regua' },
   { id: 'clientes', nome: 'Clientes', ic: 'clientes' },
-  { id: 'pipeline', nome: 'Funil', ic: 'pipeline' },
   { id: '__mais', nome: 'Mais', ic: 'catalogo' },
 ];
 

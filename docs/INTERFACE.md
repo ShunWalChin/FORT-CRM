@@ -105,3 +105,47 @@ No celular a rota padrão é a **régua**, não o painel: a pergunta com o clien
 na frente é "com quem eu falo agora".
 
 ---
+
+---
+
+## A tela de Início
+
+O painel responde *"como estamos"*. Essa é a **segunda** pergunta de quem abre o
+sistema — a primeira é *"o que eu faço aqui"*, e quem nunca viu a ferramenta não
+faz nem uma nem outra: fica olhando para um menu de dezessete itens sem saber por
+onde começar.
+
+Três regras fazem esta tela funcionar, e nenhuma delas é "botão grande":
+
+**Cada cartão é nomeado pelo que a pessoa quer fazer.** "Falar com clientes hoje",
+não "Régua de contato". O nome da funcionalidade só ensina quem já sabe o que ela
+faz.
+
+**Cada cartão carrega estado vivo.** *"7 pessoas esperando"*, *"R$ 14.300 em
+negociação"*, *"2 ordens abertas"*. O número ensina o que a tela é sem uma linha
+de explicação, e mostra onde está o trabalho. Um menu lista; ele não prioriza.
+
+**A ação principal não compete.** Ocupa a largura toda, com o número em 44 px.
+É a razão de o sistema existir — deixá-la do mesmo tamanho das outras seria
+fingir que tudo pesa igual.
+
+### A busca do balcão
+
+Dentro do cartão de clientes há um campo de busca. No balcão o cliente está na
+frente, e abrir Clientes → achar o campo → digitar são três passos onde cabia um.
+Enter leva para `#/clientes?busca=...`, já filtrado.
+
+### Adapta por papel e por empresa
+
+| | Vê |
+|---|---|
+| Operador da oficina | 8 cartões — frota e ordens de serviço |
+| Operador da fazenda/loja | 8 cartões — pedidos e catálogo |
+| Direção | 11 cartões — mais conversões, central e auditoria |
+
+### O que a medição corrigiu
+
+No celular o cartão principal começava a **332 px do topo** — 40% da tela gasta
+em cabeçalho antes da coisa que a pessoa veio fazer, numa tela cujo propósito é
+justamente deixar isso na cara. O botão "Como usar" saiu do cabeçalho no celular,
+porque a faixa do rodapé já o tem: **255 px**, e o cartão inteiro cabe sem rolar.

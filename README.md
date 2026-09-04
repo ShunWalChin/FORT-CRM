@@ -68,9 +68,19 @@ instalador e nunca é `demo`.
 | `adenilde@agrofort.com.br` | operação | Agrofort |
 | `loja@forttintas.com.br` | operação | Fort Tintas |
 
+### A tela de Início
+
+O sistema abre no **Início**, e não num painel de números. Cada botão é nomeado
+pelo que a pessoa quer fazer — *"Falar com clientes hoje"*, não *"Régua de
+contato"* — e carrega estado vivo: **7 pessoas esperando**, **R$ 14.300 em
+negociação**. O número ensina o que a tela é sem uma linha de explicação.
+
+Detalhe do balcão: o cartão de clientes tem busca embutida. Com o cliente na
+frente, digite o nome e tecle Enter.
+
 ### O manual está dentro do sistema
 
-Primeiro item do menu: **Manual do sistema**. 17 telas explicadas uma a uma, 23
+Primeiro item do menu: **Manual do sistema**. 18 telas explicadas uma a uma, 23
 verbetes de glossário, 12 receitas de "como faço para…" e uma lista honesta do
 que o sistema ainda não faz. Cada seção tem um botão que abre a tela de verdade.
 
