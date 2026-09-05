@@ -1012,6 +1012,7 @@ function travarRolagem(ligar) {
  */
 function perguntar({
   titulo, texto = '', campos = [], confirmar = 'Confirmar', perigo = false, contexto: ctx = '',
+  apenasCiencia = false,
 }) {
   return new Promise((resolve) => {
     const veu = document.createElement('div');
@@ -1036,7 +1037,9 @@ function perguntar({
                     ${esc(o.rotulo)}
                   </button>`).join('')}
               </div>`
-    : `<input id="dlg-${esc(c.nome)}" name="${esc(c.nome)}" type="${esc(c.tipo ?? 'text')}"
+    : `<input id="dlg-${esc(c.nome)}" name="${esc(c.nome)}"
+                 type="${c.tipo === 'decimal' ? 'text' : esc(c.tipo ?? 'text')}"
+                 ${c.tipo === 'decimal' ? 'inputmode="decimal"' : ''}
                  ${c.passo ? `step="${esc(c.passo)}"` : ''}
                  ${c.min !== undefined ? `min="${esc(c.min)}"` : ''}
                  ${c.max !== undefined ? `max="${esc(c.max)}"` : ''}
@@ -1045,7 +1048,7 @@ function perguntar({
         </div>`).join('')}
       <div class="dialogo-erro" hidden></div>
       <div class="barra-acoes" style="margin-top:16px;justify-content:flex-end">
-        <button class="btn quiet" data-cancelar>Cancelar</button>
+        ${apenasCiencia ? '' : '<button class="btn quiet" data-cancelar>Cancelar</button>'}
         ${campos.some((c) => c.tipo === 'opcoes') ? '' : `<button class="btn ${perigo ? 'perigo' : ''}" data-ok>${esc(confirmar)}</button>`}
       </div>`;
 
@@ -1076,8 +1079,23 @@ function perguntar({
         // Validar AQUI é metade do motivo de este diálogo existir: o `prompt`
         // devolvia qualquer coisa e o erro só aparecia no banco.
         if (c.obrigatorio && !v) { erro(`${c.rotulo ?? 'Campo'} é obrigatório.`); el.focus(); return; }
-        if (v && c.tipo === 'number') {
-          const n = Number(v.replace(',', '.'));
+        /*
+         * `decimal` existe porque `type="number"` DESCARTA a vírgula.
+         *
+         * O campo de valor da venda aceitava "1650,00" e chegava vazio aqui: o
+         * navegador só guarda literal de ponto flutuante em `type=number`, e
+         * "1650,00" não é um. Quem escreve dinheiro em português escreve com
+         * vírgula, e o campo apagava o que a pessoa digitou sem dizer nada.
+         *
+         * Texto com `inputmode="decimal"` mantém o teclado numérico no celular
+         * e deixa a vírgula chegar até aqui, onde ela é convertida.
+         */
+        if (v && (c.tipo === 'number' || c.tipo === 'decimal')) {
+          // "1.650,00" -> 1650. O ponto e separador de milhar em portugues, e
+          // so o campo decimal o interpreta assim; num campo inteiro (pressao
+          // de bancada) o ponto nao aparece e nao ha o que remover.
+          const cru = c.tipo === 'decimal' ? v.replaceAll('.', '') : v;
+          const n = Number(cru.replace(',', '.'));
           if (!Number.isFinite(n)) { erro(`${c.rotulo} precisa ser um número.`); el.focus(); return; }
           if (c.min !== undefined && n < c.min) { erro(`${c.rotulo}: mínimo ${c.min}.`); el.focus(); return; }
           if (c.max !== undefined && n > c.max) { erro(`${c.rotulo}: máximo ${c.max}.`); el.focus(); return; }
@@ -1088,7 +1106,7 @@ function perguntar({
       fechar(campos.length ? vals : true);
     };
 
-    cx.querySelector('[data-cancelar]').onclick = () => fechar(null);
+    cx.querySelector('[data-cancelar]')?.addEventListener('click', () => fechar(null));
     cx.querySelector('[data-ok]')?.addEventListener('click', confirmarAgora);
     veu.onclick = () => fechar(null);
     cx.querySelectorAll('[data-opcao]').forEach((b) => {
@@ -2335,6 +2353,47 @@ VISOES.pipeline = async (el) => {
       if (!motivo) { toast('Movimento cancelado', 'Perda exige motivo.', 'erro'); return false; }
       corpo.motivo_perda = motivo;
     }
+
+    /*
+     * Ganhar pede valor e número do pedido AQUI, com a pessoa na frente.
+     *
+     * Sem valor, o servidor recusa a venda — e antes desta caixa ele recusava
+     * bem mais tarde, dentro do processamento de conversões, onde ninguém lê:
+     * o evento mais valioso do funil era o mais fácil de perder em silêncio.
+     *
+     * O aviso de que não volta atrás não é dramatização: uma vez enviada, a
+     * conversão entra no aprendizado do algoritmo da Meta e no relatório de
+     * ROAS. Arrastar o cartão de volta depois não desfaz nada lá.
+     */
+    if (etapa === 'ganho') {
+      const op = (d.etapas ?? []).flatMap((c) => c.itens ?? []).find((x) => x.id === id);
+      const r = await perguntar({
+        contexto: op?.titulo ?? '',
+        titulo: 'Registrar venda fechada',
+        texto: 'O valor vai para a Meta e o Google como conversão — é o que ensina a '
+          + 'campanha a procurar mais gente como esta. Depois de enviada, ela não '
+          + 'volta atrás por aqui.',
+        campos: [
+          {
+            nome: 'valor', rotulo: 'Valor da venda (R$)', tipo: 'decimal',
+            min: 0.01, max: 10000000, dica: 'ex.: 1.650,00',
+            valor: op?.valor_centavos ? (op.valor_centavos / 100).toFixed(2).replace('.', ',') : '',
+            obrigatorio: true,
+            ajuda: 'Sem valor a conversão não ensina retorno — vira só mais um "converteu".',
+          },
+          {
+            nome: 'pedido', rotulo: 'Número do pedido, contrato ou OS',
+            valor: op?.pedido_ref ?? '', obrigatorio: true, dica: 'ex.: OS-02500',
+            ajuda: 'É o que impede um reenvio de virar uma segunda venda no Gerenciador.',
+          },
+        ],
+        confirmar: 'Registrar venda',
+      });
+      if (!r) return false;
+      corpo.valor_centavos = Math.round(Number(r.valor) * 100);
+      corpo.pedido_ref = r.pedido;
+    }
+
     try {
       const r = await api(`/oportunidades/${id}`, { method: 'PATCH', corpo });
       if (r.eventoConversao) {
@@ -2343,6 +2402,21 @@ VISOES.pipeline = async (el) => {
       navegar();
       return true;
     } catch (e) {
+      // Venda já contada não é erro de operação: é uma regra, e a pessoa
+      // precisa entender POR QUE antes de tentar de novo. Um toast de três
+      // segundos não cabe a explicação.
+      if (e.codigo === 'venda_ja_contada') {
+        await perguntar({
+          contexto: 'Venda já enviada como conversão',
+          titulo: 'Esta oportunidade não volta de etapa',
+          texto: e.message,
+          confirmar: 'Entendi',
+          // Sem "Cancelar": nao ha decisao a tomar aqui, e oferecer duas
+          // saidas para a mesma coisa e so mais uma escolha inutil.
+          apenasCiencia: true,
+        });
+        return false;
+      }
       toast('Não foi possível mover', e.message, 'erro');
       return false;
     }

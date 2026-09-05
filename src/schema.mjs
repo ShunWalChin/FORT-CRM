@@ -176,6 +176,13 @@ create table if not exists oportunidades (
   probabilidade  integer not null default 20,
   posicao        real not null default 1000,
   motivo_perda   text,
+  -- Numero do pedido, contrato ou OS que comprova a venda.
+  --
+  -- Exigido ao marcar "ganho" por dois motivos: e o que torna a deduplicacao
+  -- do Purchase estavel entre reenvios (a Meta casa por order_id), e e o que
+  -- permite auditar depois qual venda gerou qual conversao. Sem ele, um
+  -- reenvio vira segunda venda no Gerenciador.
+  pedido_ref     text,
   criado_em      text not null,
   atualizado_em  text not null
 );

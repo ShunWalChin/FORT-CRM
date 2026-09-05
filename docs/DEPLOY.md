@@ -175,6 +175,22 @@ sudo docker exec fortcrm-app node deploy/manutencao.mjs reancorar
 | `FORTCRM_SENHA_INICIAL` | gerado | Vale só para a primeira carga |
 | `FORTCRM_META_APP_SECRET` | — | Sem ela o webhook do WhatsApp fica **fechado** |
 | `FORTCRM_WHATSAPP_VERIFY_TOKEN` | — | Verificação inicial do endpoint |
+| `FORTCRM_META_MARKETING_TOKEN` | — | Token de System User com **`ads_read`**, para resolver o nome das campanhas. Separado do token de conversão (`manage_events`) de propósito: um token único com as duas permissões transforma um vazamento de leitura em permissão de escrita. Sem ele a tela mostra o número do anúncio e diz o que falta — nada quebra |
+
+### Sonda de saúde
+
+O `HEALTHCHECK` do contêiner lê `GET /api/health`, e não mais `POST /api/sessao`
+com corpo vazio. A anterior gastava o balde de login (12/min), enchia o log de
+tentativas falhas e respondia 200 **sem tocar em banco nenhum** — um SQLite
+ilegível passava no exame.
+
+```bash
+curl -s http://127.0.0.1:4310/api/health
+# {"ok":true,"dados":{"ok":true,"instancias":"3/3"}}
+```
+
+A resposta é deliberadamente pobre: é porta aberta à internet, e não diz versão,
+nome de empresa nem contagem de registro.
 
 ---
 

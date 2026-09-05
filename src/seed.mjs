@@ -40,7 +40,7 @@ const CLIENTES_MP = [
   ['Maria Aparecida Fonseca', '5538999887766', 'cida.fonseca@gmail.com', 'Januária', 'particular', 0.4, 95, 'organico'],
   ['Fazenda Boa Vista LTDA', '5538998334455', 'compras@fazendaboavista.agr.br', 'Itacarambi', 'produtor_rural', 0.9, 410, 'gclid'],
   ['José Carlos Menezes', '5538999556677', null, 'Manga', 'particular', 22, 260, null],
-  ['Transportes Norte Mineiro', '5538998221100', 'operacao@tnmtransportes.com.br', 'Montes Claros', 'frota', 0.2, 60, 'fbclid'],
+  ['Transportes Norte Mineiro', '5538998221100', 'operacao@tnmtransportes.com.br', 'Montes Claros', 'frota', 0.2, 60, 'ctwa'],
   ['Divino Souza Lima', '5538999334422', 'divino.lima@hotmail.com', 'Januária', 'particular', 40, 150, null],
   ['Agropecuária Barra Grande', '5538998667788', 'adm@barragrande.agr.br', 'Bonito de Minas', 'produtor_rural', 18, 380, 'organico'],
   ['Rubens Teixeira Campos', '5538999112244', 'rubens.campos@gmail.com', 'Januária', 'particular', 8, 88, null],
@@ -106,10 +106,10 @@ const CLIENTES_AF = [
   ['Empório Sabor de Minas', '5531998445566', 'compras@emporiosabordeminas.com.br', 'Belo Horizonte', 'revenda', 6, 'gclid'],
   ['Roberto Carvalho Pinto', '5538999223344', 'roberto.pinto@uol.com.br', 'Montes Claros', 'consumidor', 12, null],
   ['Casa do Queijo Norte', '5538998776655', 'contato@casadoqueijonorte.com.br', 'Montes Claros', 'revenda', 3, 'organico'],
-  ['Fernanda Lopes Andrade', '5511998887766', 'fernanda.andrade@gmail.com', 'São Paulo', 'consumidor', 40, 'fbclid'],
+  ['Fernanda Lopes Andrade', '5511998887766', 'fernanda.andrade@gmail.com', 'São Paulo', 'consumidor', 40, 'ctwa'],
   ['Adalberto Nunes Rocha', '5538998334455', null, 'Januária', 'consumidor', 90, null],
   ['Mercearia Bom Jesus', '5538999556677', 'merceariabomjesus@gmail.com', 'Januária', 'revenda', 5, null],
-  ['Cristiane Moreira Dias', '5521998221100', 'cris.moreira@hotmail.com', 'Rio de Janeiro', 'consumidor', 130, 'fbclid'],
+  ['Cristiane Moreira Dias', '5521998221100', 'cris.moreira@hotmail.com', 'Rio de Janeiro', 'consumidor', 130, 'ctwa'],
   ['Paulo Henrique Braga', '5538999334422', 'ph.braga@gmail.com', 'Januária', 'consumidor', 8, null],
   ['Delicatessen Serra Mineira', '5531998667788', 'pedidos@serramineira.com.br', 'Nova Lima', 'revenda', 20, 'gclid'],
   ['Vera Lúcia dos Santos', '5538999112244', 'veralucia.santos@bol.com.br', 'Manga', 'consumidor', 170, null],
@@ -160,12 +160,12 @@ const OPORTUNIDADES_AF = [
 const CLIENTES_FT = [
   ['Joaquim Pereira Alencar', '5538998220011', 'joaquim.alencar@gmail.com', 'Januária', 'particular', 0.4, 'gclid'],
   ['Pinturas Silva & Filhos', '5538998330022', 'contato@pinturassilva.com.br', 'Januária', 'revenda', 0.6, 'gclid'],
-  ['Construtora Rio Verde', '5538998440033', 'compras@rioverde.eng.br', 'Montes Claros', 'frota', 0.9, 'fbclid'],
+  ['Construtora Rio Verde', '5538998440033', 'compras@rioverde.eng.br', 'Montes Claros', 'frota', 0.9, 'ctwa'],
   ['Marlene Souza Andrade', '5538999550044', 'marlene.andrade@hotmail.com', 'Januária', 'particular', 3, null],
   ['Edificar Engenharia', '5538998660055', 'suprimentos@edificar.eng.br', 'Januária', 'frota', 0.3, 'gclid'],
   ['Sebastião Ferreira Melo', '5538999770066', null, 'Manga', 'particular', 26, null],
   ['Cores & Cia Decorações', '5538998880077', 'orcamento@coresecia.com.br', 'Montes Claros', 'revenda', 0.7, 'organico'],
-  ['Raimundo Nonato Costa', '5538999990088', 'raimundo.costa@gmail.com', 'Itacarambi', 'particular', 12, 'fbclid'],
+  ['Raimundo Nonato Costa', '5538999990088', 'raimundo.costa@gmail.com', 'Itacarambi', 'particular', 12, 'ctwa'],
   ['Condomínio Alto da Serra', '5538998110099', 'sindico@altodaserra.com.br', 'Januária', 'frota', 0.5, null],
   ['Ateliê Reforma Fácil', '5538998221177', 'contato@reformafacil.com.br', 'Januária', 'revenda', 45, 'gclid'],
   ['Cleide Martins Rocha', '5538999332288', 'cleide.rocha@bol.com.br', 'São Francisco', 'particular', 70, null],
@@ -256,7 +256,9 @@ function camposDeExemplo(codigo, i) {
 function origemDe(codigo, tipoAtr, i) {
   const lista = canaisDe(codigo);
   if (!lista.length) return 'balcao';
-  const pago = tipoAtr === 'gclid' || tipoAtr === 'fbclid';
+  // Click-to-WhatsApp tambem e trafego pago — esquecer 'ctwa' aqui mandaria o
+  // lead de anuncio para um canal organico, e a origem na ficha ficaria errada.
+  const pago = tipoAtr === 'gclid' || tipoAtr === 'fbclid' || tipoAtr === 'ctwa';
   const elegiveis = lista.filter((x) => x.atribuivel === pago);
   const pool = elegiveis.length ? elegiveis : lista;
   return pool[i % pool.length].id;
@@ -279,6 +281,24 @@ function atribuicaoDe(tipo, i) {
       fbclid: `IwAR${String(i).padStart(2, '0')}demo${Math.random().toString(36).slice(2, 12)}`,
       utm_source: 'facebook', utm_medium: 'paid_social', utm_campaign: campanha, utm_content: 'criativo-video',
     }, { paginaEntrada: 'https://exemplo.com.br/', fbp: `fb.1.${HOJE - i * 1000}.${1000000 + i}` });
+  }
+  /*
+   * Click-to-WhatsApp: o caso SEM UTM.
+   *
+   * Nao houve navegador, nao houve pagina, nao houve query string — o anuncio
+   * abriu a conversa direto. Sem este tipo na carga, a demonstracao nunca
+   * mostrava o ponto cego que a dimensao de campanha existe para fechar: um
+   * lead de anuncio que a tela de origem so sabia chamar de "sem_campanha".
+   */
+  if (tipo === 'ctwa') {
+    const atr = extrairAtribuicao({
+      ctwa_clid: `ARBxDemo${String(i).padStart(2, '0')}${Math.random().toString(36).slice(2, 14)}`,
+    });
+    // `source_ad_id` e `waba_id` sao carimbados a parte, como no webhook real:
+    // eles nao chegam por URL e por isso nao estao em PARAMS_CLIQUE.
+    atr.source_ad_id = `1201${String(900 + (i % 4)).padStart(4, '0')}5566${i % 3}`;
+    atr.waba_id = '109988776655443';
+    return atr;
   }
   return extrairAtribuicao({
     utm_source: 'google', utm_medium: 'organic', utm_campaign: 'busca-organica',
@@ -511,6 +531,11 @@ function semearInterno(banco, codigo, reset) {
         id: novoId(), cliente_id: id, toque: 'primeiro', plataforma: atr.plataforma,
         gclid: atr.gclid, gbraid: atr.gbraid, wbraid: atr.wbraid,
         fbclid: atr.fbclid, fbp: atr.fbp, fbc: atr.fbc,
+        // `?? null` obrigatorio: node:sqlite recusa `undefined` como parametro,
+        // e so o tipo 'ctwa' preenche estes tres.
+        ctwa_clid: atr.ctwa_clid ?? null,
+        waba_id: atr.waba_id ?? null,
+        source_ad_id: atr.source_ad_id ?? null,
         utm_source: atr.utm_source, utm_medium: atr.utm_medium, utm_campaign: atr.utm_campaign,
         utm_term: atr.utm_term, utm_content: atr.utm_content,
         pagina_entrada: atr.pagina_entrada, referrer: atr.referrer,

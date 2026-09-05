@@ -35,6 +35,10 @@ import { novoId, agora } from './db.mjs';
 import { reancorar, ancoraDe, diagnosticoDaAncora } from './reancorar.mjs';
 import { montarRegua, negarPorPapel, ROTAS, assinar, ErroHttp } from './api.mjs';
 import { diagnosticarFilaVazia } from './regua.mjs';
+import {
+  precisaResolver, lerAnuncio, diagnosticarErro, requisicaoDoAnuncio, resolverAnuncios,
+  rotularCampanha, VALIDADE_MS, ESPERA_APOS_FALHA_MS,
+} from './campanhas.mjs';
 import { hashSenha, verificarSenha, ehHash, migrarSenhas, avaliarForca } from './senha.mjs';
 
 let passou = 0;
@@ -54,6 +58,29 @@ const igual = (a, b, m) => {
   if (a !== b) throw new Error(`${m ?? 'diferente'} — esperado ${JSON.stringify(b)}, veio ${JSON.stringify(a)}`);
 };
 const verdadeiro = (v, m) => { if (!v) throw new Error(m ?? 'esperava verdadeiro'); };
+
+/*
+ * Teste assincrono, numa fila propria.
+ *
+ * `teste()` conta o sucesso ANTES de a promessa resolver: passar uma funcao
+ * async para ele produz "ok" mesmo quando o corpo falha depois — um teste que
+ * nunca reprova, que e pior que teste nenhum. Estes ficam guardados e sao
+ * executados em sequencia no fim, antes do resumo.
+ */
+const filaAsync = [];
+function testeAsync(nome, fn) {
+  filaAsync.push(async () => {
+    try {
+      await fn();
+      passou += 1;
+      console.log(`  ok   ${nome}`);
+    } catch (e) {
+      falhas.push({ nome, erro: e.message });
+      console.log(`  FALHA ${nome}
+         ${e.message}`);
+    }
+  });
+}
 
 console.log('\n ATRIBUIÇÃO\n');
 
@@ -1591,6 +1618,282 @@ teste('fila vazia por adiamento nao pode ser lida como "nao ha trabalho"', () =>
   ids.forEach((g) => e.atualizar('gatilhos', g.id, { ativo: 1 }));
 });
 
+/* -- Dimensao de campanha: o nome por tras do ad_id ----------------------- */
+
+// `fetch` de mentira. A unica chamada de saida do sistema tem ponto de costura
+// justamente para que o teste jamais dependa da Meta estar no ar.
+function metaFalsa(respostas) {
+  const chamadas = [];
+  return {
+    chamadas,
+    buscar: async (url, opcoes) => {
+      chamadas.push({ url, opcoes });
+      const id = decodeURIComponent(url.split('/').pop().split('?')[0]);
+      const r = respostas[id] ?? { status: 404, json: { error: { code: 803 } } };
+      if (r.lancar) throw new Error(r.lancar);
+      return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.json };
+    },
+  };
+}
+
+teste('so vai a Meta quando precisa — cache vale, e falha espera', () => {
+  const t = Date.parse('2026-09-05T12:00:00Z');
+  igual(precisaResolver(null, t), true, 'sem linha, precisa');
+  igual(precisaResolver({ resolvido_em: new Date(t - 1000).toISOString() }, t), false,
+    'resolvido agora nao se busca de novo');
+  igual(precisaResolver({ resolvido_em: new Date(t - VALIDADE_MS - 1000).toISOString() }, t), true,
+    'nome de campanha muda: passada a validade, busca de novo');
+
+  // Falha guardada evita marretar a API com um id que nunca vai resolver.
+  igual(precisaResolver({ tentado_em: new Date(t - 1000).toISOString() }, t), false);
+  igual(precisaResolver({ tentado_em: new Date(t - ESPERA_APOS_FALHA_MS - 1000).toISOString() }, t), true);
+});
+
+teste('o token vai no cabecalho, nunca na query', () => {
+  const { url, opcoes } = requisicaoDoAnuncio('120109', 'TOKEN_SECRETO');
+  verdadeiro(!url.includes('TOKEN_SECRETO'),
+    'token em query string acaba em log de proxy e no Referer');
+  igual(opcoes.headers.authorization, 'Bearer TOKEN_SECRETO');
+  verdadeiro(url.includes('/120109?'), 'o id precisa estar no caminho');
+});
+
+teste('resposta parcial da Meta ainda vale; resposta vazia nao', () => {
+  const so = lerAnuncio({ campaign: { id: '9', name: 'Injecao diesel - setembro' } });
+  igual(so.campanha_nome, 'Injecao diesel - setembro');
+  igual(so.conjunto_nome, null, 'faltar conjunto nao pode derrubar a campanha');
+
+  igual(lerAnuncio({}), null, 'sem nome nenhum nao e resposta');
+  igual(lerAnuncio(null), null);
+});
+
+teste('o erro diz de QUEM e o problema — token ou anuncio', () => {
+  igual(diagnosticarErro(401, {}).causa, 'token_invalido');
+  igual(diagnosticarErro(200, { error: { code: 190 } }).causa, 'token_invalido');
+  igual(diagnosticarErro(404, {}).causa, 'anuncio_inexistente');
+  igual(diagnosticarErro(429, {}).causa, 'limite_api');
+  igual(diagnosticarErro(403, {}).causa, 'sem_permissao');
+  // Sao consertos diferentes: um e renovar credencial, o outro e aceitar que
+  // aquele anuncio sumiu. "Erro ao resolver" nao distingue os dois.
+  verdadeiro(diagnosticarErro(401, {}).texto !== diagnosticarErro(404, {}).texto);
+});
+
+testeAsync('resolver grava o nome e a tela para de mostrar so o numero', async () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const adId = '120109000000001';
+
+  const meta = metaFalsa({
+    [adId]: {
+      status: 200,
+      json: {
+        name: 'Criativo video - bomba', effective_status: 'ACTIVE',
+        campaign: { id: '23851', name: 'Injecao diesel - Januaria' },
+        adset: { id: '23852', name: 'Raio 40km - frota' },
+      },
+    },
+  });
+
+  const r = await resolverAnuncios(e, [adId], { token: 'T', buscar: meta.buscar });
+  igual(r.resolvidos, 1);
+  igual(meta.chamadas.length, 1);
+
+  const dim = e.uma('select * from dimensoes_campanha where {ESCOPO} and source_ad_id = ?', adId);
+  igual(dim.campanha_nome, 'Injecao diesel - Januaria');
+  igual(dim.conjunto_nome, 'Raio 40km - frota');
+  verdadeiro(dim.resolvido_em, 'sem carimbo de resolucao o cache nao vence nunca');
+
+  igual(rotularCampanha(dim, adId).rotulo, 'Injecao diesel - Januaria');
+  igual(rotularCampanha(dim, adId).resolvido, true);
+
+  // Segunda passada nao gasta chamada: o cache existe para isso.
+  const r2 = await resolverAnuncios(e, [adId], { token: 'T', buscar: meta.buscar });
+  igual(r2.pulados, 1);
+  igual(meta.chamadas.length, 1, 'chamou a Meta de novo com o cache quente');
+});
+
+testeAsync('falha NAO apaga nome ja resolvido', async () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const adId = '120109000000002';
+
+  const ok = metaFalsa({
+    [adId]: { status: 200, json: { name: 'A', campaign: { id: '1', name: 'Campanha boa' } } },
+  });
+  await resolverAnuncios(e, [adId], { token: 'T', buscar: ok.buscar });
+
+  // Envelhece para forcar nova busca, e agora a Meta recusa o token.
+  const velho = new Date(Date.now() - VALIDADE_MS - 60_000).toISOString();
+  const dim0 = e.uma('select id from dimensoes_campanha where {ESCOPO} and source_ad_id = ?', adId);
+  e.atualizar('dimensoes_campanha', dim0.id, { resolvido_em: velho });
+
+  const ruim = metaFalsa({ [adId]: { status: 401, json: { error: { code: 190 } } } });
+  const r = await resolverAnuncios(e, [adId], { token: 'T', buscar: ruim.buscar });
+  igual(r.falhas, 1);
+
+  const dim = e.uma('select * from dimensoes_campanha where {ESCOPO} and source_ad_id = ?', adId);
+  igual(dim.campanha_nome, 'Campanha boa',
+    'token vencido nao pode transformar meses de nome em id cru');
+  igual(dim.erro_causa, 'token_invalido', 'e o motivo tem de ficar visivel');
+});
+
+testeAsync('rede caida nao vira "anuncio inexistente"', async () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const adId = '120109000000003';
+  const meta = metaFalsa({ [adId]: { lancar: 'ECONNRESET' } });
+  await resolverAnuncios(e, [adId], { token: 'T', buscar: meta.buscar });
+  const dim = e.uma('select * from dimensoes_campanha where {ESCOPO} and source_ad_id = ?', adId);
+  igual(dim.erro_causa, 'rede', 'uma queda de minutos nao pode virar "essa campanha nao existe"');
+});
+
+testeAsync('sem token nao ha rede, e a tela sabe disso', async () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const meta = metaFalsa({});
+  const r = await resolverAnuncios(e, ['1'], { token: null, buscar: meta.buscar });
+  igual(r.semToken, true);
+  igual(meta.chamadas.length, 0, 'sem token nao se bate na porta da Meta');
+});
+
+teste('sem nome resolvido, mostra o id — e NUNCA inventa um', () => {
+  const r = rotularCampanha(null, '120109000000009');
+  igual(r.resolvido, false);
+  igual(r.rotulo, 'Anúncio 120109000000009');
+  verdadeiro(r.porque, 'o id cru sozinho nao explica por que esta cru');
+  // Um "Campanha 120109" fabricado seria pior que o id: parece resposta.
+  verdadeiro(!/^Campanha/.test(r.rotulo));
+});
+
+/* -- Venda: exige valor e nao volta depois de contada --------------------- */
+
+teste('ganhar exige valor e numero do pedido, com a pessoa na frente', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema()
+    .prepare("select email from usuarios where papel = 'soberano' limit 1").get();
+
+  const cli = e.uma('select id from clientes where {ESCOPO} limit 1');
+  const opId = novoId();
+  e.inserir('oportunidades', {
+    id: opId, cliente_id: cli.id, titulo: 'Teste de venda', etapa: 'negociacao',
+    valor_centavos: 0, probabilidade: 50, posicao: 1, criado_em: agora(), atualizado_em: agora(),
+  });
+
+  const mover = (corpo) => ROTAS['PATCH /api/oportunidades/:id'](
+    fed, sessaoDe('MP', email), { id: opId }, corpo,
+  );
+
+  const recusa = (corpo, oque) => {
+    try { mover(corpo); throw new Error(`aceitou ${oque}`); } catch (err) {
+      verdadeiro(err instanceof ErroHttp, `${oque}: veio "${err.message}"`);
+      return err;
+    }
+  };
+
+  // Sem valor, `avaliarConversao` recusaria o Purchase la adiante, dentro do
+  // worker, onde ninguem le. O evento mais valioso do funil era o mais facil
+  // de perder em silencio.
+  igual(recusa({ etapa: 'ganho' }, 'venda sem valor').codigo, 'valor_obrigatorio');
+  igual(recusa({ etapa: 'ganho', valor_centavos: 150000 }, 'venda sem pedido').codigo,
+    'pedido_obrigatorio');
+
+  const r = mover({ etapa: 'ganho', valor_centavos: 150000, pedido_ref: 'OS-4242' });
+  igual(r.dados.etapa, 'ganho');
+  igual(r.dados.valor_centavos, 150000);
+  igual(r.dados.pedido_ref, 'OS-4242');
+  igual(r.dados.eventoConversao, 'venda', 'a venda tem de gerar o evento de conversao');
+});
+
+teste('venda ja contada pela Meta nao volta de etapa', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema()
+    .prepare("select email from usuarios where papel = 'soberano' limit 1").get();
+  const cli = e.uma('select id from clientes where {ESCOPO} limit 1');
+
+  const opId = novoId();
+  e.inserir('oportunidades', {
+    id: opId, cliente_id: cli.id, titulo: 'Venda contada', etapa: 'ganho',
+    valor_centavos: 90000, pedido_ref: 'OS-1', probabilidade: 100, posicao: 2,
+    criado_em: agora(), atualizado_em: agora(),
+  });
+
+  const mover = (corpo) => ROTAS['PATCH /api/oportunidades/:id'](
+    fed, sessaoDe('MP', email), { id: opId }, corpo,
+  );
+
+  // Conversao SIMULADA nao tranca: em demonstracao nada saiu, e nao ha nada do
+  // outro lado para contradizer. Travar aqui quebraria a demonstracao por uma
+  // consequencia que nao existe.
+  const simulada = novoId();
+  e.inserir('conversoes', {
+    id: simulada, cliente_id: cli.id, oportunidade_id: opId, destino: 'meta_capi',
+    evento: 'venda', valor_centavos: 90000, ocorrido_em: agora(), status: 'enviado',
+    motivo: 'simulado', idempotency_key: `sim:${opId}`, criado_em: agora(),
+  });
+  igual(mover({ etapa: 'negociacao' }).dados.etapa, 'negociacao',
+    'conversao simulada nao pode trancar o cartao');
+  mover({ etapa: 'ganho', valor_centavos: 90000, pedido_ref: 'OS-1' });
+
+  // Conversao DESPACHADA de verdade tranca: a Meta ja contou, e arrastar o
+  // cartao de volta so faria o CRM discordar do que ela registrou.
+  e.inserir('conversoes', {
+    id: novoId(), cliente_id: cli.id, oportunidade_id: opId, destino: 'meta_capi',
+    evento: 'venda', valor_centavos: 90000, ocorrido_em: agora(), status: 'enviado',
+    motivo: null, idempotency_key: `real:${opId}`, criado_em: agora(),
+  });
+
+  try {
+    mover({ etapa: 'negociacao' });
+    throw new Error('deixou a venda voltar de etapa');
+  } catch (err) {
+    verdadeiro(err instanceof ErroHttp, err.message);
+    igual(err.status, 409);
+    igual(err.codigo, 'venda_ja_contada');
+    verdadeiro(err.message.includes('Gerenciador'), 'a recusa precisa dizer onde se resolve');
+  }
+
+  // Continuar em 'ganho' segue permitido — a trava e contra VOLTAR, e nao
+  // contra editar o valor de uma venda que se manteve venda.
+  igual(mover({ etapa: 'ganho', valor_centavos: 95000, pedido_ref: 'OS-1' }).dados.valor_centavos,
+    95000);
+});
+
+teste('resposta ambigua tranca junto — e quando MENOS se pode fingir que nada houve', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema()
+    .prepare("select email from usuarios where papel = 'soberano' limit 1").get();
+  const cli = e.uma('select id from clientes where {ESCOPO} limit 1');
+
+  const opId = novoId();
+  e.inserir('oportunidades', {
+    id: opId, cliente_id: cli.id, titulo: 'Venda ambigua', etapa: 'ganho',
+    valor_centavos: 50000, pedido_ref: 'OS-2', probabilidade: 100, posicao: 3,
+    criado_em: agora(), atualizado_em: agora(),
+  });
+  e.inserir('conversoes', {
+    id: novoId(), cliente_id: cli.id, oportunidade_id: opId, destino: 'meta_capi',
+    evento: 'venda', valor_centavos: 50000, ocorrido_em: agora(), status: 'desconhecido',
+    motivo: 'sem_adaptador_de_rede', idempotency_key: `amb:${opId}`, criado_em: agora(),
+  });
+
+  try {
+    ROTAS['PATCH /api/oportunidades/:id'](fed, sessaoDe('MP', email), { id: opId },
+      { etapa: 'orcamento' });
+    throw new Error('deixou voltar com conversao ambigua');
+  } catch (err) {
+    igual(err.codigo, 'venda_ja_contada');
+  }
+});
+
 /* ── Fila vazia: dizer POR QUE, e nao adivinhar ──────────────────────────── */
 
 teste('a fila vazia acusa a causa certa, na ordem em que se resolve', () => {
@@ -1693,6 +1996,9 @@ teste('a recusa diz o papel exigido e o que a pessoa tem', () => {
   igual(n.exigido, 'gestor');
   igual(n.papel, 'operador');
 });
+
+// Os assincronos rodam agora, com os bancos ainda abertos.
+for (const rodar of filaAsync) await rodar();
 
 fed.fecharTudo();
 rmSync(DIR, { recursive: true, force: true });

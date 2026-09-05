@@ -42,6 +42,9 @@ export const COLUNAS_ESPERADAS = [
   { tabela: 'conversoes', coluna: 'http_status', definicao: 'integer' },
   { tabela: 'conversoes', coluna: 'fbtrace_id', definicao: 'text' },
   { tabela: 'conversoes', coluna: 'proxima_tentativa_em', definicao: 'text' },
+
+  // Referencia do pedido/contrato/OS da venda ganha.
+  { tabela: 'oportunidades', coluna: 'pedido_ref', definicao: 'text' },
 ];
 
 /**

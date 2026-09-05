@@ -95,6 +95,27 @@ régua, *meta* leva a Conversões.
 ela diz onde procurou e oferece procurar nas outras a que você tem acesso — a
 travessia é explícita, e troca a empresa ativa de verdade.
 
+### A campanha que trouxe o lead, pelo nome
+
+Lead de **Click-to-WhatsApp não tem UTM** — o anúncio abre a conversa direto, sem
+navegador e sem página. A tela de origem agrupava por `utm_campaign`, então todo
+lead de anúncio caía em *sem_campanha*: o canal onde há verba era o único sem
+resposta.
+
+Agora o `ad_id` vira nome de campanha, conjunto e anúncio, lidos do Gerenciador
+da Meta e guardados por sete dias. Sem token, sem rede ou com erro, a tela mostra
+**o número do anúncio e diz por quê** — nunca um nome inventado.
+
+### A venda pede valor, e depois não volta
+
+Mover para *Ganho* pede o valor (com vírgula, `1.650,00`) e o número do pedido.
+Sem valor, a conversão era recusada bem depois, dentro do processamento, onde
+ninguém lê: o evento mais valioso do funil era o mais fácil de perder em
+silêncio.
+
+Depois que a conversão sai de verdade, o cartão **trava**. A Meta já contou;
+arrastar de volta só faria o CRM discordar do que ela registrou.
+
 ### Adiar sem apagar
 
 Na régua, *"esse eu falo semana que vem"* virou botão. O adiamento é por
@@ -117,6 +138,7 @@ que o sistema ainda não faz. Cada seção tem um botão que abre a tela de verd
 |---|---|
 | [Arquitetura](docs/ARQUITETURA.md) | Federação, instâncias, central, escopo e auditoria |
 | [Régua e compliance](docs/REGUA-E-COMPLIANCE.md) | Os 17 gatilhos, as 9 checagens, idempotência |
+| [Campanhas](docs/CAMPANHAS.md) | O nome por trás do `ad_id`, e por que o sistema nunca inventa um |
 | [Atribuição e conversões](docs/ATRIBUICAO-E-CONVERSOES.md) | Do clique no anúncio à conversão devolvida |
 | [Click-to-WhatsApp](docs/CTWA.md) | `ctwa_clid`, webhook assinado, Business Messaging |
 | [Canais de entrada](docs/CANAIS.md) | Catálogo por empresa, porta pública, cobertura |

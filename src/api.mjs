@@ -23,6 +23,7 @@ import {
 import { despacharConversoes, drenarEventos, registrarMudancaDeEtapa } from './conversoes-servico.mjs';
 import { extrairAtribuicao, identificadoresHash, temSinal } from './atribuicao.mjs';
 import { EVENTOS } from './conversoes.mjs';
+import { resolverAnuncios, LOTE_MAXIMO } from './campanhas.mjs';
 import { reancorar, diagnosticoDaAncora } from './reancorar.mjs';
 import { avaliarForca, hashSenha, verificarSenha } from './senha.mjs';
 
@@ -365,6 +366,7 @@ const PAPEL_MINIMO = {
   'GET /api/conversoes': 'gestor',
   'GET /api/conversoes/:id': 'gestor',
   'POST /api/conversoes/processar': 'gestor',
+  'POST /api/campanhas/resolver': 'gestor',
 
   // `POST /api/regua/adiar` NAO entra aqui de proposito: adiar e trabalho de
   // quem atende, e exigir gestor para isso devolveria a fila ao estado em que
@@ -400,6 +402,17 @@ function negarPorPapel(rota, papel) {
   const tem = ORDEM_PAPEL[papel] ?? -1;
   if (tem >= ORDEM_PAPEL[exigido]) return null;
   return { exigido, papel };
+}
+
+/**
+ * Token de leitura da Graph API (Marketing).
+ *
+ * Separado do token de CONVERSAO de proposito: este so precisa de `ads_read`,
+ * e o outro de `manage_events`. Um token unico com as duas permissoes e mais
+ * comodo e transforma um vazamento de leitura em permissao de escrita.
+ */
+function tokenDeMarketing() {
+  return process.env.FORTCRM_META_MARKETING_TOKEN || null;
 }
 
 export const ROTAS = {
@@ -448,6 +461,35 @@ export const ROTAS = {
       empresas,
       demoMode: DEMO_MODE,
     });
+  },
+
+  /**
+   * Sonda de saude, sem sessao.
+   *
+   * Existe porque o healthcheck do contêiner batia em `POST /api/sessao` com
+   * corpo vazio: gastava o balde de login (12/min), enchia o log de tentativas
+   * falhas e, pior, respondia 200 sem tocar em banco nenhum — um SQLite
+   * corrompido passava no exame de saude.
+   *
+   * Aqui a checagem e a que importa: da para LER cada instancia? Um processo
+   * de pe com banco ilegivel nao esta saudavel, esta so escutando a porta.
+   *
+   * A resposta e deliberadamente pobre. E uma porta aberta a internet: nao diz
+   * versao, nao diz nome de empresa, nao conta registro e nao devolve caminho
+   * de arquivo. Quem esta de fora so precisa saber se pode mandar trafego.
+   */
+  'GET /api/health': (fed) => {
+    let vivas = 0;
+    let total = 0;
+    for (const cod of fed.codigosDeEmpresa()) {
+      total += 1;
+      try {
+        fed.abrir(cod).sistema().prepare('select 1 as v').get();
+        vivas += 1;
+      } catch { /* instancia fora conta como fora, e nao derruba a sonda */ }
+    }
+    if (!vivas) throw new ErroHttp(503, 'sem_instancia', 'Nenhuma instância responde.');
+    return ok({ ok: true, instancias: `${vivas}/${total}` });
   },
 
   'GET /api/sessao': (fed, req) => {
@@ -1012,11 +1054,49 @@ export const ROTAS = {
 
   'PATCH /api/oportunidades/:id': (fed, req, p, corpo) => {
     const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const antes = escopo.uma('select * from oportunidades where {ESCOPO} and id = ?', p.id);
+    if (!antes) throw new ErroHttp(404, 'nao_encontrado', 'Oportunidade não encontrada.');
+
     const dados = { atualizado_em: agora() };
     if (corpo?.etapa) {
       if (!ETAPAS.includes(corpo.etapa)) {
         throw new ErroHttp(422, 'etapa_invalida', `Etapa desconhecida: ${corpo.etapa}`);
       }
+
+      /*
+       * Venda ja contada pela Meta nao volta atras.
+       *
+       * O Purchase enviado pela Conversions API entra no aprendizado do
+       * algoritmo e no relatorio de ROAS do Gerenciador. Arrastar o cartao de
+       * volta para "negociacao" nao desfaz nada la — so faz o CRM parar de
+       * concordar com o que a Meta ja acredita. A partir dai as duas telas
+       * contam historias diferentes, e a divergencia so aparece na reuniao de
+       * verba.
+       *
+       * A trava e por CONVERSAO DESPACHADA, e nao por etapa: em demonstracao
+       * nada sai (o registro fica com motivo `simulado`) e o cartao continua
+       * livre, que e o correto — nao ha nada do outro lado para contradizer.
+       *
+       * `desconhecido` tranca junto de proposito. Resposta ambigua e
+       * exatamente quando NAO se pode agir como se nada tivesse acontecido.
+       */
+      const despachada = escopo.uma(
+        `select id, destino, status, enviado_em from conversoes
+         where {ESCOPO} and oportunidade_id = ? and evento = 'venda'
+           and status in ('enviado', 'desconhecido')
+           and coalesce(motivo, '') <> 'simulado'
+         limit 1`,
+        p.id,
+      );
+      if (despachada && corpo.etapa !== 'ganho') {
+        throw new ErroHttp(409, 'venda_ja_contada',
+          'Esta venda já foi enviada como conversão e não pode voltar de etapa. '
+          + 'A Meta e o Google já a contabilizaram; mudar aqui só faria o CRM '
+          + 'discordar do que eles registraram. Para corrigir de verdade, trate a '
+          + 'devolução no Gerenciador de Anúncios.',
+          { conversao: despachada.id, destino: despachada.destino, status: despachada.status });
+      }
+
       dados.etapa = corpo.etapa;
       // Regra de operação: todo orçamento perdido recebe motivo.
       if (corpo.etapa === 'perdido') {
@@ -1027,15 +1107,40 @@ export const ROTAS = {
         dados.motivo_perda = corpo.motivo_perda;
         dados.probabilidade = 0;
       }
-      if (corpo.etapa === 'ganho') dados.probabilidade = 100;
+
+      /*
+       * Ganhar exige valor e numero do pedido — AQUI, com a pessoa na frente.
+       *
+       * Sem valor, `avaliarConversao` recusa o Purchase la adiante com
+       * `valor_obrigatorio`, dentro do worker, onde ninguem le. O evento mais
+       * valioso do funil era justamente o mais facil de perder em silencio.
+       */
+      if (corpo.etapa === 'ganho') {
+        const valor = corpo?.valor_centavos !== undefined
+          ? num(corpo.valor_centavos, 0)
+          : (antes.valor_centavos ?? 0);
+        if (!(valor > 0)) {
+          throw new ErroHttp(422, 'valor_obrigatorio',
+            'Venda fechada exige o valor. Sem ele a conversão não ensina retorno — '
+            + 'vira só mais um "converteu", e o anúncio não aprende nada.');
+        }
+        const pedido = String(corpo?.pedido_ref ?? antes.pedido_ref ?? '').trim();
+        if (!pedido) {
+          throw new ErroHttp(422, 'pedido_obrigatorio',
+            'Informe o número do pedido, contrato ou OS. É o que impede um reenvio '
+            + 'de virar uma segunda venda no Gerenciador de Anúncios.');
+        }
+        dados.valor_centavos = valor;
+        dados.pedido_ref = pedido.slice(0, 60);
+        dados.probabilidade = 100;
+      }
     }
     if (corpo?.probabilidade !== undefined) dados.probabilidade = num(corpo.probabilidade, 20);
     if (corpo?.posicao !== undefined) dados.posicao = Number(corpo.posicao);
-    if (corpo?.valor_centavos !== undefined) dados.valor_centavos = num(corpo.valor_centavos, 0);
-
-    const antes = escopo.uma('select etapa from oportunidades where {ESCOPO} and id = ?', p.id);
-    const n = escopo.atualizar('oportunidades', p.id, dados);
-    if (!n) throw new ErroHttp(404, 'nao_encontrado', 'Oportunidade não encontrada.');
+    if (corpo?.valor_centavos !== undefined && dados.valor_centavos === undefined) {
+      dados.valor_centavos = num(corpo.valor_centavos, 0);
+    }
+    escopo.atualizar('oportunidades', p.id, dados);
 
     const atual = escopo.uma('select * from oportunidades where {ESCOPO} and id = ?', p.id);
 
@@ -1044,9 +1149,9 @@ export const ROTAS = {
     // desta transação deixaria a movimentação do funil refém de uma regra de
     // marketing, e um erro lá derrubaria o arrastar do cartão na tela.
     let eventoConversao = null;
-    if (dados.etapa && dados.etapa !== antes?.etapa) {
+    if (dados.etapa && dados.etapa !== antes.etapa) {
       eventoConversao = registrarMudancaDeEtapa(escopo, {
-        oportunidade: atual, etapaAnterior: antes?.etapa, ator: usuario.email,
+        oportunidade: atual, etapaAnterior: antes.etapa, ator: usuario.email,
       });
     }
 
@@ -1603,6 +1708,54 @@ export const ROTAS = {
     return ok({ desfeito: true });
   },
 
+  /**
+   * Resolve o nome das campanhas por tras dos `ad_id` ja capturados.
+   *
+   * E a UNICA chamada de saida do sistema hoje, e de proposito e uma LEITURA:
+   * ler o nome de um anuncio da propria conta nao gasta verba, nao conta
+   * conversao e nao muda entrega. Por isso nao passa por `DEMO_MODE` — passa
+   * por haver token, que so existe onde alguem configurou.
+   *
+   * Fica FORA do caminho da tela: `GET /api/atribuicao` le so o que ja esta
+   * guardado. Buscar durante a renderizacao deixaria a tela de origem refem da
+   * latencia da Meta, e de um token vencido.
+   */
+  'POST /api/campanhas/resolver': async (fed, req, _p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+
+    // Pedidos explicitos ganham prioridade; sem eles, varre os pendentes.
+    const pedidos = Array.isArray(corpo?.adIds) ? corpo.adIds.map(String) : [];
+    const alvo = pedidos.length ? pedidos : escopo.todas(
+      `select distinct a.source_ad_id as id
+       from atribuicoes a
+       left join dimensoes_campanha d
+         on d.empresa_id = a.empresa_id and d.source_ad_id = a.source_ad_id
+       where a.{ESCOPO} and a.source_ad_id is not null and d.campanha_nome is null
+       limit ?`,
+      LOTE_MAXIMO,
+    ).map((r) => r.id);
+
+    if (!alvo.length) {
+      return ok({ resolvidos: 0, falhas: 0, pulados: 0, nadaAFazer: true });
+    }
+
+    const token = tokenDeMarketing();
+    const r = await resolverAnuncios(escopo, alvo, { token });
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'campanha.resolver',
+      entidade: 'dimensoes_campanha', entidadeId: null,
+      // O token NAO entra na auditoria, nem mascarado: trilha de auditoria e
+      // exatamente o arquivo que se entrega a terceiro quando algo dá errado.
+      dados: {
+        pedidos: alvo.length, resolvidos: r.resolvidos, falhas: r.falhas,
+        semToken: !!r.semToken,
+      },
+    });
+
+    return ok(r, { semToken: !!r.semToken });
+  },
+
   // ── Campos personalizados ────────────────────────────────────────────────
   /**
    * O registro de propriedades da empresa ativa.
@@ -1973,11 +2126,59 @@ export const ROTAS = {
       `select coalesce(plataforma,'sem_atribuicao') as plataforma, count(*) as n
        from atribuicoes where {ESCOPO} group by 1 order by n desc`,
     );
+    /*
+     * A campanha vem de TRES fontes, nesta ordem — e a tela precisa saber de
+     * qual veio, porque o conserto de cada caso e diferente.
+     *
+     *   utm     — lead de site. O nome veio da propria URL.
+     *   meta    — lead de Click-to-WhatsApp com o `ad_id` ja resolvido.
+     *   id_cru  — veio de anuncio e o nome ainda nao foi buscado (ou falhou).
+     *   nenhuma — organico, indicacao, balcao. Nao havia campanha.
+     *
+     * Antes disto, TODO lead de Click-to-WhatsApp caia em "sem_campanha": o
+     * canal em que a empresa gasta dinheiro era o unico sem resposta.
+     */
     const porCampanha = escopo.todas(
-      `select coalesce(utm_campaign,'sem_campanha') as campanha, count(*) as n
-       from atribuicoes where {ESCOPO} group by 1 order by n desc limit 15`,
+      `select
+         coalesce(nullif(a.utm_campaign, ''), d.campanha_nome, a.source_ad_id, 'sem_campanha')
+           as campanha,
+         case
+           when nullif(a.utm_campaign, '') is not null then 'utm'
+           when d.campanha_nome is not null then 'meta'
+           when a.source_ad_id is not null then 'id_cru'
+           else 'nenhuma'
+         end as fonte_do_nome,
+         max(d.conjunto_nome) as conjunto,
+         max(d.anuncio_nome) as anuncio,
+         max(d.situacao) as situacao,
+         max(a.source_ad_id) as source_ad_id,
+         max(d.erro) as erro,
+         count(*) as n
+       from atribuicoes a
+       left join dimensoes_campanha d
+         on d.empresa_id = a.empresa_id and d.source_ad_id = a.source_ad_id
+       where a.{ESCOPO}
+       group by 1, 2 order by n desc limit 20`,
     );
-    return ok({ linhas, porPlataforma, porCampanha });
+
+    // Quantos anuncios ainda estao sem nome, para a tela poder OFERECER o
+    // conserto em vez de so exibir numero cru.
+    const pendentes = escopo.uma(
+      `select count(distinct a.source_ad_id) as n
+       from atribuicoes a
+       left join dimensoes_campanha d
+         on d.empresa_id = a.empresa_id and d.source_ad_id = a.source_ad_id
+       where a.{ESCOPO} and a.source_ad_id is not null and d.campanha_nome is null`,
+    );
+
+    return ok({
+      linhas, porPlataforma, porCampanha,
+      campanhas: {
+        pendentes: pendentes?.n ?? 0,
+        temToken: !!tokenDeMarketing(),
+        lote: LOTE_MAXIMO,
+      },
+    });
   },
 
   // ── Importação de base ───────────────────────────────────────────────────

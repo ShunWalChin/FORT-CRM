@@ -1,6 +1,6 @@
 # Referência da API
 
-> Gerado a partir de `src/api.mjs`. **48 rotas.**
+> Gerado a partir de `src/api.mjs`. **50 rotas.**
 
 Todas as rotas devolvem `{ ok, dados }` ou `{ ok: false, erro: { codigo, mensagem } }`.
 
@@ -15,11 +15,12 @@ instância guarda o próprio vínculo de usuário e é ela quem diz se aquele e-
 entra. O token carrega o e-mail, nunca um id de usuário — o id difere entre
 instâncias.
 
-### As duas rotas sem sessão
+### As três rotas sem sessão
 
 | Rota | Por que é pública |
 |---|---|
 | `POST /api/entrada/:chave` | Um formulário de site não faz login. A chave só **roteia**: não lê, não lista, não vira sessão. 20 req/min por origem, corpo limitado a 1 MB, e a resposta é idêntica para chave válida, inválida ou desativada — variar transformaria a porta num oráculo de enumeração. |
+| `GET /api/health` | Sonda do contêiner e do balanceador, que não têm sessão. A resposta é deliberadamente pobre — `{ ok, instancias: "3/3" }` e nada mais: sem versão, sem nome de empresa, sem contagem de registro. Abre cada instância e devolve **503** quando nenhuma responde, porque processo de pé com banco ilegível não está saudável. |
 | `GET`/`POST /api/whatsapp/webhook` | A Meta não autentica com sessão. O `POST` valida `X-Hub-Signature-256` (HMAC-SHA256 sobre o corpo **bruto**, comparação em tempo constante). Sem `FORTCRM_META_APP_SECRET` a porta fica **fechada**, não aberta. |
 
 ### Limites por origem
@@ -70,6 +71,21 @@ em JS. Telefone é comparado por dígitos; placa, sem traço.
 tem acesso, para a tela oferecer a travessia — que é explícita e troca a empresa
 ativa de verdade. `meta.indisponiveis` lista as consultas que falharam, quando
 alguma falha: a busca degrada, mas não em silêncio.
+
+## Campanhas
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `POST` | `/api/campanhas/resolver` | Busca na Graph API o nome de campanha, conjunto e anúncio dos `source_ad_id` ainda sem nome. **gestor** |
+
+Corpo opcional `{ adIds: [...] }`; sem ele, varre os pendentes (até 25 por
+execução). Devolve `{ resolvidos, falhas, pulados, detalhes }`, e
+`meta.semToken: true` quando `FORTCRM_META_MARKETING_TOKEN` não está definido —
+nesse caso nenhuma chamada externa acontece.
+
+É a única chamada de saída do sistema, e é uma **leitura**: não gasta verba, não
+conta conversão, não muda entrega. Por isso não passa por `DEMO_MODE`. Detalhes
+em [Campanhas](CAMPANHAS.md).
 
 ## Canais de entrada
 

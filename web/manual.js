@@ -112,11 +112,17 @@ export const TELAS = [
       'No celular — ou se preferir — use o seletor no pé de cada cartão. Faz a mesma coisa e funciona no dedo.',
       'O valor no topo de cada coluna é a soma daquela etapa.',
       'Ao mover para "Perdido", o sistema pede o motivo — e não deixa passar sem.',
+      'Ao mover para "Ganho", ele pede o valor da venda e o número do pedido, contrato ou OS. Pode escrever com vírgula: 1.650,00.',
       'Mover para Qualificado, Orçamento ou Ganho gera um evento de conversão; o sistema avisa quando isso acontece.',
     ],
     observar:
       'O motivo da perda é o dado mais valioso da tela. Depois de trinta perdas registradas, '
-      + 'dá para saber se o problema é preço, prazo ou falta de peça — e aí dá para corrigir.',
+      + 'dá para saber se o problema é preço, prazo ou falta de peça — e aí dá para corrigir. '
+      + 'Já a venda pede valor porque, sem ele, a conversão não ensina retorno: vira só mais um '
+      + '"converteu", e o anúncio continua procurando quem preenche formulário em vez de quem '
+      + 'compra. E depois que a venda foi enviada de verdade para a Meta ou para o Google, o '
+      + 'cartão não volta de etapa — eles já contabilizaram, e mudar aqui só faria o CRM '
+      + 'discordar do que eles registraram.',
   },
   {
     id: 'frota',
@@ -234,12 +240,16 @@ export const TELAS = [
       + 'formulário preenchido em vez do cliente que fecha.',
     comoUsar: [
       'Os quadros de cima mostram quantos leads vieram de cada plataforma.',
-      'A tabela por campanha diz qual anúncio está trazendo gente.',
+      'A tabela por campanha diz qual anúncio está trazendo gente, e a coluna "Nome veio de" diz de onde saiu aquele nome.',
+      'Lead que veio de anúncio Click-to-WhatsApp aparece com etiqueta "sem nome" e o número do anúncio: ele não traz UTM nenhuma, porque não passou por página de site.',
+      'O botão "Resolver nomes" busca no Gerenciador da Meta o nome de campanha, conjunto e anúncio. Precisa de um token configurado no servidor — a própria tela diz qual, quando falta.',
       'A lista traz o identificador do clique guardado para cada contato.',
     ],
     observar:
       'Contato sem consentimento aparece com a etiqueta amarela. Ele fica na base e no funil, '
-      + 'mas a conversão dele é bloqueada antes de sair — nem o dado embaralhado pode ir.',
+      + 'mas a conversão dele é bloqueada antes de sair — nem o dado embaralhado pode ir. '
+      + 'E quando um anúncio aparece só pelo número, o sistema NÃO inventa um nome para ele: '
+      + 'um "Campanha 120109" fabricado seria pior que o número, porque parece resposta.',
   },
   {
     id: 'conversoes',
@@ -540,6 +550,26 @@ export const RECEITAS = [
       'Cole no site, na página onde o lead deve ser capturado.',
       'Faça um envio real pelo site e confira em "Central do grupo" que ele chegou.',
       'Se chegou sem gclid nem UTM, o problema está no link do anúncio, não aqui — o sistema avisa quando o lead não tem sinal nenhum.',
+    ],
+  },
+  {
+    titulo: 'Registrar uma venda fechada',
+    passos: [
+      'No Pipeline, mova o cartão para "Ganho" — arrastando ou pelo seletor no pé do cartão.',
+      'Informe o valor da venda. Pode escrever como se fala: 1.650,00.',
+      'Informe o número do pedido, contrato ou OS. É o que impede um reenvio de virar uma segunda venda no Gerenciador de Anúncios.',
+      'Confirme. O sistema avisa que gerou o evento de conversão "venda".',
+      'Depois que essa conversão sai de verdade, o cartão trava em Ganho — a Meta já contou, e voltar aqui só faria as duas telas discordarem.',
+    ],
+  },
+  {
+    titulo: 'Dar nome às campanhas de Click-to-WhatsApp',
+    passos: [
+      'Abra "Origem dos leads".',
+      'Se houver anúncio aparecendo só pelo número, uma faixa avisa quantos são.',
+      'Com o token de marketing configurado no servidor, clique em "Resolver nomes".',
+      'O sistema consulta o Gerenciador da Meta e preenche campanha, conjunto e anúncio. O nome fica guardado por sete dias.',
+      'Se algum não resolver, o motivo aparece na própria linha: token vencido, anúncio apagado ou limite de chamadas — são consertos diferentes.',
     ],
   },
   {

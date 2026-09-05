@@ -45,8 +45,15 @@ ENV NODE_ENV=production \
 # e o Docker não conseguiria encaminhar nada.
 EXPOSE 4310
 
-# Prova de vida real: pede uma resposta da API, não só um processo vivo.
+# Prova de vida real: pede uma resposta da API, nao so um processo vivo.
+#
+# A sonda le `GET /api/health`, e nao mais `POST /api/sessao` com corpo vazio.
+# A anterior gastava o balde de login (12/min), enchia o log de tentativas
+# falhas e respondia 200 sem tocar em banco nenhum — um SQLite ilegivel passava
+# no exame. `/api/health` abre cada instancia e devolve 503 quando nenhuma
+# responde; a resposta nao diz versao, nome de empresa nem contagem, porque a
+# porta fica exposta.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:4310/api/sessao',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:4310/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.mjs"]

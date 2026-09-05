@@ -147,6 +147,39 @@ create table if not exists destinos_conversao (
 );
 create unique index if not exists ux_destino_conversao on destinos_conversao(empresa_id, destino);
 
+-- Dimensao de campanha: o nome por tras do source_ad_id.
+--
+-- Lead de Click-to-WhatsApp NAO TEM UTM. Nao houve navegador, nao houve pagina,
+-- nao houve query string — o anuncio abriu a conversa direto, e o que chega no
+-- webhook e source_ad_id e ctwa_clid. A tela de origem agrupava por
+-- utm_campaign, entao todo lead de anuncio caia em "sem_campanha": a pergunta
+-- que paga o anuncio ficava sem resposta justamente no canal onde ha verba.
+--
+-- Tabela de cache, e nao de verdade: a fonte e o Gerenciador da Meta. Por isso
+-- guarda TAMBEM a falha (tentado_em, erro, erro_causa) — sem isso um
+-- anuncio apagado seria tentado de novo a cada clique, e cada tentativa custa
+-- uma chamada contra o limite da conta.
+create table if not exists dimensoes_campanha (
+  id             text primary key,
+  empresa_id     text not null references empresas(id) on delete cascade,
+  source_ad_id   text not null,
+  campanha_id    text,
+  campanha_nome  text,
+  conjunto_id    text,
+  conjunto_nome  text,
+  anuncio_nome   text,
+  situacao       text,
+  -- Quando a Meta respondeu com nome. Nulo = nunca resolveu.
+  resolvido_em   text,
+  -- Quando foi tentado pela ultima vez, com ou sem sucesso.
+  tentado_em     text,
+  erro           text,
+  erro_causa     text,
+  atualizado_em  text
+);
+create unique index if not exists ux_dimensao_anuncio
+  on dimensoes_campanha(empresa_id, source_ad_id);
+
 -- Contato adiado: "esse eu falo amanha".
 --
 -- Sem isto a fila so tinha disparar ou ignorar. Ignorar faz o item voltar

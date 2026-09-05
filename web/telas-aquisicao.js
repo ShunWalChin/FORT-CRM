@@ -369,10 +369,24 @@ export function telaAtribuicao(ui) {
       </div>
 
       <h2 class="secao">Por campanha</h2>
+      ${cintaDeCampanhas(d.campanhas ?? {}, esc, numero)}
       <div class="tabela-caixa"><table>
-        <thead><tr><th>Campanha</th><th class="num">Leads</th></tr></thead>
+        <thead><tr><th>Campanha</th><th>Conjunto / anúncio</th><th>Nome veio de</th>
+          <th class="num">Leads</th></tr></thead>
         <tbody>${d.porCampanha.map((c) => `
-          <tr><td class="forte">${esc(c.campanha)}</td><td class="num">${numero(c.n)}</td></tr>`).join('')}
+          <tr>
+            <td class="forte">
+              ${c.fonte_do_nome === 'id_cru'
+    ? `<span style="font-family:var(--mono);font-size:12px">${esc(c.campanha)}</span>`
+    : esc(c.campanha)}
+              ${c.situacao && c.situacao !== 'ACTIVE'
+    ? `<div class="fraco">${esc(String(c.situacao).toLowerCase().replaceAll('_', ' '))}</div>` : ''}
+            </td>
+            <td class="fraco">${esc([c.conjunto, c.anuncio].filter(Boolean).join(' · ') || '—')}</td>
+            <td>${ROTULO_FONTE[c.fonte_do_nome] ?? ''}
+              ${c.erro ? `<div class="fraco">${esc(c.erro)}</div>` : ''}</td>
+            <td class="num">${numero(c.n)}</td>
+          </tr>`).join('')}
         </tbody></table></div>
 
       <h2 class="secao">Atribuições registradas</h2>
@@ -397,7 +411,65 @@ export function telaAtribuicao(ui) {
         e no funil, mas a conversão dele é bloqueada antes de sair — mandar hash de e-mail de quem
         não autorizou é tratamento de dado pessoal sem base legal, e o hash não muda isso.
       </div>`;
+
+    const botao = el.querySelector('#resolver-campanhas');
+    if (botao) {
+      botao.onclick = async () => {
+        botao.disabled = true;
+        botao.textContent = 'Consultando a Meta…';
+        try {
+          const r = await ui.api('/campanhas/resolver', { method: 'POST' });
+          if (r.semToken) {
+            ui.toast('Falta o token de marketing',
+              'Configure FORTCRM_META_MARKETING_TOKEN no servidor, com permissão ads_read.', 'erro');
+          } else if (r.nadaAFazer) {
+            ui.toast('Nada a resolver', 'Todos os anúncios já têm nome.');
+          } else {
+            ui.toast(`${r.resolvidos} nome(s) resolvido(s)`,
+              r.falhas ? `${r.falhas} não resolveram — o motivo está na tabela.` : 'Tabela atualizada.');
+          }
+        } catch (e) {
+          ui.toast('Não deu para resolver', e.message, 'erro');
+        }
+        ui.navegar();
+      };
+    }
   };
+}
+
+/** De onde saiu o nome desta linha. Cada caso tem um conserto diferente. */
+const ROTULO_FONTE = {
+  utm: '<span class="tag">UTM do site</span>',
+  meta: '<span class="tag ok">Gerenciador da Meta</span>',
+  id_cru: '<span class="tag warn">sem nome</span>',
+  nenhuma: '<span class="fraco">sem campanha</span>',
+};
+
+/**
+ * A faixa que aparece quando há anúncio sem nome.
+ *
+ * Mostrar o id cru e parar ali seria transferir o problema para quem lê. A
+ * faixa diz quantos faltam, o que resolve, e — quando falta o token — diz
+ * exatamente o que configurar, porque esse conserto é do servidor e não da tela.
+ */
+function cintaDeCampanhas(c, esc, numero) {
+  if (!c.pendentes) return '';
+  if (!c.temToken) {
+    return `<div class="aviso" style="margin-bottom:12px">
+      <strong>${numero(c.pendentes)} anúncio(s) aparecem só pelo número.</strong>
+      Lead de Click-to-WhatsApp não traz UTM — o nome da campanha só existe no
+      Gerenciador da Meta. Para buscá-lo, defina <code>FORTCRM_META_MARKETING_TOKEN</code>
+      no servidor com um token de permissão <code>ads_read</code>. Sem isso o sistema
+      mostra o número do anúncio, e não inventa um nome.
+    </div>`;
+  }
+  return `<div class="aviso" style="margin-bottom:12px">
+    <strong>${numero(c.pendentes)} anúncio(s) ainda sem nome.</strong>
+    O nome vem do Gerenciador da Meta e é guardado aqui por sete dias.
+    <button class="btn sm" id="resolver-campanhas" style="margin-left:10px">
+      Resolver nomes${c.pendentes > c.lote ? ` (${c.lote} por vez)` : ''}
+    </button>
+  </div>`;
 }
 
 function recortar(v) {

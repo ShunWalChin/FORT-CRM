@@ -442,3 +442,113 @@ endereço, com o atributo vencendo quando os dois existem.
 
 Esta é do tipo que só se descobre em produção, com o cliente reclamando que não
 chega lead.
+
+---
+
+### De `lucasblante/Anima-CTWA-Manager`
+
+Gestor de Click-to-WhatsApp com Meta CAPI — React + Express + Postgres.
+
+**Aproveitado:** a dimensão de campanha (`campaign_dimensions`), a
+imutabilidade da venda depois de contada, e a sonda de saúde própria.
+
+**Recusado, com o motivo escrito, para ninguém "consertar" de volta:**
+
+#### O modo sandbox marcava `sent`
+
+`sendConversionToCapi` grava `meta_send_status = 'sent'` quando não há
+credenciais configuradas. A trilha de auditoria passa a afirmar que um evento
+foi enviado à Meta quando nada saiu — e é essa trilha que se apresenta numa
+reunião de verba.
+
+Aqui `DEMO_MODE` grava `enviado` **com `motivo: 'simulado'`**, e a distinção
+não é cosmética: é ela que impede a trava de venda de disparar numa
+demonstração, onde não há nada do outro lado para contradizer.
+
+#### Falha de rede virava `failed`
+
+`catch` → `failed`. Mas um `fetch` que estoura o tempo **depois** de a Meta ter
+recebido o evento é exatamente o caso ambíguo: reenviar conta a conversão duas
+vezes, e conversão duplicada envenena o aprendizado do algoritmo sem desfazer.
+Nosso estado para isso é `desconhecido`, e ele nunca se repete sozinho.
+
+#### `event_id` com o horário dentro
+
+`prod|QualifiedLead|{timestamp}|{lead_id}`. Um reenvio um segundo depois produz
+outro `event_id` — e a deduplicação da Meta é justamente por `event_id`. O caso
+de `Purchase`, que usa `order_id`, estava certo; os outros não. Nossa
+`chaveIdempotencia` não tem relógio dentro.
+
+#### `LeadSubmitted` como evento de Business Messaging
+
+Não está na lista que a Meta aceita para `action_source: business_messaging`.
+`EVENTOS_BM` restringe ao documentado e cai para `QualifiedLead` +
+`custom_data.funnel_stage` no resto — ver [CTWA](CTWA.md).
+
+#### Chave-mestra com fallback embutido no código
+
+`getEncryptionKey()` deriva a chave de uma semente fixa quando
+`ENCRYPTION_MASTER_KEY` falta. "Criptografia em repouso" passa a ser decifrável
+por qualquer um que leia o repositório, **e sem avisar ninguém**. Falta de chave
+tem de falhar alto.
+
+#### `verifyWebhookTokenMatch` com `===`
+
+Comparação de segredo em tempo variável. A validação de assinatura do webhook
+aqui já usa `timingSafeEqual`, e a do verify token segue a mesma regra.
+
+---
+
+## Campanha e venda
+
+### Lead de Click-to-WhatsApp não tem UTM
+
+E a tela de origem agrupava por `utm_campaign`. Todo lead de anúncio caía em
+`sem_campanha`: o canal em que a empresa gasta dinheiro era o único sem
+resposta. Ver [Campanhas](CAMPANHAS.md).
+
+### A trava da venda é por conversão despachada, não por etapa
+
+O `Purchase` enviado entra no aprendizado do algoritmo e no relatório de ROAS.
+Arrastar o cartão de volta não desfaz nada lá — só faz o CRM parar de concordar
+com o que a Meta já acredita, e a divergência aparece na reunião de verba.
+
+Travar por **etapa**, como faz a referência, quebraria a demonstração: em
+`DEMO_MODE` nada sai. A trava olha se existe conversão de venda com status
+`enviado` ou `desconhecido` **e motivo diferente de `simulado`**.
+
+`desconhecido` tranca junto de propósito: resposta ambígua é exatamente quando
+não se pode agir como se nada tivesse acontecido.
+
+### `type="number"` descarta a vírgula
+
+O campo de valor da venda aceitava `1650,00` e chegava vazio ao validador: o
+navegador só guarda literal de ponto flutuante em `type=number`, e `1650,00` não
+é um. Quem escreve dinheiro em português escreve com vírgula, e o campo apagava
+o que a pessoa digitou **sem dizer nada**.
+
+O tipo `decimal` do diálogo é `type="text"` com `inputmode="decimal"`: mantém o
+teclado numérico no celular e deixa a vírgula chegar ao validador, que também
+remove o ponto de milhar (`1.650,00` → `1650`).
+
+### A sonda de saúde batia no login
+
+O `HEALTHCHECK` do contêiner fazia `POST /api/sessao` com corpo vazio a cada
+30 s: gastava o balde de login (12/min), enchia o log de tentativas falhas e
+respondia 200 **sem tocar em banco nenhum** — um SQLite ilegível passava no
+exame. `GET /api/health` abre cada instância e devolve 503 quando nenhuma
+responde. A resposta é deliberadamente pobre: é porta aberta à internet.
+
+### `undefined` não é parâmetro de SQLite
+
+Acrescentar `ctwa_clid`, `waba_id` e `source_ad_id` à carga quebrou com
+*"Provided value cannot be bound to SQLite parameter 12"*: só o tipo `ctwa`
+preenche os três, e `node:sqlite` aceita `null`, não `undefined`.
+
+### Teste `async` passado para um runner síncrono nunca reprova
+
+`teste()` conta o sucesso antes de a promessa resolver. Os quatro testes de
+resolução de campanha precisam de `await`, e como `teste()` eles reportariam
+`ok` mesmo falhando — um teste que nunca reprova é pior que teste nenhum.
+`testeAsync()` enfileira e o arquivo os executa no fim, antes do resumo.
+Verificado com um canário que deve reprovar.
