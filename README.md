@@ -139,6 +139,7 @@ que o sistema ainda não faz. Cada seção tem um botão que abre a tela de verd
 | [Arquitetura](docs/ARQUITETURA.md) | Federação, instâncias, central, escopo e auditoria |
 | [Régua e compliance](docs/REGUA-E-COMPLIANCE.md) | Os 17 gatilhos, as 9 checagens, idempotência |
 | [Campanhas](docs/CAMPANHAS.md) | O nome por trás do `ad_id`, e por que o sistema nunca inventa um |
+| [Credenciais](docs/CREDENCIAIS.md) | Token da Meta por empresa, cifrado em repouso |
 | [Atribuição e conversões](docs/ATRIBUICAO-E-CONVERSOES.md) | Do clique no anúncio à conversão devolvida |
 | [Click-to-WhatsApp](docs/CTWA.md) | `ctwa_clid`, webhook assinado, Business Messaging |
 | [Canais de entrada](docs/CANAIS.md) | Catálogo por empresa, porta pública, cobertura |

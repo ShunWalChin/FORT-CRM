@@ -195,6 +195,14 @@ export function telaConversoes(ui) {
     const d = await ui.api('/conversoes');
     const { esc, moeda, numero, dataHora } = ui;
 
+    // Credenciais viajam à parte: quem é apenas gestor lê, e a rota de escrita
+    // exige soberano. Falhar aqui não pode derrubar a tela da fila.
+    let cred = { lista: [], temChaveMestra: false, pode: false };
+    try {
+      const r = await ui.api('/credenciais', { comMeta: true });
+      cred = { lista: r.dados, temChaveMestra: !!r.meta.temChaveMestra, pode: true };
+    } catch { /* sem permissão ou instância antiga: a seção simplesmente não aparece */ }
+
     el.innerHTML = `
       <div class="cabeca">
         <div>
@@ -246,6 +254,8 @@ export function telaConversoes(ui) {
             </p>
           </div>`).join('')}
       </div>
+
+      ${secaoCredenciais(cred, ui)}
 
       <h2 class="secao">Destinos configurados</h2>
       <div class="tabela-caixa"><table>
@@ -299,7 +309,111 @@ export function telaConversoes(ui) {
     el.querySelectorAll('[data-payload]').forEach((b) => {
       b.onclick = () => abrirPayload(ui, b.dataset.payload);
     });
+
+    el.querySelectorAll('[data-cred]').forEach((b) => {
+      b.onclick = async () => {
+        const item = cred.lista.find((c) => c.chave === b.dataset.cred);
+        const r = await ui.perguntar({
+          contexto: item.nome,
+          titulo: item.definida ? 'Substituir credencial' : 'Guardar credencial',
+          texto: `${item.para} `
+            + (item.publico
+              ? 'Este não é segredo — é identificador, e fica legível para poder ser conferido.'
+              : 'O valor é cifrado antes de tocar o disco e nunca volta para esta tela: '
+                + 'depois de salvo, só os quatro últimos caracteres aparecem.'),
+          campos: [{
+            nome: 'valor', rotulo: item.nome, obrigatorio: true,
+            dica: item.publico ? 'ex.: 1234567890123456' : 'cole o token aqui',
+            ajuda: `Vale só para esta empresa. Sem ela, o sistema cai em ${item.ambiente}.`,
+          }],
+          confirmar: 'Guardar',
+        });
+        if (!r) return;
+        try {
+          await ui.api(`/credenciais/${b.dataset.cred}`, { method: 'PUT', corpo: { valor: r.valor } });
+          ui.toast('Credencial guardada', `${item.nome} — vale só para esta empresa.`);
+          ui.navegar();
+        } catch (e) { ui.toast('Não deu para guardar', e.message, 'erro'); }
+      };
+    });
+
+    el.querySelectorAll('[data-cred-apagar]').forEach((b) => {
+      b.onclick = async () => {
+        const item = cred.lista.find((c) => c.chave === b.dataset.credApagar);
+        const ok = await ui.perguntar({
+          contexto: item.nome,
+          titulo: 'Apagar a credencial desta empresa?',
+          texto: `O sistema volta a usar a variável ${item.ambiente} do servidor, se ela existir. `
+            + 'Se não existir, a função que depende desta credencial para de funcionar — '
+            + 'e a tela passa a dizer isso.',
+          confirmar: 'Apagar',
+          perigo: true,
+        });
+        if (!ok) return;
+        try {
+          const r = await ui.api(`/credenciais/${b.dataset.credApagar}`, { method: 'DELETE' });
+          ui.toast('Apagada', r.aindaDefinida
+            ? 'O servidor tem a variável de ambiente, e ela volta a valer.'
+            : 'Não há mais credencial para esta função nesta empresa.');
+          ui.navegar();
+        } catch (e) { ui.toast('Não deu para apagar', e.message, 'erro'); }
+      };
+    });
   };
+}
+
+/**
+ * Credenciais da empresa.
+ *
+ * A seção existe porque variável de ambiente é UMA e as empresas são TRÊS: com
+ * um token de processo, resolver campanha funcionava para uma conta de anúncio
+ * e falhava calado nas outras duas.
+ *
+ * O valor NUNCA aparece aqui — nem para quem é soberano. Devolvê-lo ao
+ * navegador o espalharia por cache, histórico e extensão instalada. O que a
+ * tela mostra é se está definido, de onde veio e os quatro últimos caracteres.
+ */
+function secaoCredenciais(cred, ui) {
+  if (!cred.pode) return '';
+  const { esc, data } = ui;
+
+  const origem = {
+    instancia: '<span class="tag ok">desta empresa</span>',
+    ambiente: '<span class="tag">do servidor</span>',
+    nenhuma: '<span class="tag warn">não configurada</span>',
+  };
+
+  return `
+    <h2 class="secao">Credenciais desta empresa</h2>
+    ${cred.temChaveMestra ? '' : `<div class="aviso warn">
+      <strong>Sem chave-mestra, não dá para guardar segredo aqui.</strong>
+      Defina <code>FORTCRM_CHAVE_MESTRA</code> no servidor
+      (<code>openssl rand -hex 32</code>, em <code>/etc/fortcrm.env</code>).
+      Guardar token em claro no banco não é opção: o backup sai da máquina.
+    </div>`}
+    <div class="tabela-caixa"><table>
+      <thead><tr><th>Credencial</th><th>Para quê</th><th>Estado</th><th>Valor</th><th></th></tr></thead>
+      <tbody>${cred.lista.map((c) => `
+        <tr>
+          <td class="forte">${esc(c.nome)}
+            <div class="fraco" style="font-family:var(--mono);font-size:11px">${esc(c.ambiente)}</div></td>
+          <td class="fraco">${esc(c.para)}</td>
+          <td>${origem[c.origem] ?? ''}
+            ${c.erro ? `<div class="fraco" style="color:var(--crit)">${esc(c.erro)}</div>` : ''}
+            ${c.atualizadoEm ? `<div class="fraco">por ${esc(c.atualizadoPor ?? '—')} · ${data(c.atualizadoEm)}</div>` : ''}</td>
+          <td style="font-family:var(--mono);font-size:12px">${esc(c.pista ?? '—')}</td>
+          <td>
+            <button class="btn quiet sm" data-cred="${esc(c.chave)}">${c.origem === 'instancia' ? 'Trocar' : 'Guardar'}</button>
+            ${c.origem === 'instancia' ? `<button class="btn quiet sm" data-cred-apagar="${esc(c.chave)}">Apagar</button>` : ''}
+          </td>
+        </tr>`).join('')}
+      </tbody></table></div>
+    <div class="aviso" style="margin-top:10px">
+      O valor é cifrado (AES-256-GCM) antes de tocar o disco e <strong>nunca volta para esta
+      tela</strong>. O que aparece são os quatro últimos caracteres — o bastante para conferir se
+      é o token que você acabou de colar do Gerenciador, e insuficiente para reconstruir qualquer
+      coisa. Cada empresa tem os seus: são contas de anúncio diferentes.
+    </div>`;
 }
 
 async function abrirPayload(ui, id) {

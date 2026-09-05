@@ -266,6 +266,8 @@ export const TELAS = [
       'Volte aqui e clique em Processar fila.',
       'Cada conversão vira duas — uma para o Google, outra para a Meta.',
       'O botão "Ver payload" mostra exatamente o que sairia para cada plataforma.',
+      'A seção "Credenciais desta empresa" guarda o token da Meta de CADA empresa separadamente — são contas de anúncio diferentes, e uma variável do servidor só serve a uma delas.',
+      'O valor é cifrado antes de tocar o disco e nunca volta para a tela: depois de salvo você vê só os quatro últimos caracteres, o bastante para conferir se é o token que acabou de colar.',
     ],
     observar:
       'Em modo de demonstração nada é enviado, mas o conteúdo é montado do mesmo jeito. É ele '

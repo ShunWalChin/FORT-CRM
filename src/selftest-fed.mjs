@@ -39,6 +39,10 @@ import {
   precisaResolver, lerAnuncio, diagnosticarErro, requisicaoDoAnuncio, resolverAnuncios,
   rotularCampanha, VALIDADE_MS, ESPERA_APOS_FALHA_MS,
 } from './campanhas.mjs';
+import {
+  cifrar, decifrar, chaveMestra, temChave, pista, lerCredencial, gravarCredencial,
+  apagarCredencial, listarCredenciais, CREDENCIAIS,
+} from './cofre.mjs';
 import { hashSenha, verificarSenha, ehHash, migrarSenhas, avaliarForca } from './senha.mjs';
 
 let passou = 0;
@@ -1616,6 +1620,164 @@ teste('fila vazia por adiamento nao pode ser lida como "nao ha trabalho"', () =>
   igual(diagnosticarFilaVazia(e, { fila: [], adiados }).causa, 'tudo_adiado',
     'a causa que o operador criou vence a que ele nao criou');
   ids.forEach((g) => e.atualizar('gatilhos', g.id, { ativo: 1 }));
+});
+
+/* -- Cofre de credenciais ------------------------------------------------- */
+
+// Chave de teste, fixa e local. Nunca sai daqui.
+const AMB = { FORTCRM_CHAVE_MESTRA: 'a'.repeat(64) };
+
+teste('falta de chave-mestra FALHA ALTO, e nao cai num padrao', () => {
+  let erro = null;
+  try { chaveMestra({}); } catch (e) { erro = e; }
+  verdadeiro(erro, 'sem chave, cifrar tinha de ser impossivel');
+  verdadeiro(erro.message.includes('FORTCRM_CHAVE_MESTRA'), 'a mensagem tem de dizer o que falta');
+  verdadeiro(erro.message.includes('openssl'), 'e como gerar');
+
+  // O ponto inteiro: um cofre que se abre sozinho e pior que nenhum cofre,
+  // porque convence quem o usa de que ha protecao.
+  igual(temChave({}), false);
+  igual(temChave(AMB), true);
+
+  // Passphrase curta tambem e recusada — aceitar seria fingir 256 bits.
+  let curta = null;
+  try { chaveMestra({ FORTCRM_CHAVE_MESTRA: 'segredo123' }); } catch (e) { curta = e; }
+  verdadeiro(curta, 'passphrase curta nao pode virar chave de 256 bits');
+});
+
+teste('cifrar e decifrar fecham o ciclo, e adulteracao nao passa', () => {
+  const segredo = 'EAAtokenDeMarketingComTamanhoRealistico1234567890';
+  const c = cifrar(segredo, AMB);
+  verdadeiro(!c.conteudo.includes('EAA'), 'o texto nao pode aparecer no cifrado');
+  verdadeiro(c.iv && c.tag, 'GCM exige iv e tag guardados');
+  igual(decifrar(c, AMB), segredo);
+
+  // Cada cifragem tem IV proprio: dois iguais delatariam que o valor nao mudou.
+  igual(cifrar(segredo, AMB).iv === c.iv, false);
+
+  // A tag do GCM e o que transforma "banco adulterado" em erro, e nao em lixo
+  // silencioso que segue para a Meta.
+  let mexido = null;
+  try {
+    decifrar({ ...c, conteudo: `${c.conteudo.slice(0, -2)}00` }, AMB);
+  } catch (e) { mexido = e; }
+  verdadeiro(mexido, 'conteudo alterado tinha de lancar');
+
+  // Chave errada tambem nao abre.
+  let outra = null;
+  try { decifrar(c, { FORTCRM_CHAVE_MESTRA: 'b'.repeat(64) }); } catch (e) { outra = e; }
+  verdadeiro(outra);
+});
+
+teste('a pista mostra quatro caracteres, e nunca o suficiente para reconstruir', () => {
+  igual(pista('EAAtokenLongoDeVerdade9876'), '••••9876');
+  igual(pista('curto'), '••••', 'segredo curto nao mostra nem os quatro');
+  verdadeiro(!pista('EAAtokenLongoDeVerdade9876').includes('EAA'));
+});
+
+teste('credencial e POR EMPRESA — e era esse o motivo de existir', () => {
+  const mp = fed.abrir('MP');
+  const af = fed.abrir('AF');
+  const eMp = mp.para(mp.sistema().prepare('select id from empresas limit 1').get().id);
+  const eAf = af.para(af.sistema().prepare('select id from empresas limit 1').get().id);
+
+  gravarCredencial(eMp, 'meta_marketing_token', 'TOKEN_DA_MINAS_PECAS_123456', {
+    ator: 'teste@fortgrupo.com.br', agoraIso: agora(), novoId, env: AMB,
+  });
+
+  igual(lerCredencial(eMp, 'meta_marketing_token', AMB).valor, 'TOKEN_DA_MINAS_PECAS_123456');
+  // Uma variavel de ambiente nao consegue fazer isto: sao contas de anuncio
+  // diferentes, e o token de uma nao acha o anuncio da outra.
+  igual(lerCredencial(eAf, 'meta_marketing_token', AMB).valor, null);
+  igual(lerCredencial(eAf, 'meta_marketing_token', AMB).origem, 'nenhuma');
+});
+
+teste('o que a empresa configurou vence o ambiente, e apagar devolve o piso', () => {
+  const b = fed.abrir('FT');
+  const e = b.para(b.sistema().prepare('select id from empresas limit 1').get().id);
+  const amb = { ...AMB, FORTCRM_META_MARKETING_TOKEN: 'TOKEN_DO_AMBIENTE' };
+
+  igual(lerCredencial(e, 'meta_marketing_token', amb).origem, 'ambiente',
+    'sem nada configurado, o ambiente e o piso');
+
+  gravarCredencial(e, 'meta_marketing_token', 'TOKEN_DA_FORT_TINTAS_9999', {
+    ator: 'teste@fortgrupo.com.br', agoraIso: agora(), novoId, env: amb,
+  });
+  const r = lerCredencial(e, 'meta_marketing_token', amb);
+  igual(r.valor, 'TOKEN_DA_FORT_TINTAS_9999');
+  igual(r.origem, 'instancia', 'a da instancia tem de vencer');
+
+  apagarCredencial(e, 'meta_marketing_token');
+  igual(lerCredencial(e, 'meta_marketing_token', amb).origem, 'ambiente',
+    'apagar devolve ao piso do servidor, e nao ao vazio');
+});
+
+teste('a listagem NUNCA devolve o valor', () => {
+  const b = fed.abrir('AF');
+  const e = b.para(b.sistema().prepare('select id from empresas limit 1').get().id);
+  const segredo = 'EAAsegredoQueNaoPodeVoltarParaOnavegador123';
+  gravarCredencial(e, 'meta_capi_token', segredo, {
+    ator: 'teste@fortgrupo.com.br', agoraIso: agora(), novoId, env: AMB,
+  });
+
+  const lista = listarCredenciais(e, AMB);
+  const item = lista.find((c) => c.chave === 'meta_capi_token');
+  igual(item.definida, true);
+  igual(item.pista, `••••${segredo.slice(-4)}`, 'a pista sao os quatro ultimos');
+  // Devolver o segredo ao navegador o espalharia por cache, historico e
+  // extensao instalada. Quem precisa do valor e o servidor, e ele ja o tem.
+  const texto = JSON.stringify(lista);
+  verdadeiro(!texto.includes(segredo), 'o segredo vazou na listagem');
+  verdadeiro(!texto.includes('EAAsegredo'), 'nem um pedaco reconhecivel dele');
+});
+
+teste('identificador que nao e segredo fica legivel — e o dataset e um deles', () => {
+  const b = fed.abrir('FT');
+  const e = b.para(b.sistema().prepare('select id from empresas limit 1').get().id);
+  igual(CREDENCIAIS.meta_dataset_id.publico, true);
+
+  gravarCredencial(e, 'meta_dataset_id', '1234567890123456', {
+    ator: 'teste@fortgrupo.com.br', agoraIso: agora(), novoId, env: AMB,
+  });
+  const linha = e.uma("select conteudo, valor_claro from credenciais where {ESCOPO} and chave = 'meta_dataset_id'");
+  igual(linha.conteudo, null, 'cifrar um identificador so atrapalha quem precisa confere-lo');
+  igual(linha.valor_claro, '1234567890123456');
+  igual(lerCredencial(e, 'meta_dataset_id', AMB).valor, '1234567890123456');
+});
+
+teste('chave-mestra trocada nao devolve lixo — devolve motivo', () => {
+  const b = fed.abrir('MP');
+  const e = b.para(b.sistema().prepare('select id from empresas limit 1').get().id);
+  gravarCredencial(e, 'meta_capi_token', 'TOKEN_CIFRADO_COM_A_CHAVE_A_123', {
+    ator: 'teste@fortgrupo.com.br', agoraIso: agora(), novoId, env: AMB,
+  });
+
+  const r = lerCredencial(e, 'meta_capi_token', { FORTCRM_CHAVE_MESTRA: 'c'.repeat(64) });
+  igual(r.valor, null);
+  verdadeiro(r.erro, 'silencio aqui viraria "o token nao funciona" sem explicacao');
+  verdadeiro(r.erro.includes('chave-mestra'), `o motivo tem de citar a chave: ${r.erro}`);
+});
+
+teste('gravar credencial e de soberano; ler, de gestor', () => {
+  igual(negarPorPapel('GET /api/credenciais', 'gestor'), null);
+  verdadeiro(negarPorPapel('GET /api/credenciais', 'operador'), 'balcao nao ve credencial');
+  verdadeiro(negarPorPapel('PUT /api/credenciais/:chave', 'gestor'),
+    'trocar credencial aponta a conversao para outro pixel — e soberano');
+  igual(negarPorPapel('PUT /api/credenciais/:chave', 'soberano'), null);
+  verdadeiro(negarPorPapel('DELETE /api/credenciais/:chave', 'gestor'));
+});
+
+teste('chave desconhecida e recusada, e nao gravada por engano', () => {
+  const b = fed.abrir('MP');
+  const e = b.para(b.sistema().prepare('select id from empresas limit 1').get().id);
+  let erro = null;
+  try {
+    gravarCredencial(e, 'token_qualquer_inventado', 'x'.repeat(20), {
+      ator: 'teste', agoraIso: agora(), novoId, env: AMB,
+    });
+  } catch (err) { erro = err; }
+  verdadeiro(erro, 'chave fora do catalogo nao pode entrar');
+  igual(lerCredencial(e, 'token_qualquer_inventado', AMB).origem, 'desconhecida');
 });
 
 /* -- Dimensao de campanha: o nome por tras do ad_id ----------------------- */

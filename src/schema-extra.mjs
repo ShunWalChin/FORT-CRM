@@ -147,6 +147,36 @@ create table if not exists destinos_conversao (
 );
 create unique index if not exists ux_destino_conversao on destinos_conversao(empresa_id, destino);
 
+-- Credenciais de integracao, cifradas em repouso (AES-256-GCM).
+--
+-- O motivo nao e criptografia por criptografia: variavel de ambiente e UMA, e
+-- as empresas sao TRES. Cada uma tem conta de anuncio e WABA proprios, e um
+-- token de processo so servia a uma delas — em silencio, porque a Graph API
+-- apenas responde "nao encontrado" para o anuncio da conta errada.
+--
+-- Aqui a credencial vive no banco da propria empresa, atras do mesmo
+-- empresa_id que separa cliente e pedido. A cifra cobre o caso concreto do
+-- backup: VACUUM INTO produz um arquivo que sai da maquina, e sem ela o token
+-- viajaria em claro dentro dele.
+--
+-- valor_claro existe para o que NAO e segredo (dataset id): identificador que
+-- precisa ser conferido na tela sem decifrar nada.
+create table if not exists credenciais (
+  id             text primary key,
+  empresa_id     text not null references empresas(id) on delete cascade,
+  chave          text not null,
+  conteudo       text,
+  iv             text,
+  tag            text,
+  valor_claro    text,
+  -- Ultimos quatro caracteres. O bastante para conferir se e o token que a
+  -- pessoa acabou de colar, e insuficiente para reconstruir qualquer coisa.
+  pista          text,
+  atualizado_por text,
+  atualizado_em  text not null
+);
+create unique index if not exists ux_credencial_chave on credenciais(empresa_id, chave);
+
 -- Dimensao de campanha: o nome por tras do source_ad_id.
 --
 -- Lead de Click-to-WhatsApp NAO TEM UTM. Nao houve navegador, nao houve pagina,

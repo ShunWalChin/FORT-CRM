@@ -24,6 +24,9 @@ import { despacharConversoes, drenarEventos, registrarMudancaDeEtapa } from './c
 import { extrairAtribuicao, identificadoresHash, temSinal } from './atribuicao.mjs';
 import { EVENTOS } from './conversoes.mjs';
 import { resolverAnuncios, LOTE_MAXIMO } from './campanhas.mjs';
+import {
+  CREDENCIAIS, apagarCredencial, gravarCredencial, lerCredencial, listarCredenciais, temChave,
+} from './cofre.mjs';
 import { reancorar, diagnosticoDaAncora } from './reancorar.mjs';
 import { avaliarForca, hashSenha, verificarSenha } from './senha.mjs';
 
@@ -368,6 +371,16 @@ const PAPEL_MINIMO = {
   'POST /api/conversoes/processar': 'gestor',
   'POST /api/campanhas/resolver': 'gestor',
 
+  /*
+   * Credencial e a chave da conta de anuncio da empresa: quem a troca pode
+   * apontar as conversoes para outro pixel. Escrita e SOBERANO; a leitura
+   * (que nunca devolve o valor) fica em gestor, para quem cuida da campanha
+   * poder conferir se esta configurado.
+   */
+  'GET /api/credenciais': 'gestor',
+  'PUT /api/credenciais/:chave': 'soberano',
+  'DELETE /api/credenciais/:chave': 'soberano',
+
   // `POST /api/regua/adiar` NAO entra aqui de proposito: adiar e trabalho de
   // quem atende, e exigir gestor para isso devolveria a fila ao estado em que
   // ignorar era a unica saida.
@@ -405,14 +418,19 @@ function negarPorPapel(rota, papel) {
 }
 
 /**
- * Token de leitura da Graph API (Marketing).
+ * Token de leitura da Graph API (Marketing), DA EMPRESA ativa.
  *
  * Separado do token de CONVERSAO de proposito: este so precisa de `ads_read`,
  * e o outro de `manage_events`. Um token unico com as duas permissoes e mais
  * comodo e transforma um vazamento de leitura em permissao de escrita.
+ *
+ * A busca e por instancia primeiro e ambiente depois. Antes era so ambiente, e
+ * uma variavel de processo nao cobre tres contas de anuncio: resolver o nome
+ * das campanhas funcionava para uma empresa e falhava calado nas outras duas.
  */
-function tokenDeMarketing() {
-  return process.env.FORTCRM_META_MARKETING_TOKEN || null;
+function tokenDeMarketing(escopo) {
+  if (!escopo) return process.env.FORTCRM_META_MARKETING_TOKEN || null;
+  return lerCredencial(escopo, 'meta_marketing_token').valor;
 }
 
 export const ROTAS = {
@@ -1739,7 +1757,7 @@ export const ROTAS = {
       return ok({ resolvidos: 0, falhas: 0, pulados: 0, nadaAFazer: true });
     }
 
-    const token = tokenDeMarketing();
+    const token = tokenDeMarketing(escopo);
     const r = await resolverAnuncios(escopo, alvo, { token });
 
     banco.auditar({
@@ -1754,6 +1772,67 @@ export const ROTAS = {
     });
 
     return ok(r, { semToken: !!r.semToken });
+  },
+
+  /**
+   * O que esta configurado — e NUNCA o valor.
+   *
+   * Devolver o segredo ao navegador, ainda que so para quem e soberano, o
+   * espalharia por cache, historico e extensao instalada. Quem precisa do valor
+   * e o servidor, e ele ja o tem. A tela recebe a pista (quatro caracteres
+   * finais), de onde veio e quando mudou.
+   */
+  'GET /api/credenciais': (fed, req) => {
+    const { escopo } = contexto(fed, req);
+    return ok(listarCredenciais(escopo), { temChaveMestra: temChave() });
+  },
+
+  'PUT /api/credenciais/:chave': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    if (!CREDENCIAIS[p.chave]) {
+      throw new ErroHttp(404, 'credencial_desconhecida', 'Esta credencial não existe no sistema.');
+    }
+    if (!temChave()) {
+      throw new ErroHttp(503, 'sem_chave_mestra',
+        'O servidor não tem chave-mestra configurada (FORTCRM_CHAVE_MESTRA). '
+        + 'Sem ela não há como guardar segredo cifrado — e guardar em claro não é opção.');
+    }
+
+    const valor = String(corpo?.valor ?? '').trim();
+    if (valor.length < 8) {
+      throw new ErroHttp(422, 'valor_invalido', 'Credencial curta demais para ser real.');
+    }
+
+    const r = gravarCredencial(escopo, p.chave, valor, {
+      ator: usuario.email, agoraIso: agora(), novoId,
+    });
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'credencial.gravar',
+      entidade: 'credenciais', entidadeId: p.chave,
+      // Só a pista entra na trilha. Auditoria é exatamente o arquivo que se
+      // entrega a terceiro quando algo dá errado.
+      dados: { chave: p.chave, pista: r.pista },
+    });
+    return ok(r);
+  },
+
+  'DELETE /api/credenciais/:chave': (fed, req, p) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    if (!CREDENCIAIS[p.chave]) {
+      throw new ErroHttp(404, 'credencial_desconhecida', 'Esta credencial não existe no sistema.');
+    }
+    const apagou = apagarCredencial(escopo, p.chave);
+    if (apagou) {
+      banco.auditar({
+        empresaId: empresa.id, ator: usuario.email, acao: 'credencial.apagar',
+        entidade: 'credenciais', entidadeId: p.chave, dados: { chave: p.chave },
+      });
+    }
+    // Apagar devolve o sistema ao que houver no ambiente — a tela precisa
+    // saber disso, senão parece que a credencial continua lá por engano.
+    const depois = lerCredencial(escopo, p.chave);
+    return ok({ apagou, origem: depois.origem, aindaDefinida: !!depois.valor });
   },
 
   // ── Campos personalizados ────────────────────────────────────────────────
@@ -2175,7 +2254,7 @@ export const ROTAS = {
       linhas, porPlataforma, porCampanha,
       campanhas: {
         pendentes: pendentes?.n ?? 0,
-        temToken: !!tokenDeMarketing(),
+        temToken: !!tokenDeMarketing(escopo),
         lote: LOTE_MAXIMO,
       },
     });

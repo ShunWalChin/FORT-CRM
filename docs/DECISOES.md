@@ -489,8 +489,13 @@ Não está na lista que a Meta aceita para `action_source: business_messaging`.
 
 `getEncryptionKey()` deriva a chave de uma semente fixa quando
 `ENCRYPTION_MASTER_KEY` falta. "Criptografia em repouso" passa a ser decifrável
-por qualquer um que leia o repositório, **e sem avisar ninguém**. Falta de chave
-tem de falhar alto.
+por qualquer um que leia o repositório, **e sem avisar ninguém**.
+
+O cofre aqui (`src/cofre.mjs`) tem o mesmo desenho — AES-256-GCM, credencial por
+instância, valor que nunca volta para a tela — **menos** esse fallback: sem
+`FORTCRM_CHAVE_MESTRA` ele lança, e a mensagem diz o que falta e como gerar. Um
+cofre que se abre sozinho é pior que nenhum cofre, porque convence quem o usa de
+que há proteção. Ver [Credenciais](CREDENCIAIS.md).
 
 #### `verifyWebhookTokenMatch` com `===`
 
@@ -552,3 +557,14 @@ resolução de campanha precisam de `await`, e como `teste()` eles reportariam
 `ok` mesmo falhando — um teste que nunca reprova é pior que teste nenhum.
 `testeAsync()` enfileira e o arquivo os executa no fim, antes do resumo.
 Verificado com um canário que deve reprovar.
+
+### Variável de ambiente é uma, e as empresas são três
+
+`FORTCRM_META_MARKETING_TOKEN` é do processo. Três contas de anúncio não cabem
+nela, e a falha é **silenciosa**: a Graph API só responde "não encontrado" para o
+anúncio de uma conta a que o token não tem acesso. Nada quebra; a tela nunca
+preenche.
+
+A credencial passou a viver no banco da própria empresa, atrás do mesmo
+`empresa_id` que separa cliente e pedido. A variável continua como piso, e a da
+instância vence.

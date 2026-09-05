@@ -1,6 +1,6 @@
 # Referência da API
 
-> Gerado a partir de `src/api.mjs`. **50 rotas.**
+> Gerado a partir de `src/api.mjs`. **53 rotas.**
 
 Todas as rotas devolvem `{ ok, dados }` ou `{ ok: false, erro: { codigo, mensagem } }`.
 
@@ -117,6 +117,24 @@ em [Campanhas](CAMPANHAS.md).
 | `POST` | `/api/clientes` | — |
 | `PATCH` | `/api/clientes/:id` | — |
 | `POST` | `/api/clientes/:id/opt-out` | — |
+
+## Credenciais
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/credenciais` | O que está configurado nesta empresa — **nunca o valor**. **gestor** |
+| `PUT` | `/api/credenciais/:chave` | Guarda cifrado (AES-256-GCM). **soberano** |
+| `DELETE` | `/api/credenciais/:chave` | Apaga; o sistema volta ao piso do ambiente. **soberano** |
+
+A leitura devolve, por credencial: `definida`, `origem`
+(`instancia` / `ambiente` / `nenhuma`), `pista` (quatro últimos caracteres),
+`atualizadoPor` e `atualizadoEm`. **O valor não sai do servidor** — devolvê-lo
+ao navegador o espalharia por cache, histórico e extensão.
+
+`meta.temChaveMestra` diz se `FORTCRM_CHAVE_MESTRA` existe; sem ela o `PUT`
+responde **503**, porque guardar segredo em claro não é alternativa.
+
+Detalhes em [Credenciais](CREDENCIAIS.md).
 
 ## Conversão offline
 

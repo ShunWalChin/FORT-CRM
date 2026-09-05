@@ -175,7 +175,8 @@ sudo docker exec fortcrm-app node deploy/manutencao.mjs reancorar
 | `FORTCRM_SENHA_INICIAL` | gerado | Vale só para a primeira carga |
 | `FORTCRM_META_APP_SECRET` | — | Sem ela o webhook do WhatsApp fica **fechado** |
 | `FORTCRM_WHATSAPP_VERIFY_TOKEN` | — | Verificação inicial do endpoint |
-| `FORTCRM_META_MARKETING_TOKEN` | — | Token de System User com **`ads_read`**, para resolver o nome das campanhas. Separado do token de conversão (`manage_events`) de propósito: um token único com as duas permissões transforma um vazamento de leitura em permissão de escrita. Sem ele a tela mostra o número do anúncio e diz o que falta — nada quebra |
+| `FORTCRM_CHAVE_MESTRA` | — | **64 hex** (`openssl rand -hex 32`). Cifra as credenciais guardadas por empresa. Ausente, a tela recusa guardar segredo — guardar em claro não é opção, porque o backup sai da máquina. Trocá-la invalida o que já foi guardado, e não há re-cifragem automática |
+| `FORTCRM_META_MARKETING_TOKEN` | — | Token de System User com **`ads_read`**, para resolver o nome das campanhas. Separado do token de conversão (`manage_events`) de propósito: um token único com as duas permissões transforma um vazamento de leitura em permissão de escrita. Sem ele a tela mostra o número do anúncio e diz o que falta — nada quebra. **É piso, não teto:** o token guardado por empresa vence este, porque três contas de anúncio não cabem numa variável de processo. Ver [Credenciais](CREDENCIAIS.md) |
 
 ### Sonda de saúde
 

@@ -2675,7 +2675,7 @@ João da Silva,5538998112233,joao@exemplo.com,Januária,sim"
 // As telas recebem só o que usam. A lista explícita é o contrato: no dia em
 // que ela crescer demais, é sinal de que a tela virou outra coisa.
 const UI = {
-  api, esc, moeda, numero, data, dataHora, toast,
+  api, esc, moeda, numero, data, dataHora, toast, perguntar,
   abrirGaveta: (html) => abrirGaveta(html),
   navegar: () => navegar(),
 };
