@@ -72,13 +72,17 @@ export const TELAS = [
       'Marque as linhas e clique em "Disparar selecionados" para registrar no sistema.',
       'As linhas em cinza tracejado estão bloqueadas e não podem ser marcadas. O motivo aparece à direita.',
       '"Ver ficha" abre o histórico completo do cliente sem sair da fila.',
+      '"Adiar" tira a linha da fila por 1, 3, 7 ou 30 dias — para o caso de "esse eu falo semana que vem". O cliente volta sozinho na data.',
+      'Os adiados aparecem numa faixa no topo da fila, com a data de volta e um botão "Trazer de volta". Eles nunca somem em silêncio.',
     ],
     observar:
       'Leia os bloqueados. Eles não são erro — são o sistema recusando enviar. Um cliente sem '
       + 'consentimento, outro que pediu descadastro, outro que já recebeu essa mesma mensagem '
       + 'faz pouco tempo. É essa recusa que protege o número de WhatsApp da empresa. '
       + 'E o texto que você editar volta a passar por essa mesma checagem — se ele introduzir '
-      + 'algo proibido, o envio é recusado e o sistema avisa.',
+      + 'algo proibido, o envio é recusado e o sistema avisa. '
+      + 'Adiar é por cliente E por motivo: adiar a revisão de um caminhão não silencia a '
+      + 'cobrança de orçamento do mesmo cliente — são conversas diferentes.',
   },
   {
     id: 'clientes',
@@ -559,6 +563,27 @@ export const RECEITAS = [
     ],
   },
   {
+    titulo: 'Achar um cliente, uma OS ou uma placa',
+    passos: [
+      'Aperte Ctrl+K — ou a barra "/", ou o campo "Buscar" na lateral. Funciona de qualquer tela.',
+      'Digite o que você tem na mão: parte do nome, o telefone, a placa do veículo ou o número da OS.',
+      'Não precisa de acento nem de pontuação: "antonio" acha Antônio, e "(38) 99811-2233" acha o mesmo que 5538998112233.',
+      'Use as setas para escolher e Enter para abrir. Cliente abre a ficha; OS, pedido e oportunidade abrem a tela com a linha acesa.',
+      'Digitar o nome de uma tela também funciona — e por apelido: "cobrança" leva à régua, "meta" leva a Conversões.',
+      'Se não achar nada, a busca diz em que empresa você está e oferece procurar nas outras. Cada empresa tem banco próprio — a busca não atravessa sozinha.',
+    ],
+  },
+  {
+    titulo: 'Adiar um contato para depois',
+    passos: [
+      'Na Régua de contato, clique em "Adiar" na linha do cliente.',
+      'Escolha o prazo: amanhã, em 3 dias, semana que vem ou em um mês.',
+      'A linha sai da fila e aparece na faixa do topo, com a data em que volta.',
+      'Mudou de ideia? "Trazer de volta" na mesma faixa devolve o contato à fila na hora.',
+      'Se a fila ficar vazia só por causa de adiamentos, a tela diz isso com todas as letras — e não "não há trabalho hoje".',
+    ],
+  },
+  {
     titulo: 'Atender alguém que está no balcão agora',
     passos: [
       'Na tela de Início, use o campo de busca dentro do botão "Achar um cliente".',
@@ -652,7 +677,7 @@ export const LIMITES = [
   'As senhas desta demonstração são simples e a base é fictícia — nenhum dado real de cliente está aqui.',
   'A porta pública de captação e o webhook de Click-to-WhatsApp já funcionam. WhatsApp orgânico, Instagram e Mercado Livre ainda dependem de conector — em "Canais de entrada" eles aparecem como "Falta conector".',
   'Os eventos de conversão são montados e auditados, mas não saem para a Meta nem para o Google enquanto DEMO_MODE estiver ligado.',
-  'Não dá para adiar um item da régua, nem cadastrar veículo, ordem de serviço ou item de catálogo pela interface.',
+  'Não dá para cadastrar veículo, ordem de serviço ou item de catálogo pela interface — só clientes e oportunidades nascem por aqui.',
   'Edição de catálogo, metas, relatórios em PDF e aplicativo de celular estão na fila de evolução.',
 ];
 
@@ -681,6 +706,7 @@ export function manualHtml(codigoEmpresa) {
       <nav class="manual-indice" id="manual-indice">
         <div class="rot">NESTE MANUAL</div>
         <a href="#inicio" data-ir="inicio">Como o sistema é organizado</a>
+        <a href="#busca" data-ir="busca">Achar qualquer coisa</a>
         <a href="#telas" data-ir="telas">As telas, uma a uma</a>
         ${visiveis.map((t) => `<a class="sub" href="#tela-${t.id}" data-ir="tela-${t.id}">${esc(t.nome)}</a>`).join('')}
         <a href="#celular" data-ir="celular">No celular</a>
@@ -722,9 +748,41 @@ export function manualHtml(codigoEmpresa) {
           <p class="manual-p">
             <strong>O menu muda conforme o seu papel.</strong> Quem atende o balcão vê as telas de
             operação; quem dirige vê também as de governança. Isso é organização de tela, e não
-            segurança: quem digitar o endereço chega igual, e é o servidor que recusa. Quando o
-            menu passa de doze itens, aparece um campo para filtrar por nome — digite, e
-            <kbd>Enter</kbd> abre o primeiro resultado.
+            segurança: quem digitar o endereço chega igual, e é o servidor que recusa.
+          </p>
+        </section>
+
+        <section id="busca">
+          <h2 class="secao">Achar qualquer coisa</h2>
+          <p class="manual-p">
+            <strong>Ctrl+K</strong> (ou a tecla <kbd>/</kbd>, ou o campo <em>Buscar</em> na
+            lateral) abre uma busca única, de qualquer tela. Ela procura o que você tem na mão:
+            parte do nome, o telefone, a placa do veículo, o número da ordem de serviço, o SKU
+            do catálogo — e também o nome das telas.
+          </p>
+          <p class="manual-p">
+            <strong>Não precisa de acento nem de pontuação.</strong> Digitar
+            <code>antonio</code> acha <em>Antônio</em>, e <code>(38) 99811-2233</code> acha o
+            mesmo cliente que <code>5538998112233</code>. Ninguém guarda telefone com o formato
+            certo, e no celular ninguém digita circunflexo.
+          </p>
+          <p class="manual-p">
+            <strong>As telas atendem por apelido.</strong> Quem quer a régua digita
+            <em>cobrança</em> ou <em>whatsapp</em>; quem quer Conversões digita <em>meta</em>,
+            <em>google</em> ou <em>campanha</em>. Buscar só pelo nome exato da tela ajuda apenas
+            quem já sabia onde a coisa estava.
+          </p>
+          <p class="manual-p">
+            Use <kbd>&uarr;</kbd> <kbd>&darr;</kbd> para escolher e <kbd>Enter</kbd> para abrir.
+            Um cliente abre a ficha; uma OS, um pedido ou uma oportunidade abrem a tela com a
+            linha acesa — sem obrigar você a procurar de novo, agora com os olhos.
+          </p>
+          <p class="manual-p">
+            <strong>A busca não atravessa empresas.</strong> Cada uma tem banco próprio, e
+            misturar clientes de duas na mesma lista seria justamente o que a separação existe
+            para impedir. Quando não acha nada, a busca diz em qual empresa procurou e oferece
+            procurar nas outras a que você tem acesso — a travessia acontece, mas é você quem
+            decide fazê-la.
           </p>
         </section>
 

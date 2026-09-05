@@ -81,6 +81,28 @@ negociação**. O número ensina o que a tela é sem uma linha de explicação.
 Detalhe do balcão: o cartão de clientes tem busca embutida. Com o cliente na
 frente, digite o nome e tecle Enter.
 
+### Uma busca, de qualquer tela
+
+<kbd>Ctrl</kbd>+<kbd>K</kbd>, <kbd>/</kbd>, ou o campo na lateral. Acha cliente,
+veículo, ordem de serviço, pedido, oportunidade, item de catálogo **e** tela —
+por nome, telefone, placa ou número de OS.
+
+Sem acento e sem pontuação: `antonio` acha *Antônio*, `(38) 99811-2233` acha o
+mesmo que `5538998112233`. As telas atendem por apelido — *cobrança* leva à
+régua, *meta* leva a Conversões.
+
+**A busca não atravessa empresas.** Cada uma tem banco próprio. Quando não acha,
+ela diz onde procurou e oferece procurar nas outras a que você tem acesso — a
+travessia é explícita, e troca a empresa ativa de verdade.
+
+### Adiar sem apagar
+
+Na régua, *"esse eu falo semana que vem"* virou botão. O adiamento é por
+**(cliente, gatilho)** — adiar a revisão de um caminhão não silencia a cobrança
+de orçamento do mesmo cliente — e **nunca é silencioso**: os adiados aparecem
+numa faixa no topo da fila, com a data de volta e um botão para trazer de volta.
+Se a fila esvaziar só por causa deles, a tela diz isso, e não "não há trabalho".
+
 ### O manual está dentro do sistema
 
 Primeiro item do menu: **Manual do sistema**. 18 telas explicadas uma a uma, 23
@@ -204,6 +226,8 @@ Escrito aqui para que ninguém prometa ao cliente o que ele ainda não entrega.
   público permanente, Cloudflare Access na frente do hostname é obrigatório.
 - **A régua é calculada quando alguém abre a tela.** Em produção, roda de
   madrugada por timer.
+- **Não dá para cadastrar veículo, ordem de serviço ou item de catálogo pela
+  interface.** Só clientes e oportunidades nascem por aqui.
 - A base é fictícia. Nenhum dado real de cliente está aqui.
 
 ---

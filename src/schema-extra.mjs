@@ -146,6 +146,28 @@ create table if not exists destinos_conversao (
   criado_em     text not null
 );
 create unique index if not exists ux_destino_conversao on destinos_conversao(empresa_id, destino);
+
+-- Contato adiado: "esse eu falo amanha".
+--
+-- Sem isto a fila so tinha disparar ou ignorar. Ignorar faz o item voltar
+-- identico no dia seguinte, e o operador aprende a desconfiar da lista — que e
+-- o pior desfecho possivel para uma tela cujo valor inteiro e ser confiavel.
+--
+-- O adiamento e por (cliente, gatilho): adiar a revisao de um caminhao nao
+-- silencia a cobranca de orcamento do mesmo cliente. Sao conversas diferentes.
+create table if not exists adiamentos (
+  id            text primary key,
+  empresa_id    text not null references empresas(id) on delete cascade,
+  cliente_id    text not null references clientes(id) on delete cascade,
+  gatilho_chave text not null,
+  ate           text not null,
+  motivo        text,
+  criado_por    text not null,
+  criado_em     text not null,
+  desfeito_em   text
+);
+create index if not exists ix_adiamento_ativo
+  on adiamentos (empresa_id, cliente_id, gatilho_chave, desfeito_em);
 `;
 
 /**

@@ -96,7 +96,9 @@ async function api(caminho, opcoes = {}) {
     e.detalhe = json.erro?.detalhe;
     throw e;
   }
-  return json.dados;
+  // Algumas respostas dizem coisas AO LADO do dado — quantos ficaram de fora,
+  // em que outras instâncias procurar. Quem precisa disso pede `comMeta`.
+  return opcoes.comMeta ? { dados: json.dados, meta: json.meta ?? {} } : json.dados;
 }
 
 function sair() {
@@ -384,7 +386,14 @@ function renderShell() {
   });
 
   raiz.querySelector('#recarregar')?.addEventListener('click', async () => {
-    if (!confirm('Recarregar a base de demonstração? Todos os dados atuais são substituídos e você precisará entrar de novo.')) return;
+    const ok = await perguntar({
+      titulo: 'Recarregar a base de demonstração?',
+      texto: 'Todos os dados atuais são substituídos pela carga original, e você precisará '
+        + 'entrar de novo. A auditoria é preservada.',
+      confirmar: 'Recarregar',
+      perigo: true,
+    });
+    if (!ok) return;
     try {
       await api('/demo/reiniciar', { method: 'POST' });
       // A recarga troca todos os identificadores, inclusive o do usuário da
@@ -408,7 +417,6 @@ function renderShell() {
  * navegação e reescreve o `innerHTML` inteiro — guardar o texto aqui é o que
  * faz o filtro sobreviver ao clique no resultado.
  */
-let filtroMenu = '';
 
 /** Itens que o papel e a empresa ativa permitem, já sem os cabeçalhos. */
 function itensDoMenu() {
@@ -419,8 +427,6 @@ function desenharMenu() {
   const menu = document.getElementById('menu');
   if (!menu) return;
 
-  const alvo = filtroMenu.trim().toLowerCase();
-  const casa = (m) => !alvo || m.nome.toLowerCase().includes(alvo);
 
   const item = (m) => {
     const n = estado.cache.contadores?.[m.id];
@@ -441,47 +447,44 @@ function desenharMenu() {
       const ate = adiante.findIndex((p) => p.grupo);
       const doGrupo = (ate === -1 ? adiante : adiante.slice(0, ate));
       if (!visivelNoMenu(m)) return;
-      if (!doGrupo.some((p) => visivelNoMenu(p) && casa(p))) return;
+      if (!doGrupo.some((p) => visivelNoMenu(p))) return;
       linhas.push(`<div class="grupo">${esc(m.grupo)}</div>`);
       return;
     }
-    if (!visivelNoMenu(m) || !casa(m)) return;
+    if (!visivelNoMenu(m)) return;
     linhas.push(item(m));
   });
-
-  if (alvo && !linhas.some((l) => l.startsWith('<a'))) {
-    linhas.push(`<div class="sem-resultado">Nada com “${esc(filtroMenu)}”.</div>`);
-  }
 
   menu.innerHTML = linhas.join('');
 }
 
 /*
- * A busca só aparece quando o menu é grande o bastante para valer procurar.
- * Para o operador, que vê 11 itens, ela seria mais um campo a ignorar; para a
- * direção, que vê 18 espalhados por cinco grupos, é o caminho mais curto.
+ * A porta da busca, desenhada uma vez e fora de `desenharMenu`.
  *
- * Desenhada uma vez, fora de `desenharMenu`: se fosse reescrita junto, o campo
- * perderia o foco e o texto a cada tecla digitada.
+ * Fica na lateral porque no celular a lateral recolhida ainda mostra esta
+ * faixa — a busca continua a um toque mesmo com o menu fechado.
  */
 function montarBuscaDoMenu() {
+  /*
+   * Uma busca só, e não duas.
+   *
+   * Aqui havia um "Filtrar telas…" que filtrava o menu — e ele não achava
+   * cliente, nem placa, nem OS. Quem digitava "antonio" via "Nada com
+   * antonio" e concluía, razoavelmente, que o sistema não tinha o Antônio.
+   *
+   * Duas caixas de busca com alcances diferentes é pior que uma: a pessoa não
+   * tem como saber qual das duas responde a pergunta dela. Esta virou a porta
+   * de UMA busca, que acha tela E registro.
+   */
   const caixa = document.getElementById('menu-busca');
   if (!caixa) return;
-  if (itensDoMenu().length < 13) { caixa.innerHTML = ''; return; }
-
-  caixa.innerHTML = `<input type="search" id="filtro-menu" autocomplete="off"
-    placeholder="Filtrar telas…" aria-label="Filtrar telas do menu">`;
-  const campo = caixa.querySelector('input');
-  campo.value = filtroMenu;
-  campo.addEventListener('input', () => { filtroMenu = campo.value; desenharMenu(); });
-  campo.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') { filtroMenu = ''; campo.value = ''; desenharMenu(); }
-    // Enter abre o primeiro resultado — é o que se espera depois de filtrar.
-    if (ev.key === 'Enter') {
-      const primeiro = document.querySelector('nav.menu a');
-      if (primeiro) primeiro.click();
-    }
-  });
+  caixa.innerHTML = `
+    <button class="busca-porta" id="abrir-busca" aria-label="Buscar no sistema">
+      ${icone('busca')}
+      <span>Buscar cliente, OS, placa…</span>
+      <kbd>Ctrl K</kbd>
+    </button>`;
+  caixa.querySelector('#abrir-busca').onclick = () => abrirBusca();
 }
 
 // ── Roteamento ──────────────────────────────────────────────────────────────
@@ -561,6 +564,8 @@ async function navegar() {
   sincronizarNavBaixo();
   // Link colado ou pagina recarregada com `?ficha=` reabre a ficha.
   restaurarGavetaDaUrl();
+  // E `?foco=` acende a linha que a busca mandou procurar.
+  focarDaUrl();
 }
 
 /** A barra de polegar só existe no celular, e reflete a rota atual. */
@@ -606,6 +611,320 @@ window.addEventListener('resize', () => {
 window.addEventListener('hashchange', navegar);
 ligarAutoCrescer();
 
+/* -- Busca global ---------------------------------------------------------
+ *
+ * Ctrl+K, ou a porta na lateral.
+ *
+ * O sistema tem dezessete telas e cinco tipos de registro. Achar "o Antonio"
+ * custava saber que cliente mora em Clientes, e achar "a OS dele" custava
+ * saber que OS mora noutra tela e que a lista traz duzentas linhas. No balcao,
+ * com o cliente esperando, ninguem faz esse percurso.
+ *
+ * O que esta busca faz de diferente do filtro que havia aqui: ela acha
+ * REGISTRO, nao so o nome da tela. E acha por telefone, por placa e por numero
+ * de OS, que e como a pessoa realmente identifica o que procura quando esta
+ * com o papel na mao.
+ */
+
+const semAcento = (v) => String(v ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+
+/*
+ * Sinonimos das telas.
+ *
+ * Quase ninguem digita o nome da tela. Quem quer a regua digita "cobranca" ou
+ * "whatsapp"; quem quer conversoes digita "meta", "google" ou "campanha". Sem
+ * isto, a busca por tela so encontra quem ja sabia o nome do que procurava —
+ * que e exatamente quem nao precisava de busca.
+ */
+const SINONIMOS = {
+  inicio: 'home comecar principal atalhos',
+  manual: 'ajuda duvida como usar documentacao tutorial explicacao',
+  painel: 'dashboard numeros indicadores resultado metricas',
+  regua: 'fila hoje contato disparo whatsapp mensagem cobranca lembrete follow up',
+  clientes: 'cadastro ficha contato telefone base pessoas cnpj',
+  pipeline: 'funil oportunidade negocio venda proposta kanban orcamento',
+  frota: 'veiculo caminhao placa trator maquina carro',
+  ordens: 'os oficina bancada laudo servico injecao bomba bico reparo',
+  pedidos: 'venda recompra compra nota faturamento',
+  catalogo: 'produto servico preco sku tabela',
+  canais: 'origem entrada anuncio link formulario qr whatsapp captacao',
+  atribuicao: 'origem lead anuncio campanha utm gclid fbclid rastreio',
+  conversoes: 'meta google ads capi offline feedback campanha retorno',
+  central: 'grupo consolidado leads triagem',
+  grupo: 'consolidado comparativo empresas visao geral',
+  gatilhos: 'regra automacao quando dispara periodicidade',
+  disparos: 'historico enviado log mensagem comprovante',
+  auditoria: 'log trilha quem fez seguranca registro',
+  importar: 'planilha csv carga base migrar excel',
+};
+
+const ROTULO_TIPO = {
+  tela: 'Telas',
+  cliente: 'Clientes',
+  veiculo: 'Veículos',
+  ordem: 'Ordens de serviço',
+  pedido: 'Pedidos',
+  oportunidade: 'Oportunidades',
+  catalogo: 'Catálogo',
+};
+
+/** Telas visiveis PARA ESTA PESSOA que casam com o termo. */
+function telasQueCasam(termo) {
+  const t = semAcento(termo);
+  if (t.length < 2) return [];
+  return MENU
+    .filter((m) => m.id && visivelNoMenu(m))
+    .map((m) => {
+      const nome = semAcento(m.nome);
+      let ponto = 0;
+      if (nome === t) ponto = 3;
+      else if (nome.startsWith(t)) ponto = 2.5;
+      else if (nome.includes(t)) ponto = 1.6;
+      else if ((SINONIMOS[m.id] ?? '').split(' ').some((w) => w && w.startsWith(t))) ponto = 1.2;
+      return {
+        tipo: 'tela', id: m.id, titulo: m.nome, sub: 'tela do sistema', rota: m.id, ponto,
+      };
+    })
+    .filter((m) => m.ponto > 0)
+    .sort((a, b) => b.ponto - a.ponto)
+    .slice(0, 5);
+}
+
+let buscaAberta = null;
+// Resultado guardado por termo: apagar uma letra nao pode custar outra ida ao
+// servidor, e digitar "antonio" gera seis termos que ninguem quer refazer.
+const cacheBusca = new Map();
+
+function abrirBusca(inicial = '') {
+  if (buscaAberta) { buscaAberta.campo.focus(); return; }
+
+  const veu = document.createElement('div');
+  veu.className = 'veu veu-busca';
+  const cx = document.createElement('div');
+  cx.className = 'paleta';
+  cx.setAttribute('role', 'dialog');
+  cx.setAttribute('aria-modal', 'true');
+  cx.setAttribute('aria-label', 'Buscar no sistema');
+  cx.innerHTML = `
+    <div class="paleta-campo">
+      ${icone('busca')}
+      <input type="search" autocomplete="off" spellcheck="false" role="combobox"
+             aria-expanded="true" aria-controls="paleta-lista"
+             placeholder="Nome, telefone, placa, número da OS ou tela…">
+      <kbd>Esc</kbd>
+    </div>
+    <div class="paleta-lista" id="paleta-lista" role="listbox"></div>
+    <div class="paleta-rodape">
+      <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navegar</span>
+      <span><kbd>Enter</kbd> abrir</span>
+      <span class="fraco">Buscando em ${esc(estado.empresa?.nome ?? '')}</span>
+    </div>`;
+
+  document.body.append(veu, cx);
+  travarRolagem(true);
+  const campo = cx.querySelector('input');
+  const lista = cx.querySelector('.paleta-lista');
+  buscaAberta = { cx, veu, campo, lista, itens: [], idx: 0, seq: 0 };
+
+  veu.onclick = () => fecharBusca();
+  campo.addEventListener('input', () => rodarBusca(campo.value));
+  campo.addEventListener('keydown', teclasDaBusca);
+  lista.addEventListener('click', (ev) => {
+    const el = ev.target.closest('[data-i]');
+    if (el) abrirResultado(buscaAberta.itens[Number(el.dataset.i)]);
+  });
+
+  campo.value = inicial;
+  campo.focus();
+  rodarBusca(inicial);
+}
+
+function fecharBusca() {
+  if (!buscaAberta) return;
+  buscaAberta.veu.remove();
+  buscaAberta.cx.remove();
+  buscaAberta = null;
+  travarRolagem(false);
+}
+
+function teclasDaBusca(ev) {
+  if (!buscaAberta) return;
+  const n = buscaAberta.itens.length;
+  if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); fecharBusca(); return; }
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    if (n) abrirResultado(buscaAberta.itens[buscaAberta.idx]);
+    return;
+  }
+  if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+  ev.preventDefault();
+  if (!n) return;
+  // Circula: quem esta no ultimo e aperta para baixo volta ao primeiro, em vez
+  // de bater numa parede sem aviso.
+  buscaAberta.idx = (buscaAberta.idx + (ev.key === 'ArrowDown' ? 1 : n - 1)) % n;
+  marcarSelecionado();
+}
+
+function marcarSelecionado() {
+  if (!buscaAberta) return;
+  buscaAberta.lista.querySelectorAll('[data-i]').forEach((el) => {
+    const aqui = Number(el.dataset.i) === buscaAberta.idx;
+    el.classList.toggle('on', aqui);
+    el.setAttribute('aria-selected', String(aqui));
+    if (aqui) el.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+let temporizadorBusca = null;
+
+function rodarBusca(termo) {
+  clearTimeout(temporizadorBusca);
+  const t = String(termo ?? '').trim();
+
+  // As telas respondem na hora, sem rede: quem digita "conversoes" nao devia
+  // esperar o banco para ver a tela que ja esta no menu ao lado.
+  const telas = telasQueCasam(t);
+  if (t.length < 2) { pintarBusca(telas, { curto: true, termo: t }); return; }
+  if (cacheBusca.has(t)) { pintarBusca(telas.concat(cacheBusca.get(t).dados), { ...cacheBusca.get(t).meta, termo: t }); return; }
+
+  pintarBusca(telas, { termo: t, carregando: true });
+  temporizadorBusca = setTimeout(async () => {
+    const meu = buscaAberta ? (buscaAberta.seq += 1) : 0;
+    try {
+      const r = await api(`/buscar?q=${encodeURIComponent(t)}`, { comMeta: true });
+      // Resposta atrasada de um termo antigo nao pode sobrescrever a atual —
+      // digitar rapido produzia a lista de tres letras atras.
+      if (!buscaAberta || meu !== buscaAberta.seq) return;
+      cacheBusca.set(t, r);
+      if (cacheBusca.size > 40) cacheBusca.delete(cacheBusca.keys().next().value);
+      pintarBusca(telas.concat(r.dados), { ...r.meta, termo: t });
+    } catch (e) {
+      if (buscaAberta) pintarBusca(telas, { termo: t, erro: e.message });
+    }
+  }, 200);
+}
+
+function pintarBusca(itens, ctx = {}) {
+  if (!buscaAberta) return;
+  buscaAberta.itens = itens;
+  buscaAberta.idx = 0;
+  const { lista } = buscaAberta;
+
+  if (!itens.length) {
+    lista.innerHTML = `<div class="paleta-vazio">
+      ${ctx.carregando ? '<div class="fraco">procurando…</div>' : ''}
+      ${ctx.erro ? `<div class="paleta-erro">${esc(ctx.erro)}</div>` : ''}
+      ${!ctx.carregando && !ctx.erro && ctx.curto
+    ? '<div class="fraco">Digite pelo menos duas letras. Vale nome, telefone, placa, número da OS ou o nome de uma tela.</div>'
+    : ''}
+      ${!ctx.carregando && !ctx.erro && !ctx.curto ? `
+        <div class="paleta-nada">
+          <b>Nada com &ldquo;${esc(ctx.termo)}&rdquo; em ${esc(ctx.empresa ?? estado.empresa?.nome ?? '')}.</b>
+          <div class="fraco">Cada empresa tem o próprio banco — a busca não atravessa sozinha.</div>
+          ${(ctx.outras ?? []).length ? `<div class="paleta-outras">
+            ${ctx.outras.map((o) => `<button class="btn quiet sm" data-outra="${esc(o.instancia)}">Procurar em ${esc(o.nome)}</button>`).join('')}
+          </div>` : ''}
+        </div>` : ''}
+    </div>`;
+    lista.querySelectorAll('[data-outra]').forEach((b) => {
+      b.onclick = () => trocarEBuscar(b.dataset.outra, ctx.termo);
+    });
+    return;
+  }
+
+  // Agrupa por tipo mantendo a ordem que o servidor decidiu: o cabecalho e
+  // rotulo, nao reordenacao.
+  let ultimo = null;
+  lista.innerHTML = itens.map((r, i) => {
+    const cabeca = r.tipo !== ultimo ? `<div class="paleta-grupo">${esc(ROTULO_TIPO[r.tipo] ?? r.tipo)}</div>` : '';
+    ultimo = r.tipo;
+    return `${cabeca}
+      <div class="paleta-item ${i === 0 ? 'on' : ''}" data-i="${i}" role="option"
+           aria-selected="${i === 0}" tabindex="-1">
+        <span class="paleta-ic">${icone(r.tipo === 'tela' ? (MENU.find((m) => m.id === r.id)?.ic ?? 'painel') : 'busca')}</span>
+        <span class="paleta-txt">
+          <span class="paleta-titulo">${esc(r.titulo)}</span>
+          ${r.sub ? `<span class="paleta-sub">${esc(r.sub)}</span>` : ''}
+        </span>
+      </div>`;
+  }).join('');
+}
+
+/*
+ * Trocar de empresa a partir da busca.
+ *
+ * A troca e REAL: a casca inteira muda de cor e de menu, porque o operador
+ * passou a estar noutra empresa. Fingir que so a busca mudou seria deixa-lo
+ * clicar num cliente e cair numa tela que ainda diz o nome da empresa anterior.
+ */
+function trocarEBuscar(instancia, termo) {
+  const alvo = estado.empresas.find((e) => e.instancia === instancia);
+  if (!alvo) return;
+  fecharBusca();
+  estado.empresa = alvo;
+  localStorage.setItem('fortcrm.empresa', alvo.instancia);
+  estado.cache = {};
+  estado.selecionados.clear();
+  cacheBusca.clear();
+  renderShell();
+  abrirBusca(termo);
+}
+
+function abrirResultado(r) {
+  if (!r) return;
+  fecharBusca();
+  // A gaveta aberta precisa sair ANTES: `restaurarGavetaDaUrl` nao troca uma
+  // ficha por outra, ele so abre quando nao ha nenhuma.
+  fecharGaveta({ mexerNaUrl: false });
+  const alvo = `#/${r.rota}`;
+  if (location.hash === alvo) navegar();
+  else location.hash = alvo;
+}
+
+/*
+ * `?foco=` acende a linha que a busca escolheu.
+ *
+ * Sem isto, buscar uma OS levava a uma tela com duzentas linhas e a pessoa
+ * tinha de procurar de novo, agora com os olhos — que e a busca que ela acabou
+ * de fazer, feita duas vezes.
+ */
+function focarDaUrl() {
+  const q = location.hash.split('?')[1];
+  if (!q) return;
+  const id = new URLSearchParams(q).get('foco');
+  if (!id) return;
+  const el = document.querySelector(`[data-linha="${CSS.escape(id)}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('focada');
+  // O destaque apaga sozinho: linha marcada para sempre vira sujeira na tela
+  // quando a pessoa continua trabalhando ali.
+  setTimeout(() => el.classList.remove('focada'), 3000);
+}
+
+/*
+ * Ctrl+K (ou Cmd+K), e `/` quando nao se esta escrevendo.
+ *
+ * `/` e o atalho que quem usa GitHub, Slack e Gmail ja tem no dedo, e custa
+ * uma tecla. A guarda contra campo em foco existe porque sem ela seria
+ * impossivel digitar uma barra num endereco ou numa observacao.
+ */
+document.addEventListener('keydown', (ev) => {
+  if (!estado.token || !estado.empresas.length) return;
+  const escrevendo = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target?.tagName ?? '')
+    || ev.target?.isContentEditable;
+
+  if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'k' || ev.key === 'K')) {
+    ev.preventDefault();
+    if (buscaAberta) fecharBusca(); else abrirBusca();
+    return;
+  }
+  if (ev.key === '/' && !escrevendo && !buscaAberta) {
+    ev.preventDefault();
+    abrirBusca();
+  }
+});
+
 // ── Início ──────────────────────────────────────────────────────────────────
 /*
  * A tela que diz O QUE FAZER, e não como estamos.
@@ -639,6 +958,153 @@ ligarAutoCrescer();
  * `tranquilo` distingue "não há nada e está tudo certo" de "não há nada porque
  * algo precisa de você". Pintar as duas iguais faz o operador ignorar as duas.
  */
+/*
+ * Trava a rolagem do fundo enquanto há algo modal na frente.
+ *
+ * Sem isto, rolar com o dedo sobre o véu movia a lista ATRÁS da busca: a
+ * pessoa fechava e a tela estava noutro lugar, sem ter pedido nada.
+ *
+ * Conta em vez de ligar e desligar, porque estes se empilham — a busca abre
+ * por cima da ficha, e soltar o fundo ao fechar a busca destravaria a tela com
+ * a ficha ainda aberta.
+ */
+let modaisAbertos = 0;
+let rolagemGuardada = 0;
+function travarRolagem(ligar) {
+  const antes = modaisAbertos;
+  modaisAbertos = Math.max(0, modaisAbertos + (ligar ? 1 : -1));
+  if (antes === 0 && modaisAbertos > 0) {
+    /*
+     * Guardar a posicao e obrigatorio, nao refinamento.
+     *
+     * `overflow: hidden` sozinho encolhe a altura rolavel e o navegador joga a
+     * pagina para o topo — abrir a busca no meio de uma lista de duzentas
+     * linhas e fecha-la devolvia a pessoa ao comeco. O corpo vai para
+     * `position: fixed` deslocado pela rolagem atual, o que congela a tela
+     * exatamente onde ela estava.
+     */
+    rolagemGuardada = window.scrollY;
+    document.body.style.top = `${-rolagemGuardada}px`;
+    document.documentElement.classList.add('travado');
+  } else if (antes > 0 && modaisAbertos === 0) {
+    document.documentElement.classList.remove('travado');
+    document.body.style.top = '';
+    window.scrollTo(0, rolagemGuardada);
+  }
+}
+
+/*
+ * Diálogo do sistema, no lugar de `confirm()` e `prompt()` do navegador.
+ *
+ * Os nativos custam quatro coisas, e as quatro apareceram aqui:
+ *
+ *   - ignoram os cinco temas. Num sistema desenhado para o balcão sob luz forte
+ *     e para o plantão de madrugada, uma caixa branca do Chrome no meio da tela
+ *     é a única coisa que não obedece;
+ *   - não validam nada. "Pressão medida na bancada (bar)" aceitava qualquer
+ *     texto, e o valor ia para o laudo do jeito que foi digitado;
+ *   - não mostram contexto. "Motivo da perda" sem dizer QUAL oportunidade —
+ *     e quem arrastou três cartões seguidos não sabe mais qual está respondendo;
+ *   - alguns navegadores móveis os suprimem ou os empilham fora de ordem.
+ *
+ * Devolve `null` quando a pessoa desiste, como o nativo. Esc e clique fora
+ * fecham; Enter confirma quando não há campo de texto longo.
+ */
+function perguntar({
+  titulo, texto = '', campos = [], confirmar = 'Confirmar', perigo = false, contexto: ctx = '',
+}) {
+  return new Promise((resolve) => {
+    const veu = document.createElement('div');
+    veu.className = 'veu veu-dialogo';
+    const cx = document.createElement('div');
+    cx.className = 'dialogo';
+    cx.setAttribute('role', 'dialog');
+    cx.setAttribute('aria-modal', 'true');
+    cx.setAttribute('aria-label', titulo);
+
+    cx.innerHTML = `
+      ${ctx ? `<div class="dialogo-ctx">${esc(ctx)}</div>` : ''}
+      <h3>${esc(titulo)}</h3>
+      ${texto ? `<p>${esc(texto)}</p>` : ''}
+      ${campos.map((c) => `
+        <div class="campo">
+          ${c.rotulo ? `<label for="dlg-${esc(c.nome)}">${esc(c.rotulo)}</label>` : ''}
+          ${c.tipo === 'opcoes'
+    ? `<div class="dialogo-opcoes">
+                ${c.opcoes.map((o, i) => `
+                  <button type="button" class="btn ${i ? 'quiet' : ''}" data-opcao="${esc(o.valor)}">
+                    ${esc(o.rotulo)}
+                  </button>`).join('')}
+              </div>`
+    : `<input id="dlg-${esc(c.nome)}" name="${esc(c.nome)}" type="${esc(c.tipo ?? 'text')}"
+                 ${c.passo ? `step="${esc(c.passo)}"` : ''}
+                 ${c.min !== undefined ? `min="${esc(c.min)}"` : ''}
+                 ${c.max !== undefined ? `max="${esc(c.max)}"` : ''}
+                 placeholder="${esc(c.dica ?? '')}" value="${esc(c.valor ?? '')}">`}
+          ${c.ajuda ? `<div class="campo-dica">${esc(c.ajuda)}</div>` : ''}
+        </div>`).join('')}
+      <div class="dialogo-erro" hidden></div>
+      <div class="barra-acoes" style="margin-top:16px;justify-content:flex-end">
+        <button class="btn quiet" data-cancelar>Cancelar</button>
+        ${campos.some((c) => c.tipo === 'opcoes') ? '' : `<button class="btn ${perigo ? 'perigo' : ''}" data-ok>${esc(confirmar)}</button>`}
+      </div>`;
+
+    document.body.append(veu, cx);
+    travarRolagem(true);
+    const primeiro = cx.querySelector('input, [data-opcao], [data-ok]');
+    primeiro?.focus();
+
+    const fechar = (v) => {
+      document.removeEventListener('keydown', aoTeclar);
+      veu.remove(); cx.remove();
+      travarRolagem(false);
+      resolve(v);
+    };
+
+    const erro = (msg) => {
+      const el = cx.querySelector('.dialogo-erro');
+      el.textContent = msg;
+      el.hidden = false;
+    };
+
+    const confirmarAgora = () => {
+      const vals = {};
+      for (const c of campos) {
+        if (c.tipo === 'opcoes') continue;
+        const el = cx.querySelector(`[name="${c.nome}"]`);
+        const v = String(el.value ?? '').trim();
+        // Validar AQUI é metade do motivo de este diálogo existir: o `prompt`
+        // devolvia qualquer coisa e o erro só aparecia no banco.
+        if (c.obrigatorio && !v) { erro(`${c.rotulo ?? 'Campo'} é obrigatório.`); el.focus(); return; }
+        if (v && c.tipo === 'number') {
+          const n = Number(v.replace(',', '.'));
+          if (!Number.isFinite(n)) { erro(`${c.rotulo} precisa ser um número.`); el.focus(); return; }
+          if (c.min !== undefined && n < c.min) { erro(`${c.rotulo}: mínimo ${c.min}.`); el.focus(); return; }
+          if (c.max !== undefined && n > c.max) { erro(`${c.rotulo}: máximo ${c.max}.`); el.focus(); return; }
+          vals[c.nome] = n; continue;
+        }
+        vals[c.nome] = v || null;
+      }
+      fechar(campos.length ? vals : true);
+    };
+
+    cx.querySelector('[data-cancelar]').onclick = () => fechar(null);
+    cx.querySelector('[data-ok]')?.addEventListener('click', confirmarAgora);
+    veu.onclick = () => fechar(null);
+    cx.querySelectorAll('[data-opcao]').forEach((b) => {
+      b.onclick = () => fechar({ opcao: b.dataset.opcao });
+    });
+
+    const aoTeclar = (ev) => {
+      if (ev.key === 'Escape') { ev.preventDefault(); fechar(null); }
+      if (ev.key === 'Enter' && !ev.shiftKey && cx.querySelector('[data-ok]')) {
+        ev.preventDefault(); confirmarAgora();
+      }
+    };
+    document.addEventListener('keydown', aoTeclar);
+  });
+}
+
 function vazio({ ic = '·', titulo, texto = '', acoes = [], tranquilo = false }) {
   return `<div class="vazio ${tranquilo ? 'ok' : ''}">
     <div class="ic">${ic}</div>
@@ -974,6 +1440,22 @@ VISOES.regua = async (el) => {
         ${d.resumo.motivos.map((m) => `<br>· <code style="color:var(--crit);font-family:var(--mono);font-size:12px">${esc(m.motivo)}</code> — ${esc(m.explicacao)} <span class="tag">${numero(m.n)}</span>`).join('')}
       </div>` : ''}
 
+    ${(d.adiados ?? []).length ? `
+      <div class="adiados">
+        <div class="t">
+          <b>${numero(d.adiados.length)}</b>
+          ${d.adiados.length === 1 ? 'contato adiado por você' : 'contatos adiados por você'}.
+          Eles voltam sozinhos na data — não somem.
+        </div>
+        ${d.adiados.map((a) => `
+          <div class="adiado-linha">
+            <span class="quem">${esc(a.cliente.nome)}</span>
+            <span class="fraco">${esc(a.gatilho.nome)}</span>
+            <span class="quando">volta ${data(a.ate)}</span>
+            <button class="btn sutil sm" data-desadiar="${esc(a.id)}">Trazer de volta</button>
+          </div>`).join('')}
+      </div>` : ''}
+
     <div id="fila">
       ${d.fila.length ? d.fila.map(itemRegua).join('') : ''}
       ${!d.fila.length && d.diagnostico ? vazio({
@@ -1046,11 +1528,56 @@ function itemRegua(f) {
           ${f.canal?.conectado ? '' : ' <span class="tag crit">desconectado</span>'}
         </div>
         <button class="btn quiet sm" style="margin-top:10px" data-ficha="${esc(f.cliente.id)}">Ver ficha</button>
+        ${f.decisao.permitido ? `<button class="btn sutil sm" style="margin-top:10px"
+          data-adiar="${esc(f.cliente.id)}" data-gatilho="${esc(f.gatilho.chave)}"
+          data-nome="${esc(f.cliente.nome)}">Adiar</button>` : ''}
       </div>
     </div>`;
 }
 
 function ligarRegua(el) {
+  // Adiar: "esse eu falo amanhã". Sem isto a fila só tinha disparar ou ignorar,
+  // e ignorar faz o item voltar idêntico amanhã.
+  el.querySelectorAll('[data-adiar]').forEach((b) => {
+    b.onclick = async (ev) => {
+      ev.stopPropagation();
+      const r = await perguntar({
+        contexto: b.dataset.nome,
+        titulo: 'Adiar este contato',
+        texto: 'Ele sai da fila e volta sozinho na data — o gatilho continua ativo para os '
+          + 'outros clientes, e os demais motivos deste mesmo cliente continuam valendo.',
+        campos: [{
+          nome: 'quando', tipo: 'opcoes',
+          opcoes: [
+            { valor: '1', rotulo: 'Amanhã' },
+            { valor: '3', rotulo: 'Em 3 dias' },
+            { valor: '7', rotulo: 'Semana que vem' },
+            { valor: '30', rotulo: 'Em um mês' },
+          ],
+        }],
+      });
+      if (!r) return;
+      try {
+        const resp = await api('/regua/adiar', {
+          method: 'POST',
+          corpo: { clienteId: b.dataset.adiar, gatilho: b.dataset.gatilho, dias: Number(r.opcao) },
+        });
+        toast('Adiado', `${resp.cliente} volta para a fila em ${data(resp.ate)}.`);
+        navegar();
+      } catch (e) { toast('Não deu para adiar', e.message, 'erro'); }
+    };
+  });
+
+  el.querySelectorAll('[data-desadiar]').forEach((b) => {
+    b.onclick = async () => {
+      try {
+        await api(`/regua/adiar/${b.dataset.desadiar}/desfazer`, { method: 'POST' });
+        toast('De volta à fila');
+        navegar();
+      } catch (e) { toast('Não deu para desfazer', e.message, 'erro'); }
+    };
+  });
+
   const atualizar = () => {
     el.querySelector('#conta-sel').textContent = estado.selecionados.size;
     el.querySelector('#disparar').disabled = estado.selecionados.size === 0;
@@ -1565,7 +2092,15 @@ const form = document.querySelector('#form-ficha');
   }
 
   document.querySelector('#optout')?.addEventListener('click', async () => {
-    if (!confirm(`Registrar descadastro de ${c.nome}? Não há envio automático depois disso.`)) return;
+    const ok = await perguntar({
+      contexto: c.nome,
+      titulo: 'Registrar descadastro?',
+      texto: 'Nenhuma mensagem automática sai para este contato depois disso, e não há como '
+        + 'reativar por aqui — só o próprio cliente pedindo de volta.',
+      confirmar: 'Registrar descadastro',
+      perigo: true,
+    });
+    if (!ok) return;
     await api(`/clientes/${id}/opt-out`, { method: 'POST' });
     toast('Descadastro registrado', 'O contato saiu de todas as réguas.');
     fecharGaveta();
@@ -1640,7 +2175,7 @@ VISOES.ordens = async (el) => {
         <thead><tr><th>OS</th><th>Cliente</th><th>Veículo</th><th>Componente</th><th>Bancada</th>
           <th class="num">Pressão</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead>
         <tbody>${lista.map((o) => `
-          <tr>
+          <tr data-linha="${esc(o.id)}">
             <td class="forte" style="font-family:var(--mono)">${esc(o.numero)}<div class="fraco">${data(o.concluida_em ?? o.aberta_em)}</div></td>
             <td>${esc(o.cliente_nome)}</td>
             <td style="font-family:var(--mono);font-size:12.5px">${esc(o.placa ?? '—')}<div class="fraco">${esc([o.marca, o.modelo].filter(Boolean).join(' '))}</div></td>
@@ -1659,7 +2194,22 @@ VISOES.ordens = async (el) => {
 
   el.querySelectorAll('[data-concluir]').forEach((b) => {
     b.onclick = async () => {
-      const pressao = prompt('Pressão medida na bancada (bar). Deixe vazio se não se aplica:');
+      // Campo numérico com limites reais de bancada, validado antes de sair
+      // daqui: o `prompt` aceitava qualquer texto e o valor ia para o laudo.
+      const os = lista.find((x) => x.id === b.dataset.concluir) ?? {};
+      const r = await perguntar({
+        contexto: [os.numero && `OS ${os.numero}`, os.cliente_nome].filter(Boolean).join(' · '),
+        titulo: 'Concluir ordem de serviço',
+        texto: 'A pressão medida entra no laudo digital. Deixe vazio se não se aplica a este serviço.',
+        campos: [{
+          nome: 'pressao', rotulo: 'Pressão na bancada (bar)', tipo: 'number',
+          passo: '1', min: 0, max: 3000, dica: 'ex.: 1800',
+          ajuda: 'Entre 0 e 3000 bar.',
+        }],
+        confirmar: 'Concluir',
+      });
+      if (!r) return;
+      const pressao = r.pressao;
       if (pressao === null) return;
       await api(`/ordens/${b.dataset.concluir}/concluir`, {
         method: 'POST',
@@ -1696,7 +2246,7 @@ VISOES.pedidos = async (el) => {
           <th class="num">Valor</th><th class="num">Ciclo</th><th>Próximo contato</th><th>Status</th></tr></thead>
         <tbody>${lista.map((p) => {
           const prox = diasAte(p.proximo_contato_em);
-          return `<tr class="clicavel" data-ficha="${esc(p.cliente_id)}">
+          return `<tr class="clicavel" data-linha="${esc(p.id)}" data-ficha="${esc(p.cliente_id)}">
             <td class="forte" style="font-family:var(--mono)">${esc(p.numero)}<div class="fraco">${data(p.feito_em)}</div></td>
             <td>${esc(p.cliente_nome)}<div class="fraco">${esc(p.cidade ?? '')}</div></td>
             <td>${esc(JSON.parse(p.itens || '[]').map((i) => `${i.qtd}× ${i.nome}`).join(', '))}</td>
@@ -1734,7 +2284,7 @@ VISOES.pipeline = async (el) => {
             <span class="coluna-total">${moeda(c.total)}</span>
           </div>
           ${c.itens.map((o) => `
-            <div class="card-op" draggable="true" data-op="${esc(o.id)}">
+            <div class="card-op" draggable="true" data-op="${esc(o.id)}" data-linha="${esc(o.id)}">
               <div class="t">${esc(o.titulo)}</div>
               <div class="c">${esc(o.cliente_nome ?? 'sem cliente')}</div>
               <div class="v">${moeda(o.valor_centavos)} <span style="color:var(--faint);font-weight:400">· ${esc(o.probabilidade)}%</span></div>
@@ -1757,7 +2307,31 @@ VISOES.pipeline = async (el) => {
   async function mover(id, etapa) {
     const corpo = { etapa };
     if (etapa === 'perdido') {
-      const motivo = prompt('Motivo da perda (preço, prazo, falta da peça, sumiço, concorrente):');
+      // Motivo estruturado, e não texto livre: "perdido por preço" e "perdido
+      // por spam" são sinais opostos para o anúncio, e um campo aberto vira
+      // trinta grafias da mesma coisa.
+      // O titulo vem do dado ja carregado: quem arrastou tres cartoes seguidos
+      // precisa saber QUAL esta respondendo.
+      const op = (d.etapas ?? []).flatMap((c) => c.itens ?? []).find((x) => x.id === id);
+      const r = await perguntar({
+        contexto: op?.titulo ?? '',
+        titulo: 'Por que a oportunidade foi perdida?',
+        texto: 'O motivo alimenta o relatório e os públicos de anúncio — perdido por preço '
+          + 'e perdido por sumiço não são o mesmo sinal.',
+        campos: [{
+          nome: 'motivo', tipo: 'opcoes',
+          opcoes: [
+            { valor: 'preco', rotulo: 'Preço' },
+            { valor: 'prazo', rotulo: 'Prazo' },
+            { valor: 'falta_peca', rotulo: 'Falta da peça' },
+            { valor: 'concorrente', rotulo: 'Foi no concorrente' },
+            { valor: 'sumiu', rotulo: 'Sumiu / não respondeu' },
+            { valor: 'outro', rotulo: 'Outro' },
+          ],
+        }],
+      });
+      if (!r) return;
+      const motivo = r.opcao;
       if (!motivo) { toast('Movimento cancelado', 'Perda exige motivo.', 'erro'); return false; }
       corpo.motivo_perda = motivo;
     }
@@ -1816,7 +2390,7 @@ VISOES.catalogo = async (el) => {
     <div class="tabela-caixa"><table>
       <thead><tr><th>SKU</th><th>Item</th><th>Categoria</th><th>Tipo</th><th class="num">Preço</th><th class="num">Ciclo</th></tr></thead>
       <tbody>${lista.map((i) => `
-        <tr><td style="font-family:var(--mono);font-size:12.5px">${esc(i.sku)}</td>
+        <tr data-linha="${esc(i.id)}"><td style="font-family:var(--mono);font-size:12.5px">${esc(i.sku)}</td>
           <td class="forte">${esc(i.nome)}</td>
           <td class="fraco">${esc(i.categoria)}</td>
           <td><span class="tag">${esc(i.tipo)}</span></td>
@@ -2073,6 +2647,7 @@ function abrirGaveta(html, { ficha = null } = {}) {
   g.setAttribute('aria-modal', 'true');
   g.innerHTML = html;
   document.body.append(veu, g);
+  travarRolagem(true);
   g.querySelector('[data-fechar]')?.addEventListener('click', () => fecharGaveta());
 
   if (ficha) {
@@ -2092,6 +2667,9 @@ function fecharGaveta({ mexerNaUrl = true } = {}) {
   const tinha = document.querySelector('.gaveta');
   document.querySelector('.veu')?.remove();
   tinha?.remove();
+  // Só solta se havia mesmo uma gaveta: `fecharGaveta` é chamado às cegas
+  // antes de abrir outra, e decrementar aí desequilibraria a conta.
+  if (tinha) travarRolagem(false);
 
   if (tinha && mexerNaUrl && location.hash.includes('ficha=')) {
     const [rota] = location.hash.split('?');
@@ -2099,7 +2677,11 @@ function fecharGaveta({ mexerNaUrl = true } = {}) {
   }
 }
 
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharGaveta(); });
+document.addEventListener('keydown', (e) => {
+  // A busca trata o proprio Escape. Sem esta guarda, um Esc dentro da busca
+  // fechava a ficha ATRAS dela — e a pessoa perdia o que estava lendo.
+  if (e.key === 'Escape' && !buscaAberta) fecharGaveta();
+});
 
 /*
  * Voltar fecha a gaveta em vez de sair da tela.

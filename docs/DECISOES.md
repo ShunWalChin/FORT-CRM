@@ -261,6 +261,55 @@ que a pessoa acabou de ajustar.
 `desenharMenu()` reescreve o `innerHTML` a cada navegação, e listener preso ao
 elemento morre junto. Foi assim que o menu do celular abriu e não fechou mais.
 
+### Duas buscas com alcances diferentes é pior que uma
+
+O campo *"Filtrar telas…"* filtrava o menu e não achava cliente nenhum. Quem
+digitava `antonio` lia **"Nada com antonio"** — uma resposta que parece dizer que
+o sistema não tem o Antônio. Virou a porta de uma busca só.
+
+### `lower()` do SQLite dobra apenas ASCII
+
+`like '%antonio%'` não casa com *Antônio*, e `lower('Ç')` continua `Ç`. Resolvido
+com `sem_acento()` registrada via `db.function(..., { deterministic: true })`,
+aplicada **na coluna e no termo**. Custa uma chamada JS por linha avaliada e não
+usa índice — anotado no código, com a saída (coluna normalizada e indexada)
+escrita ao lado para quando a base crescer.
+
+### Uma consulta da busca que falha degrada, e não derruba — mas em voz alta
+
+A federação admite instâncias em versões diferentes de schema; é por isso que
+`migracoes.mjs` existe. Uma coluna que ainda não chegou numa delas não pode
+transformar a busca inteira em erro 500 no meio do atendimento.
+
+Cada uma das seis consultas roda dentro de um `try` — mas o que cai viaja em
+`meta.indisponiveis`, do mesmo jeito que a consulta consolidada já fazia.
+Engolir a falha em silêncio seria pior que a falha: a busca passaria a mentir por
+omissão, devolvendo menos do que existe sem dizer que devolveu.
+
+### `overflow: hidden` para travar rolagem joga a página para o topo
+
+Encolher a altura rolável faz o navegador reposicionar. Abrir a busca no meio de
+uma lista de duzentas linhas e fechá-la devolvia a pessoa ao começo. A trava usa
+`position: fixed` no corpo com `top: -${scrollY}px`, e restaura na saída.
+
+E ela **conta**: a busca abre por cima da ficha, e um par ligar/desligar soltaria
+o fundo com a ficha ainda aberta.
+
+### Um `<tr>` sem `data-linha` não pode ser destino de busca
+
+Buscar uma OS e cair numa lista de duzentas linhas é a mesma busca feita duas
+vezes — a segunda com os olhos. As quatro telas de lista carimbam o id na linha,
+e `?foco=` acende.
+
+### Nome fixo em teste vira refém da ordem de execução
+
+O primeiro teste da busca procurava `antonio` e falhou: outro teste do mesmo
+arquivo apaga um cliente da Minas Peças de propósito, e o apagado — por ordem de
+índice, não de inserção — era justamente ele. `select email from usuarios limit 1`
+tem a mesma armadilha: devolve o **operador**, porque a consulta é coberta pelo
+índice de e-mail e sai em ordem alfabética. Os testes passaram a tirar o nome e o
+papel do banco no momento em que rodam.
+
 ### O tema tem de ser aplicado antes da primeira pintura
 
 `app.js` é `type="module"`, ou seja, adiado — quando ele roda, a página já foi

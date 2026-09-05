@@ -33,7 +33,7 @@ import {
 import { drenarEventos, despacharConversoes, registrarMudancaDeEtapa } from './conversoes-servico.mjs';
 import { novoId, agora } from './db.mjs';
 import { reancorar, ancoraDe, diagnosticoDaAncora } from './reancorar.mjs';
-import { montarRegua, negarPorPapel } from './api.mjs';
+import { montarRegua, negarPorPapel, ROTAS, assinar, ErroHttp } from './api.mjs';
 import { diagnosticarFilaVazia } from './regua.mjs';
 import { hashSenha, verificarSenha, ehHash, migrarSenhas, avaliarForca } from './senha.mjs';
 
@@ -1291,6 +1291,304 @@ teste('instancia fora do ar NAO apaga as projecoes dela', () => {
 
   igual(sis.prepare("select count(*) n from leads_consolidados where instancia = 'FT'").get().n,
     antes, 'falha numa instancia nao pode apagar projecao de ninguem');
+});
+
+/* -- Busca global --------------------------------------------------------- */
+
+const buscaEm = (cod, email, q) => ROTAS['GET /api/buscar'](
+  fed,
+  {
+    headers: {
+      authorization: `Bearer ${assinar({ sub: email, exp: Date.now() + 3_600_000 })}`,
+      'x-instancia': cod,
+    },
+  },
+  {}, null,
+  new URL(`http://x/api/buscar?q=${encodeURIComponent(q)}`),
+);
+
+teste('digitar sem acento acha quem tem acento, e vice-versa', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+
+  // O nome vem do banco, e nao escrito aqui: outro teste deste arquivo apaga um
+  // cliente da MP de proposito, e um nome fixo tornaria este teste refem da
+  // ordem de execucao.
+  const cli = e.uma(
+    'select nome from clientes where {ESCOPO} and lower(nome) <> sem_acento(nome) limit 1',
+  );
+  verdadeiro(cli, 'a carga precisa ter algum nome acentuado');
+
+  const cru = cli.nome.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  const pedaco = cru.split(' ').find((w) => w.length >= 4);
+
+  const achou = (q) => buscaEm('MP', email, q).dados.some((x) => x.titulo === cli.nome);
+  verdadeiro(achou(pedaco.toLowerCase()), `sem acento, "${pedaco}" nao achou ${cli.nome}`);
+  verdadeiro(achou(cli.nome.split(' ')[0]), 'com acento tinha de achar igual');
+});
+
+teste('acha por telefone e por placa, que e como a pessoa identifica no balcao', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+
+  const cli = e.uma("select nome, telefone from clientes where {ESCOPO} and telefone is not null limit 1");
+  // Digitado com pontuacao, como ninguem guarda numero: (38) 99811-2233.
+  const digitado = `(${cli.telefone.slice(2, 4)}) ${cli.telefone.slice(4, 9)}-${cli.telefone.slice(9)}`;
+  igual(buscaEm('MP', email, digitado).dados.some((x) => x.titulo === cli.nome), true,
+    `telefone digitado como "${digitado}" tinha de achar ${cli.nome}`);
+
+  const v = e.uma('select placa from veiculos where {ESCOPO} limit 1');
+  const comTraco = `${v.placa.slice(0, 3)}-${v.placa.slice(3)}`;
+  igual(buscaEm('MP', email, comTraco).dados.some((x) => x.tipo === 'veiculo'), true,
+    'placa com traco tinha de achar o veiculo');
+});
+
+teste('a busca NAO atravessa empresas — e diz onde mais procurar', () => {
+  const b = fed.abrir('MP');
+  // Soberano de proposito: e quem tem acesso as tres, e portanto o unico a
+  // quem faz sentido oferecer a travessia.
+  const { email } = b.sistema()
+    .prepare("select email from usuarios where papel = 'soberano' limit 1").get();
+
+  // "queijo" existe na Agrofort e nao na Minas Pecas. Se aparecesse aqui, o
+  // isolamento por banco teria virado decoracao.
+  const aqui = buscaEm('MP', email, 'queijo');
+  igual(aqui.dados.length, 0, 'dado de outra empresa vazou para a busca');
+
+  // O vazio nao pode ser um beco: a resposta carrega as outras instancias a
+  // que ESTA pessoa tem acesso, e a travessia fica sendo escolha dela.
+  const nomes = (aqui.meta.outras ?? []).map((o) => o.instancia).sort().join(',');
+  igual(nomes, 'AF,FT');
+  igual(buscaEm('AF', email, 'queijo').dados.length > 0, true, 'e na Agrofort tinha de achar');
+});
+
+teste('quem so tem uma instancia nao recebe convite para atravessar', () => {
+  // O operador da Minas Pecas so existe na Minas Pecas.
+  const b = fed.abrir('MP');
+  const so = b.sistema()
+    .prepare("select email from usuarios where papel = 'operador' limit 1").get();
+  const r = buscaEm('MP', so.email, 'zzzz');
+  igual(r.dados.length, 0);
+  igual((r.meta.outras ?? []).length, 0, 'oferecer empresa sem acesso seria mentir');
+});
+
+teste('o nome exato vence o registro que so contem o termo', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+  const cli = b.para(emp.id).uma('select nome from clientes where {ESCOPO} limit 1');
+
+  const r = buscaEm('MP', email, cli.nome);
+  igual(r.dados[0].tipo, 'cliente', 'o nome exato tinha de vir primeiro');
+  igual(r.dados[0].titulo, cli.nome);
+  igual(r.dados[0].ponto, 3, 'igualdade exata vale mais que prefixo');
+});
+
+teste('termo curto demais nao vai ao banco', () => {
+  const b = fed.abrir('MP');
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+  const r = buscaEm('MP', email, 'a');
+  igual(r.dados.length, 0);
+  igual(r.meta.curto, true, 'a tela precisa saber que foi curto, e nao vazio');
+});
+
+teste('todo resultado carrega para onde ir — nao existe achado sem destino', () => {
+  const b = fed.abrir('MP');
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+  const r = buscaEm('MP', email, 'a');
+  const todos = ['bomba', 'os-0', 'bico'].flatMap((q) => buscaEm('MP', email, q).dados);
+  verdadeiro(todos.length > 0);
+  for (const x of todos) {
+    verdadeiro(x.rota && !x.rota.startsWith('/'), `rota invalida em ${x.tipo}: ${x.rota}`);
+    verdadeiro(x.titulo, `resultado sem titulo em ${x.tipo}`);
+    // A rota tem de apontar para uma tela que existe.
+    const tela = x.rota.split('?')[0];
+    verdadeiro(['clientes', 'ordens', 'pedidos', 'pipeline', 'catalogo'].includes(tela),
+      `tela desconhecida: ${tela}`);
+  }
+  igual(r.dados.length, 0);
+});
+
+teste('a busca e leitura — quem so le tambem pode procurar', () => {
+  igual(negarPorPapel('GET /api/buscar', 'leitura'), null, 'busca e GET, e leitura le');
+  igual(negarPorPapel('GET /api/buscar', 'operador'), null);
+});
+
+/* -- Adiar um contato: "esse eu falo amanha" ------------------------------ */
+
+// Sessao assinada, para chamar a rota como o navegador chama. Sem `rotaChave`
+// nao ha recusa por papel — quem chama de dentro ja passou por ela.
+const sessaoDe = (cod, email) => ({
+  headers: {
+    authorization: `Bearer ${assinar({ sub: email, exp: Date.now() + 3_600_000 })}`,
+    'x-instancia': cod,
+  },
+});
+const contaLiberados = (r) => r.filter((f) => f.decisao.permitido).length;
+
+teste('adiar tira o item da fila, e desfazer devolve', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select * from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+
+  const antes = montarRegua(b, e, emp);
+  const liberados = antes.filter((f) => f.decisao.permitido);
+  verdadeiro(liberados.length > 1, 'sem fila nao da para testar adiamento');
+  const alvo = liberados[0];
+
+  const r = ROTAS['POST /api/regua/adiar'](fed, sessaoDe('MP', email), {}, {
+    clienteId: alvo.cliente.id, gatilho: alvo.gatilho.chave, dias: 3,
+  });
+  igual(r.ok, true);
+  igual(r.dados.cliente, alvo.cliente.nome, 'a resposta tem de dizer QUEM foi adiado');
+
+  const depois = montarRegua(b, e, emp);
+  igual(contaLiberados(depois), liberados.length - 1, 'o item tinha de sair da fila');
+
+  // A parte que importa: sair da fila sem virar contagem seria uma fila que
+  // encolhe sozinha, e ninguem descobre por que.
+  igual(depois.adiados.length, 1, 'o adiado tinha de aparecer contado do outro lado');
+  igual(depois.adiados[0].cliente.id, alvo.cliente.id);
+  verdadeiro(depois.adiados[0].ate, 'sem a data, ninguem sabe quando volta');
+  verdadeiro(depois.adiados[0].id, 'sem o id, nao ha como desfazer');
+
+  ROTAS['POST /api/regua/adiar/:id/desfazer'](
+    fed, sessaoDe('MP', email), { id: depois.adiados[0].id },
+  );
+  const volta = montarRegua(b, e, emp);
+  igual(contaLiberados(volta), liberados.length, 'desfazer tinha de devolver o item');
+  igual(volta.adiados.length, 0);
+});
+
+teste('o adiamento e por (cliente, gatilho) — nao silencia o cliente inteiro', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select * from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+
+  const antes = contaLiberados(montarRegua(b, e, emp));
+  const alvo = montarRegua(b, e, emp).find((f) => f.decisao.permitido);
+
+  // Mesmo cliente, OUTRO gatilho: adiar a revisao de um caminhao nao pode
+  // silenciar a cobranca de orcamento do mesmo cliente. Sao conversas
+  // diferentes, e uma chave so por cliente juntaria as duas.
+  const r = ROTAS['POST /api/regua/adiar'](fed, sessaoDe('MP', email), {}, {
+    clienteId: alvo.cliente.id, gatilho: 'gatilho_que_nao_esta_na_fila', dias: 5,
+  });
+  igual(contaLiberados(montarRegua(b, e, emp)), antes,
+    'adiar outro gatilho nao podia mexer neste');
+
+  ROTAS['POST /api/regua/adiar/:id/desfazer'](fed, sessaoDe('MP', email), { id: r.dados.id });
+});
+
+teste('adiar de novo SUBSTITUI — desfazer nao pode revelar outro embaixo', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select * from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+  const alvo = montarRegua(b, e, emp).find((f) => f.decisao.permitido);
+  const chave = { clienteId: alvo.cliente.id, gatilho: alvo.gatilho.chave };
+
+  ROTAS['POST /api/regua/adiar'](fed, sessaoDe('MP', email), {}, { ...chave, dias: 1 });
+  const segundo = ROTAS['POST /api/regua/adiar'](fed, sessaoDe('MP', email), {}, { ...chave, dias: 30 });
+
+  const vivos = e.todas(
+    'select id from adiamentos where {ESCOPO} and cliente_id = ? and gatilho_chave = ? and desfeito_em is null',
+    chave.clienteId, chave.gatilho,
+  );
+  igual(vivos.length, 1, 'empilhar adiamentos esconderia um atras do outro');
+  igual(vivos[0].id, segundo.dados.id, 'o que vale e o ultimo');
+
+  ROTAS['POST /api/regua/adiar/:id/desfazer'](fed, sessaoDe('MP', email), { id: segundo.dados.id });
+  igual(montarRegua(b, e, emp).adiados.length, 0, 'um desfazer tinha de bastar');
+});
+
+teste('adiamento vencido volta sozinho — ninguem precisa lembrar de desfazer', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select * from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const antes = contaLiberados(montarRegua(b, e, emp));
+  const alvo = montarRegua(b, e, emp).find((f) => f.decisao.permitido);
+
+  const id = novoId();
+  e.inserir('adiamentos', {
+    id,
+    cliente_id: alvo.cliente.id,
+    gatilho_chave: alvo.gatilho.chave,
+    ate: new Date(Date.now() - 3_600_000).toISOString(),
+    motivo: null,
+    criado_por: 'teste',
+    criado_em: agora(),
+  });
+  const r = montarRegua(b, e, emp);
+  igual(contaLiberados(r), antes, 'passada a data, o item volta por conta propria');
+  igual(r.adiados.length, 0, 'e sai da contagem de adiados junto');
+  e.remover('adiamentos', id);
+});
+
+teste('a rota recusa prazo fora da faixa e cliente de outra empresa', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select * from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const { email } = b.sistema().prepare('select email from usuarios limit 1').get();
+  const alvo = montarRegua(b, e, emp).find((f) => f.decisao.permitido);
+
+  const recusa = (corpo, oque) => {
+    try {
+      ROTAS['POST /api/regua/adiar'](fed, sessaoDe('MP', email), {}, corpo);
+      throw new Error(`aceitou ${oque}`);
+    } catch (err) {
+      verdadeiro(err instanceof ErroHttp, `${oque}: esperava ErroHttp, veio "${err.message}"`);
+      return err;
+    }
+  };
+
+  igual(recusa({ clienteId: alvo.cliente.id, gatilho: alvo.gatilho.chave, dias: 0 }, 'zero dia').status, 400);
+  igual(recusa({ clienteId: alvo.cliente.id, gatilho: alvo.gatilho.chave, dias: 900 }, 'quase tres anos').status, 400);
+  igual(recusa({ gatilho: alvo.gatilho.chave, dias: 1 }, 'pedido sem cliente').status, 400);
+
+  // O escopo e a segunda barreira: um id valido NOUTRA empresa nao existe aqui.
+  const outra = fed.abrir('AF');
+  const empAF = outra.sistema().prepare('select id from empresas limit 1').get();
+  const alheio = outra.para(empAF.id).uma('select id from clientes where {ESCOPO} limit 1');
+  igual(recusa({ clienteId: alheio.id, gatilho: 'revisao', dias: 1 }, 'cliente de outra empresa').status, 404);
+});
+
+teste('adiar e trabalho de operador, e leitura nao adia nada', () => {
+  igual(negarPorPapel('POST /api/regua/adiar', 'operador'), null);
+  verdadeiro(negarPorPapel('POST /api/regua/adiar', 'leitura'), 'somente leitura nao grava');
+  verdadeiro(negarPorPapel('POST /api/regua/adiar/:id/desfazer', 'leitura'));
+});
+
+teste('fila vazia por adiamento nao pode ser lida como "nao ha trabalho"', () => {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select id from empresas limit 1').get();
+  const e = b.para(emp.id);
+  const adiados = [{
+    cliente: { id: 'x', nome: 'Fulano' },
+    gatilho: { chave: 'revisao', nome: 'Revisao' },
+    ate: new Date(Date.now() + 86_400_000).toISOString(),
+    id: 'a1',
+  }];
+
+  const d = diagnosticarFilaVazia(e, { fila: [], adiados });
+  igual(d.causa, 'tudo_adiado');
+  igual(d.tranquilo, true, 'foi decisao de quem opera — nao e alarme');
+  verdadeiro(d.texto.includes('adiados') || d.texto.includes('adiado'),
+    'o texto precisa dizer que foi adiamento, e nao falta de trabalho');
+
+  // Vence as outras causas: mandar mexer nos gatilhos seria mandar a pessoa
+  // consertar o que nao esta quebrado.
+  const ids = e.todas('select id from gatilhos where {ESCOPO}');
+  ids.forEach((g) => e.atualizar('gatilhos', g.id, { ativo: 0 }));
+  igual(diagnosticarFilaVazia(e, { fila: [], adiados }).causa, 'tudo_adiado',
+    'a causa que o operador criou vence a que ele nao criou');
+  ids.forEach((g) => e.atualizar('gatilhos', g.id, { ativo: 1 }));
 });
 
 /* ── Fila vazia: dizer POR QUE, e nao adivinhar ──────────────────────────── */

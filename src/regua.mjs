@@ -714,7 +714,29 @@ export function renderizar(template, variaveis) {
  * Cada causa devolve uma AÇÃO — a tela vazia sem saída é o problema; dizer o
  * motivo sem dizer o que fazer resolve metade dele.
  */
-export function diagnosticarFilaVazia(escopo, { fila = [] } = {}) {
+export function diagnosticarFilaVazia(escopo, { fila = [], adiados = [] } = {}) {
+  /*
+   * Adiado vem PRIMEIRO, antes de qualquer outra causa.
+   *
+   * Se a fila está vazia porque o próprio operador adiou tudo, dizer "os
+   * gatilhos estão desligados" seria mandá-lo mexer no lugar errado. E é a
+   * causa mais fácil de esquecer: quem adiou na terça não lembra na quinta.
+   */
+  if (adiados.length) {
+    const proximo = adiados.map((a) => a.ate).sort()[0];
+    return {
+      causa: 'tudo_adiado',
+      titulo: adiados.length === 1
+        ? '1 contato adiado por você'
+        : `${adiados.length} contatos adiados por você`,
+      texto: 'A fila está vazia porque estes foram adiados, não porque não há trabalho. '
+        + `O primeiro volta em ${new Date(proximo).toLocaleDateString('pt-BR')}.`,
+      acao: null,
+      adiados,
+      tranquilo: true,
+    };
+  }
+
   const clientes = escopo.contar('clientes');
   const comConsentimento = escopo.contar('clientes', 'and consentimento_lgpd = 1 and opt_out_em is null');
   const gatilhos = escopo.contar('gatilhos');

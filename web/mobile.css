@@ -26,6 +26,10 @@
 
   /* ── Barra de topo: identidade e empresa ───────────────────────────────── */
   .lado-topo { padding: 10px 14px; }
+
+  /* A porta da busca fica visível com o menu recolhido, e por isso precisa ser
+     alvo de dedo: 35px de altura era mira de mouse. */
+  .busca-porta { padding: 12px 11px; font-size: 13.5px; }
   .marca { font-size: 13.5px; }
   .marca-sub { font-size: 10px; }
 

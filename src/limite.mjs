@@ -27,6 +27,10 @@ const TETOS = [
   { padrao: /^POST \/api\/entrada\//, max: 20 },
   // Escrita em geral.
   { padrao: /^(POST|PATCH|DELETE) /, max: 60 },
+  // Busca ao digitar: cada tecla pode virar uma consulta. Balde proprio para
+  // que um campo de busca segurado no teclado nao coma o orcamento de leitura
+  // do resto do sistema — 120/min e o dobro do que digitar rapido produz.
+  { padrao: /^GET \/api\/buscar$/, max: 120 },
   // Leitura.
   { padrao: /^GET /, max: 300 },
 ];

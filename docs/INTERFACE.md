@@ -149,3 +149,128 @@ No celular o cartão principal começava a **332 px do topo** — 40% da tela ga
 em cabeçalho antes da coisa que a pessoa veio fazer, numa tela cujo propósito é
 justamente deixar isso na cara. O botão "Como usar" saiu do cabeçalho no celular,
 porque a faixa do rodapé já o tem: **255 px**, e o cartão inteiro cabe sem rolar.
+
+---
+
+## Busca global
+
+`Ctrl+K`, `/`, ou a porta na lateral. Uma caixa, `GET /api/buscar`, que devolve
+cliente, veículo, ordem de serviço, pedido, oportunidade, item de catálogo — e,
+resolvidas no navegador, as telas do menu.
+
+### Uma busca, não duas
+
+Havia aqui um campo *"Filtrar telas…"* que filtrava o menu lateral. Ele não
+achava cliente, nem placa, nem OS: quem digitava `antonio` lia **"Nada com
+antonio"** e concluía, razoavelmente, que o sistema não tinha o Antônio.
+
+Duas caixas de busca com alcances diferentes é pior que uma — a pessoa não tem
+como saber qual das duas responde a pergunta dela. O campo virou a porta de uma
+busca só, que acha tela **e** registro.
+
+### `like` do SQLite não sabe português
+
+`lower()` do SQLite dobra apenas ASCII: nem o acento nem o Ç saem sozinhos.
+Procurar `antonio` não achava *Antônio* — e no balcão, de celular, ninguém digita
+circunflexo.
+
+A resposta é uma função `sem_acento()` registrada na conexão
+(`db.function`, `deterministic: true`), aplicada dos **dois** lados: na coluna e
+no termo digitado.
+
+O preço está anotado no código: SQLite chama JS uma vez por linha avaliada, e
+nenhum índice cobre a expressão. Numa base de balcão é imediato; quando passar
+disso, a resposta é uma coluna `nome_busca` normalizada na escrita e indexada —
+e não esticar a função.
+
+### A busca não atravessa empresas
+
+Varrer as três instâncias de uma vez seria cômodo e seria exatamente o vazamento
+que a separação por banco existe para impedir: uma lista onde o cliente da
+Agrofort aparece ao lado do da Minas Peças, e um clique errado leva o operador
+para dentro de outra empresa.
+
+O vazio, porém, não pode ser um beco. A resposta carrega em `meta.outras` as
+instâncias a que **aquela pessoa** tem acesso, e a tela oferece *"Procurar em
+Fazenda Agrofort"*. A travessia existe; é ela quem decide fazê-la — e a troca é
+real, com a casca inteira mudando de cor e de menu. Quem só tem uma instância não
+recebe o convite.
+
+### Pontuação no servidor, entre os tipos
+
+Cada consulta ordenada isoladamente nunca produz a ordem que importa, que é
+**entre** os tipos: o cliente cujo nome é exatamente o termo tem de vencer a
+ordem de serviço que apenas contém o termo no meio do componente. Daí a nota
+(3 exato, 2 prefixo, 1 contém) ser calculada em JS depois das seis consultas, com
+empate desfeito por tipo — pessoa primeiro, que é o que se busca no balcão.
+
+### `?foco=` acende a linha
+
+Buscar uma OS e cair numa tela de duzentas linhas é a mesma busca feita duas
+vezes, a segunda com os olhos. As listas carimbam `data-linha` no `<tr>`, e
+`focarDaUrl()` rola até ela e acende por 3 s. O destaque apaga sozinho: linha
+marcada para sempre vira sujeira quando a pessoa continua trabalhando ali.
+
+---
+
+## Adiar um contato
+
+A fila só tinha **disparar** ou **ignorar** — e ignorar faz o item voltar
+idêntico no dia seguinte, até o operador aprender a desconfiar da lista.
+
+O adiamento é por **(cliente, gatilho)**: adiar a revisão de um caminhão não
+silencia a cobrança de orçamento do mesmo cliente. São conversas diferentes, e
+uma chave só por cliente juntaria as duas.
+
+**Adiado sai da fila, nunca em silêncio.** `montarRegua` devolve
+`fila.adiados`, a tela mostra a faixa *"2 contatos adiados por você. Eles voltam
+sozinhos na data — não somem."* com a data e o botão *"Trazer de volta"*, e
+`diagnosticarFilaVazia` checa `tudo_adiado` **antes de qualquer outra causa**.
+Sem isso, quem adiou dez pessoas numa terça abriria a quinta-feira com uma tela
+dizendo que não há trabalho.
+
+Adiar de novo **substitui** em vez de empilhar — senão desfazer o de cima
+revelaria outro embaixo, e o operador não teria como saber quantos ainda existem.
+Adiamento vencido volta sozinho: a consulta filtra por `ate > agora`, e ninguém
+precisa lembrar de desfazer.
+
+---
+
+## Diálogo do sistema, no lugar de `confirm()` e `prompt()`
+
+Os nativos custavam quatro coisas, e as quatro apareceram aqui:
+
+- **ignoram os cinco temas.** Num sistema desenhado para o balcão sob luz forte e
+  para o plantão de madrugada, a caixa branca do Chrome é a única coisa na tela
+  que não obedece;
+- **não validam nada.** *"Pressão medida na bancada (bar)"* aceitava qualquer
+  texto, e o valor ia para o laudo do jeito que foi digitado. Hoje é campo
+  numérico com faixa 0–3000 conferida antes de sair do diálogo;
+- **não mostram contexto.** *"Motivo da perda"* sem dizer **qual** oportunidade —
+  e quem arrastou três cartões seguidos não sabe mais qual está respondendo. O
+  diálogo carrega uma linha de contexto (`OS OS-02500 · Antônio Ribeiro`);
+- alguns navegadores móveis os suprimem ou os empilham fora de ordem.
+
+Motivo de perda virou **opção estruturada**, e não texto livre: *perdido por
+preço* e *perdido por sumiço* são sinais opostos para o anúncio, e um campo
+aberto vira trinta grafias da mesma coisa.
+
+No celular o diálogo é folha de baixo — cola no rodapé, com
+`env(safe-area-inset-bottom)`, e as opções passam a uma por linha.
+
+---
+
+## Rolagem travada atrás do que é modal
+
+Rolar com o dedo sobre o véu movia a lista **atrás** da busca: a pessoa fechava e
+a tela estava noutro lugar, sem ter pedido nada.
+
+`travarRolagem()` **conta** em vez de ligar e desligar, porque os modais se
+empilham — a busca abre por cima da ficha, e soltar o fundo ao fechar a busca
+destravaria a tela com a ficha ainda aberta.
+
+E `overflow: hidden` sozinho não bastava: encolher a altura rolável faz o
+navegador jogar a página para o topo, de modo que abrir a busca no meio de uma
+lista longa e fechá-la devolvia a pessoa ao começo. O corpo vai para
+`position: fixed` deslocado pela rolagem guardada, o que congela a tela
+exatamente onde ela estava — e a devolve ao fechar. Medido: 320 → travado → 320.

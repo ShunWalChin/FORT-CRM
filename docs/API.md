@@ -1,6 +1,6 @@
 # Referência da API
 
-> Gerado a partir de `src/api.mjs`. **43 rotas.**
+> Gerado a partir de `src/api.mjs`. **48 rotas.**
 
 Todas as rotas devolvem `{ ok, dados }` ou `{ ok: false, erro: { codigo, mensagem } }`.
 
@@ -30,6 +30,7 @@ instâncias.
 | `POST /api/sessao` | 12 — sem teto, vira oráculo de senha por força bruta |
 | `POST /api/entrada/…` | 20 — única escrita anônima do sistema |
 | Escrita em geral | 60 |
+| `GET /api/buscar` | 120 — cada tecla pode virar consulta; balde próprio para não comer o orçamento de leitura do resto |
 | Leitura | 300 |
 
 ## Atribuição
@@ -44,6 +45,31 @@ instâncias.
 |---|---|---|
 | `GET` | `/api/auditoria` | qual instância veio. |
 | `GET` | `/api/auditoria/verificar` | — |
+
+## Busca global
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/buscar?q=` | Cliente, veículo, ordem de serviço, pedido, oportunidade e catálogo, **na instância ativa**. |
+
+Termo com menos de 2 caracteres devolve lista vazia com `meta.curto: true` — a
+tela precisa distinguir "curto demais" de "não achei".
+
+Cada resultado é `{ tipo, id, titulo, sub, rota, ponto }`. A `rota` é relativa e
+consumível pelo roteador do navegador (`clientes?ficha=…`, `ordens?foco=…`).
+
+Nota (`ponto`): **3** igualdade exata, **2** prefixo, **1** contém. A ordenação
+final é feita entre os tipos, no servidor — cinco consultas ordenadas
+isoladamente nunca produzem a ordem que importa.
+
+Comparação **sem acento dos dois lados**: a coluna passa por `sem_acento()`
+(função registrada na conexão) e o termo digitado passa pela mesma normalização
+em JS. Telefone é comparado por dígitos; placa, sem traço.
+
+**Não atravessa empresas.** `meta.outras` traz as instâncias a que aquele usuário
+tem acesso, para a tela oferecer a travessia — que é explícita e troca a empresa
+ativa de verdade. `meta.indisponiveis` lista as consultas que falharam, quando
+alguma falha: a busca degrada, mas não em silêncio.
 
 ## Canais de entrada
 
@@ -157,8 +183,10 @@ instâncias.
 
 | Método | Rota | O que faz |
 |---|---|---|
-| `GET` | `/api/regua` | — |
+| `GET` | `/api/regua` | Monta a fila do dia. `dados.fila.adiados` viaja **sempre**, e não só quando a fila esvazia. |
 | `POST` | `/api/regua/disparar` | como simulado, e a tela diz isso. |
+| `POST` | `/api/regua/adiar` | `{ clienteId, gatilho, dias }`, 1 a 365. Um adiamento vivo por **(cliente, gatilho)** — adiar de novo substitui em vez de empilhar. Auditado. |
+| `POST` | `/api/regua/adiar/:id/desfazer` | Devolve o item à fila na próxima montagem. Idempotente: desfazer o que já estava desfeito responde `jaEstava`. |
 
 ## Sessão e senha
 

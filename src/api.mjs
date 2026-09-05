@@ -202,9 +202,24 @@ function montarRegua(banco, escopo, empresa, { incluirBloqueados = true } = {}) 
   ctx.veiculoPorId = new Map(ctx.veiculos.map((v) => [v.id, v]));
 
   const configurados = escopo.todas('select * from gatilhos where {ESCOPO} and ativo = 1');
+
+  /*
+   * Adiamentos vivos, indexados por (cliente, gatilho).
+   *
+   * Lidos uma vez e mantidos em memoria: consultar por item transformaria uma
+   * fila de 30 linhas em 30 consultas.
+   */
+  const adiados = new Map();
+  for (const a of escopo.todas(
+    'select * from adiamentos where {ESCOPO} and desfeito_em is null and ate > ?',
+    new Date(refMs).toISOString(),
+  )) {
+    adiados.set(`${a.cliente_id}|${a.gatilho_chave}`, a);
+  }
   const canal = canalPreferido(escopo);
   const politica = canal ? POLITICAS_CANAL[canal.tipo] : null;
   const fila = [];
+  const adiadosNaFila = [];
 
   const peso = { vencido: 0, alta: 1, media: 2, baixa: 3 };
 
@@ -269,6 +284,26 @@ function montarRegua(banco, escopo, empresa, { incluirBloqueados = true } = {}) 
 
       if (!decisao.permitido && !incluirBloqueados) continue;
 
+      /*
+       * Adiado sai da fila — mas nunca em silêncio.
+       *
+       * `montarRegua` devolve a contagem, e a tela mostra "3 adiados para
+       * depois" com um caminho de volta. Adiamento invisível é como uma fila
+       * esvazia sem ninguém perceber: o operador adia dez pessoas numa terça,
+       * esquece, e na quinta a tela parece dizer que não há trabalho.
+       */
+      const adiado = adiados.get(`${cand.cliente.id}|${g.chave}`);
+      if (adiado) {
+        adiadosNaFila.push({
+          cliente: { id: cand.cliente.id, nome: cand.cliente.nome },
+          gatilho: { chave: g.chave, nome: g.nome },
+          ate: adiado.ate,
+          motivo: adiado.motivo,
+          id: adiado.id,
+        });
+        continue;
+      }
+
       fila.push({
         id: `${g.chave}:${cand.cliente.id}`,
         gatilho: { chave: g.chave, nome: g.nome, regra: g.regra },
@@ -292,6 +327,8 @@ function montarRegua(banco, escopo, empresa, { incluirBloqueados = true } = {}) 
     if (a.decisao.permitido !== b.decisao.permitido) return a.decisao.permitido ? -1 : 1;
     return (peso[a.urgencia] ?? 9) - (peso[b.urgencia] ?? 9);
   });
+  fila.adiados = adiadosNaFila;
+
   return fila;
 }
 
@@ -328,6 +365,10 @@ const PAPEL_MINIMO = {
   'GET /api/conversoes': 'gestor',
   'GET /api/conversoes/:id': 'gestor',
   'POST /api/conversoes/processar': 'gestor',
+
+  // `POST /api/regua/adiar` NAO entra aqui de proposito: adiar e trabalho de
+  // quem atende, e exigir gestor para isso devolveria a fila ao estado em que
+  // ignorar era a unica saida.
 
   // Escrita estrutural: muda o CRM para todo mundo, não um registro.
   'POST /api/propriedades': 'gestor',
@@ -562,6 +603,169 @@ export const ROTAS = {
   },
 
   // ── Clientes ─────────────────────────────────────────────────────────────
+  /*
+   * Busca global: um campo so, para quem nao sabe em que menu a coisa esta.
+   *
+   * Sao dezessete telas. Achar "a OS do Antonio" custava lembrar que OS mora
+   * em Oficina, abrir a tela e varrer duzentas linhas — e quem esta no balcao
+   * com o cliente na frente nao faz isso, liga para o colega.
+   *
+   * Busca SO a instancia ativa. Varrer as tres de uma vez seria comodo e seria
+   * exatamente o vazamento que a separacao por banco existe para impedir: uma
+   * lista onde o cliente da Agrofort aparece ao lado do da Minas Pecas, e um
+   * clique errado leva o operador para dentro de outra empresa. Quando nao ha
+   * resultado aqui, a resposta DIZ em que outras instancias a pessoa poderia
+   * procurar — a travessia existe, mas e ela quem decide fazer.
+   */
+  'GET /api/buscar': (fed, req, _p, _c, url) => {
+    const { escopo, empresa, permitidas } = contexto(fed, req);
+
+    const bruto = String(url.searchParams.get('q') ?? '').trim().slice(0, 80);
+    const outras = permitidas
+      .filter((e) => e.id !== empresa.id)
+      .map((e) => ({ instancia: e.instancia, nome: e.nome }));
+    if (bruto.length < 2) return ok([], { curto: true, empresa: empresa.nome, outras });
+
+    // `sem_acento` roda dos DOIS lados: no banco e aqui. Comparar "antonio"
+    // com "Antônio" so funciona se o termo digitado passar pelo mesmo filtro.
+    const q = bruto.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+    const like = `%${q}%`;
+    const digitos = bruto.replace(/\D/g, '');
+    const foneLike = digitos ? `%${digitos}%` : '';
+    const placa = `%${bruto.toUpperCase().replace(/[^A-Z0-9]/g, '')}%`;
+
+    /*
+     * A pontuacao e feita aqui, e nao em `order by`: a ordem que importa e
+     * ENTRE os tipos. O cliente cujo nome e exatamente o termo tem de vencer a
+     * ordem de servico que apenas contem o termo no meio do componente — e
+     * cinco consultas ordenadas isoladamente nunca produzem isso.
+     */
+    const pontos = (...campos) => {
+      let melhor = 0;
+      for (const c of campos) {
+        const v = String(c ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+        if (!v) continue;
+        if (v === q) return 3;
+        if (v.startsWith(q)) melhor = Math.max(melhor, 2);
+        else if (v.includes(q)) melhor = Math.max(melhor, 1);
+      }
+      return melhor;
+    };
+
+    const achados = [];
+    const indisponiveis = [];
+    /*
+     * Uma consulta que falha degrada a busca; nao derruba.
+     *
+     * A federacao admite instancias em versoes diferentes de schema — e por
+     * isso que `migracoes.mjs` existe. Uma coluna que ainda nao chegou numa
+     * delas nao pode transformar a busca inteira em erro 500 no meio do
+     * atendimento.
+     *
+     * Mas o silencio seria pior que a falha: o que caiu viaja em
+     * `meta.indisponiveis`, do mesmo jeito que a consulta consolidada ja faz.
+     */
+    const seguro = (oque, fn) => { try { fn(); } catch { indisponiveis.push(oque); } };
+
+    seguro('clientes', () => escopo.todas(
+      `select id, nome, telefone, cidade, perfil from clientes
+       where {ESCOPO} and (sem_acento(nome) like ? or sem_acento(coalesce(email,'')) like ?
+                           or (? <> '' and telefone like ?))
+       order by nome limit 8`,
+      like, like, foneLike, foneLike,
+    ).forEach((c) => achados.push({
+      tipo: 'cliente', id: c.id, titulo: c.nome,
+      sub: [c.cidade, c.telefone].filter(Boolean).join(' · '),
+      rota: `clientes?ficha=${encodeURIComponent(c.id)}`,
+      ponto: pontos(c.nome, c.telefone),
+    })));
+
+    seguro('veiculos', () => escopo.todas(
+      `select v.id, v.placa, v.marca, v.modelo, v.cliente_id, c.nome cliente_nome
+       from veiculos v join clientes c on c.id = v.cliente_id
+       where v.{ESCOPO} and (replace(upper(v.placa), '-', '') like ?
+                             or sem_acento(coalesce(v.modelo, '')) like ?
+                             or sem_acento(coalesce(v.marca, '')) like ?)
+       order by v.placa limit 6`,
+      placa, like, like,
+    ).forEach((v) => achados.push({
+      tipo: 'veiculo', id: v.id, titulo: v.placa,
+      sub: [[v.marca, v.modelo].filter(Boolean).join(' '), v.cliente_nome].filter(Boolean).join(' · '),
+      // O veiculo mora dentro da ficha do dono: e la que estao o historico e a
+      // revisao projetada. Mandar para a lista de frota perderia os dois.
+      rota: `clientes?ficha=${encodeURIComponent(v.cliente_id)}`,
+      ponto: pontos(v.placa, v.modelo, v.marca),
+    })));
+
+    seguro('ordens', () => escopo.todas(
+      `select o.id, o.numero, o.componente, o.status, c.nome cliente_nome, v.placa
+       from ordens_servico o
+       join clientes c on c.id = o.cliente_id
+       left join veiculos v on v.id = o.veiculo_id
+       where o.{ESCOPO} and (sem_acento(o.numero) like ? or sem_acento(o.componente) like ?
+                             or sem_acento(c.nome) like ?)
+       order by o.aberta_em desc limit 6`,
+      like, like, like,
+    ).forEach((o) => achados.push({
+      tipo: 'ordem', id: o.id, titulo: `OS ${o.numero}`,
+      sub: [o.componente, o.cliente_nome, o.placa].filter(Boolean).join(' · '),
+      rota: `ordens?foco=${encodeURIComponent(o.id)}`,
+      ponto: pontos(o.numero, o.componente),
+    })));
+
+    seguro('pedidos', () => escopo.todas(
+      `select p.id, p.numero, p.status, p.valor_centavos, c.nome cliente_nome
+       from pedidos p join clientes c on c.id = p.cliente_id
+       where p.{ESCOPO} and (sem_acento(p.numero) like ? or sem_acento(c.nome) like ?)
+       order by p.feito_em desc limit 6`,
+      like, like,
+    ).forEach((x) => achados.push({
+      tipo: 'pedido', id: x.id, titulo: `Pedido ${x.numero}`,
+      sub: [x.cliente_nome, x.status].filter(Boolean).join(' · '),
+      rota: `pedidos?foco=${encodeURIComponent(x.id)}`,
+      ponto: pontos(x.numero),
+    })));
+
+    seguro('oportunidades', () => escopo.todas(
+      `select o.id, o.titulo, o.etapa, coalesce(c.nome, '') cliente_nome
+       from oportunidades o left join clientes c on c.id = o.cliente_id
+       where o.{ESCOPO} and (sem_acento(o.titulo) like ? or sem_acento(coalesce(c.nome, '')) like ?)
+       limit 6`,
+      like, like,
+    ).forEach((o) => achados.push({
+      tipo: 'oportunidade', id: o.id, titulo: o.titulo,
+      sub: [o.cliente_nome, o.etapa].filter(Boolean).join(' · '),
+      rota: `pipeline?foco=${encodeURIComponent(o.id)}`,
+      ponto: pontos(o.titulo),
+    })));
+
+    seguro('catalogo', () => escopo.todas(
+      `select id, sku, nome, categoria from catalogo
+       where {ESCOPO} and (sem_acento(nome) like ? or sem_acento(sku) like ?)
+       order by nome limit 6`,
+      like, like,
+    ).forEach((i) => achados.push({
+      tipo: 'catalogo', id: i.id, titulo: i.nome,
+      sub: [i.sku, i.categoria].filter(Boolean).join(' · '),
+      rota: `catalogo?foco=${encodeURIComponent(i.id)}`,
+      ponto: pontos(i.nome, i.sku),
+    })));
+
+    // Empate desfeito pelo tipo: quem busca no balcao busca PESSOA na esmagadora
+    // maioria das vezes, e o resto e contexto dela.
+    const ordemTipo = {
+      cliente: 0, veiculo: 1, ordem: 2, pedido: 3, oportunidade: 4, catalogo: 5,
+    };
+    achados.sort((a, b) => (b.ponto - a.ponto)
+      || (ordemTipo[a.tipo] - ordemTipo[b.tipo])
+      || a.titulo.localeCompare(b.titulo, 'pt-BR'));
+
+    return ok(achados.slice(0, 20), {
+      q: bruto, empresa: empresa.nome, outras, total: achados.length,
+      ...(indisponiveis.length ? { indisponiveis } : {}),
+    });
+  },
+
   'GET /api/clientes': (fed, req, _p, _c, url) => {
     const { escopo, banco } = contexto(fed, req);
     const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
@@ -894,9 +1098,17 @@ export const ROTAS = {
        * fazer isso em toda abertura da tela seria pagar por resposta que
        * ninguem le — na fila cheia, o operador quer a fila.
        */
+      /*
+       * Os adiados viajam SEMPRE, não só quando a fila esvazia.
+       *
+       * Adiamento invisível é uma fila que encolhe sem ninguém perceber: o
+       * operador adia dez pessoas numa terça, esquece, e na quinta a tela
+       * parece dizer que não há trabalho.
+       */
+      adiados: fila.adiados ?? [],
       diagnostico: fila.some((f) => f.decisao.permitido)
         ? null
-        : diagnosticarFilaVazia(escopo, { fila }),
+        : diagnosticarFilaVazia(escopo, { fila, adiados: fila.adiados ?? [] }),
     });
   },
 
@@ -1316,6 +1528,79 @@ export const ROTAS = {
         ? null
         : 'Nenhum parâmetro de clique nem UTM na entrada — este lead não terá conversão atribuível.',
     });
+  },
+
+  /**
+   * Adiar um contato: "esse eu falo amanhã".
+   *
+   * Sem isto a fila só tinha disparar ou ignorar — e ignorar faz o item voltar
+   * idêntico no dia seguinte, até o operador aprender a desconfiar da lista.
+   *
+   * O adiamento é por (cliente, gatilho): adiar a revisão de um caminhão não
+   * silencia a cobrança de orçamento do mesmo cliente. São conversas diferentes.
+   */
+  'POST /api/regua/adiar': (fed, req, _p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+
+    const clienteId = String(corpo?.clienteId ?? '');
+    const gatilho = String(corpo?.gatilho ?? '');
+    if (!clienteId || !gatilho) {
+      throw new ErroHttp(400, 'faltam_dados', 'Informe o cliente e o gatilho.');
+    }
+
+    const cliente = escopo.uma('select nome from clientes where {ESCOPO} and id = ?', clienteId);
+    if (!cliente) throw new ErroHttp(404, 'nao_encontrado', 'Cliente não encontrado.');
+
+    const dias = num(corpo?.dias, 1);
+    if (dias < 1 || dias > 365) {
+      throw new ErroHttp(400, 'prazo_invalido', 'O adiamento vai de 1 a 365 dias.');
+    }
+    const ate = new Date(Date.now() + dias * 86400000).toISOString();
+
+    /*
+     * Um adiamento vivo por (cliente, gatilho). Adiar de novo SUBSTITUI em vez
+     * de empilhar — senão desfazer o de cima revelaria outro embaixo, e o
+     * operador não teria como saber quantos ainda existem.
+     */
+    escopo.todas(
+      `select id from adiamentos
+       where {ESCOPO} and cliente_id = ? and gatilho_chave = ? and desfeito_em is null`,
+      clienteId, gatilho,
+    ).forEach((a) => escopo.atualizar('adiamentos', a.id, { desfeito_em: agora() }));
+
+    const id = novoId();
+    escopo.inserir('adiamentos', {
+      id,
+      cliente_id: clienteId,
+      gatilho_chave: gatilho,
+      ate,
+      motivo: corpo?.motivo ? String(corpo.motivo).slice(0, 200) : null,
+      criado_por: usuario.email,
+      criado_em: agora(),
+    });
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'regua.adiar',
+      entidade: 'adiamentos', entidadeId: id,
+      dados: { cliente: cliente.nome, gatilho, dias, ate },
+    });
+
+    return ok({ id, ate, cliente: cliente.nome, dias });
+  },
+
+  /** Desfazer: o item volta para a fila na próxima montagem. */
+  'POST /api/regua/adiar/:id/desfazer': (fed, req, p) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const a = escopo.uma('select * from adiamentos where {ESCOPO} and id = ?', p.id);
+    if (!a) throw new ErroHttp(404, 'nao_encontrado', 'Adiamento não encontrado.');
+    if (a.desfeito_em) return ok({ desfeito: true, jaEstava: true });
+
+    escopo.atualizar('adiamentos', p.id, { desfeito_em: agora() });
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'regua.adiar.desfazer',
+      entidade: 'adiamentos', entidadeId: p.id, dados: { gatilho: a.gatilho_chave },
+    });
+    return ok({ desfeito: true });
   },
 
   // ── Campos personalizados ────────────────────────────────────────────────

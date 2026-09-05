@@ -64,6 +64,22 @@ export class Banco {
      */
     this.migracoes = migrarColunas(this.#sql);
 
+    /*
+     * `sem_acento()` dentro do SQL, porque `like` do SQLite nao sabe portugues.
+     *
+     * Procurar "antonio" nao achava "Antônio Ribeiro" — e num sistema usado no
+     * balcao, de celular, ninguem digita o circunflexo. `lower()` do SQLite so
+     * dobra ASCII, entao nem o acento nem o Ç saem sozinhos.
+     *
+     * O preco: SQLite chama JS uma vez por linha avaliada, e nao ha indice que
+     * cubra a expressao. Numa base de balcao (milhares de linhas) e imediato;
+     * quando passar disso, a resposta e uma coluna `nome_busca` normalizada na
+     * escrita e indexada — e nao esticar isto.
+     */
+    this.#sql.function('sem_acento', { deterministic: true }, (v) => (
+      v == null ? null : String(v).normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+    ));
+
     this.central = central;
   }
 
