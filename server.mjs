@@ -216,7 +216,22 @@ servidor.listen(PORTA, HOST, () => {
     console.log(`  Senhas        ${senhas.map((s) => `${s.codigo}:${s.migradas}`).join(' ')} convertidas para hash`);
     console.log('');
   }
-  console.log('  Entrar com:   diretoria@fortgrupo.com.br / demo');
+  /*
+   * A senha so aparece quando ela E 'demo'.
+   *
+   * A linha era fixa, e em producao mentia: la a senha vem de
+   * FORTCRM_SENHA_INICIAL, e o log dizia `demo` assim mesmo. Quem lesse o log
+   * tentaria uma senha que nao existe — ou pior, acreditaria que a senha de
+   * producao e `demo`.
+   *
+   * E imprimir a senha real seria pior ainda: log de conteiner e coletado,
+   * rotacionado e lido por quem tem acesso ao host, que nao e necessariamente
+   * quem pode entrar no CRM.
+   */
+  const senhaVeioDoAmbiente = !!process.env.FORTCRM_SENHA_INICIAL;
+  console.log(senhaVeioDoAmbiente
+    ? '  Entrar com:   diretoria@fortgrupo.com.br / senha definida em FORTCRM_SENHA_INICIAL'
+    : '  Entrar com:   diretoria@fortgrupo.com.br / demo');
   console.log('');
 });
 
