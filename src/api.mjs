@@ -2171,9 +2171,6 @@ export const ROTAS = {
       pendencias: pendencias(itens, porItem, v.nivel ?? 'ouro'),
       catalogo: catalogoDoNivel(v.nivel ?? 'ouro'),
       niveis: NIVEIS,
-      vistas: VISTAS_CARROCERIA,
-      tiposAvaria: TIPOS_AVARIA,
-      pagamentos: PAGAMENTOS,
     });
   },
 
