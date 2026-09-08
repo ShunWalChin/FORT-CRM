@@ -61,6 +61,9 @@ export const COLUNAS_ESPERADAS = [
 
   // Profundidade da revisao na vistoria.
   { tabela: 'vistorias', coluna: 'nivel', definicao: "text not null default 'prata'" },
+  { tabela: 'vistorias', coluna: 'proximo_servico_km', definicao: 'integer' },
+  { tabela: 'vistorias', coluna: 'preferencia_pagamento', definicao: 'text' },
+  { tabela: 'vistorias', coluna: 'entrega_prevista', definicao: 'text' },
 ];
 
 /**

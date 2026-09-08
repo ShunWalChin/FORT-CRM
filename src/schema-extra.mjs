@@ -256,6 +256,13 @@ create table if not exists vistorias (
                 check (status in ('rascunho','aguardando_aceite','aceita','recusada','cancelada')),
   tecnico       text,
   observacao    text,
+
+  -- Campos da recepcao, da folha da rede. Sao combinados com o cliente na
+  -- entrada e viram promessa: quem prometeu, o que, e para quando.
+  proximo_servico_km integer,
+  preferencia_pagamento text,
+  entrega_prevista text,
+
   iniciada_em   text not null,
   concluida_em  text,
 
@@ -297,6 +304,54 @@ create unique index if not exists ux_item_chave on vistoria_itens(empresa_id, vi
 -- Blob em SQLite levaria o banco de 370 KB a gigabytes, e com ele o backup:
 -- VACUUM INTO copia o banco inteiro toda madrugada. Com o arquivo de fora,
 -- o backup do banco continua em segundos e a midia tem politica propria.
+-- Avarias marcadas na carroceria.
+--
+-- E a peca que fecha o proposito da vistoria de entrada. O check-list responde
+-- "esta funcionando?"; o diagrama responde "COMO estava?" — e e essa a pergunta
+-- da devolucao, quando o dono aponta um risco e ninguem sabe se ja estava.
+--
+-- Coordenada em FRACAO (0 a 1) da vista, e nao em pixel: o desenho muda de
+-- tamanho entre o celular e o computador, e pixel gravado numa tela de 375
+-- apareceria no lugar errado numa de 1440.
+create table if not exists vistoria_avarias (
+  id          text primary key,
+  empresa_id  text not null references empresas(id) on delete cascade,
+  vistoria_id text not null references vistorias(id) on delete cascade,
+  vista       text not null
+              check (vista in ('frente','traseira','lateral_esq','lateral_dir','teto')),
+  x           real not null,
+  y           real not null,
+  tipo        text not null
+              check (tipo in ('risco','amassado','trinca','ferrugem','faltando','outro')),
+  nota        text,
+  criado_por  text,
+  criado_em   text not null
+);
+create index if not exists ix_avaria_vistoria on vistoria_avarias(empresa_id, vistoria_id);
+
+-- Servicos que o CLIENTE pediu — diferente do que a oficina encontrou.
+--
+-- A folha da rede separa as duas listas de proposito, e a separacao e o que
+-- permite a conversa honesta na entrega: "voce pediu isto, e nos encontramos
+-- aquilo". Misturar as duas faz todo achado parecer venda empurrada.
+create table if not exists vistoria_servicos (
+  id          text primary key,
+  empresa_id  text not null references empresas(id) on delete cascade,
+  vistoria_id text not null references vistorias(id) on delete cascade,
+  ordem       integer not null default 0,
+  descricao   text not null,
+  origem      text not null default 'cliente'
+              check (origem in ('cliente','vistoria')),
+  -- Vem do item da vistoria que originou, quando foi a oficina que encontrou.
+  item_chave  text,
+  estado      text check (estado in ('pendente','ok','nok')),
+  tempo_min   integer,
+  valor_centavos integer,
+  aprovado    integer,
+  criado_em   text not null
+);
+create index if not exists ix_servico_vistoria on vistoria_servicos(empresa_id, vistoria_id, ordem);
+
 create table if not exists vistoria_midias (
   id          text primary key,
   empresa_id  text not null references empresas(id) on delete cascade,

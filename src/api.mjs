@@ -470,6 +470,41 @@ function diretorioDeMidia(fed) {
   return join(dirname(fed.diretorio), 'midia');
 }
 
+/**
+ * As cinco vistas do desenho da carroceria, na ordem em que se dá a volta no
+ * veículo — a mesma ordem do grupo "Exterior" do check-list.
+ */
+export const VISTAS_CARROCERIA = ['frente', 'lateral_dir', 'traseira', 'lateral_esq', 'teto'];
+
+/** Tipos de avaria, com a letra que vai dentro do pino no desenho. */
+export const TIPOS_AVARIA = {
+  risco: { nome: 'Risco', letra: 'R' },
+  amassado: { nome: 'Amassado', letra: 'A' },
+  trinca: { nome: 'Trinca', letra: 'T' },
+  ferrugem: { nome: 'Ferrugem', letra: 'F' },
+  faltando: { nome: 'Faltando', letra: 'X' },
+  outro: { nome: 'Outro', letra: 'O' },
+};
+
+/** Formas de pagamento combinadas na recepção. */
+export const PAGAMENTOS = ['dinheiro', 'pix', 'debito', 'credito', 'boleto', 'faturado'];
+
+/**
+ * O desenho da carroceria e a lista de serviços fazem parte do que se assina.
+ *
+ * Ficam fora do hash quando não existem, para não mudar a assinatura de toda
+ * vistoria já enviada — mas onde existem, mexer neles depois do envio derruba
+ * o aceite, igual a mexer num item.
+ */
+function extrasDaVistoria(escopo, vistoriaId) {
+  return {
+    avarias: escopo.todas(
+      'select * from vistoria_avarias where {ESCOPO} and vistoria_id = ?', vistoriaId),
+    servicos: escopo.todas(
+      'select * from vistoria_servicos where {ESCOPO} and vistoria_id = ?', vistoriaId),
+  };
+}
+
 export const ROTAS = {
   /**
    * Login federado: as credenciais são conferidas em CADA instância, e o
@@ -2128,17 +2163,24 @@ export const ROTAS = {
       vistoria: v,
       itens,
       midias: porItem,
+      avarias: escopo.todas(
+        'select * from vistoria_avarias where {ESCOPO} and vistoria_id = ? order by criado_em', p.id),
+      servicos: escopo.todas(
+        'select * from vistoria_servicos where {ESCOPO} and vistoria_id = ? order by ordem', p.id),
       resumo: resumoVistoria(itens),
       pendencias: pendencias(itens, porItem, v.nivel ?? 'ouro'),
       catalogo: catalogoDoNivel(v.nivel ?? 'ouro'),
       niveis: NIVEIS,
+      vistas: VISTAS_CARROCERIA,
+      tiposAvaria: TIPOS_AVARIA,
+      pagamentos: PAGAMENTOS,
     });
   },
 
   /** Marca um item. E a operacao mais repetida do app — 63 vezes por vistoria. */
   'PATCH /api/vistorias/:id/itens/:chave': (fed, req, p, corpo) => {
     const { escopo, usuario } = contexto(fed, req);
-    const v = escopo.uma('select id, status from vistorias where {ESCOPO} and id = ?', p.id);
+    const v = escopo.uma('select id, status, nivel from vistorias where {ESCOPO} and id = ?', p.id);
     if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
     if (v.status !== 'rascunho') {
       throw new ErroHttp(409, 'vistoria_fechada',
@@ -2178,8 +2220,25 @@ export const ROTAS = {
       } catch { /* leitura recusada nao derruba a vistoria; o item fica marcado */ }
     }
 
+    /*
+     * A resposta traz o resumo E as pendencias.
+     *
+     * Antes a tela remarcava o item e recarregava a vistoria inteira para saber
+     * o que ainda faltava: duas viagens por toque, e a segunda pesada — 86
+     * itens com a lista de midias. Numa vistoria completa isso era mais de
+     * cento e setenta chamadas no 4G do celular do tecnico.
+     */
     const todos = escopo.todas('select * from vistoria_itens where {ESCOPO} and vistoria_id = ?', p.id);
-    return ok({ item: atual, resumo: resumoVistoria(todos) });
+    const porItem2 = {};
+    for (const m of escopo.todas(
+      'select id, item_id from vistoria_midias where {ESCOPO} and vistoria_id = ?', p.id)) {
+      (porItem2[m.item_id] ??= []).push(m);
+    }
+    return ok({
+      item: atual,
+      resumo: resumoVistoria(todos),
+      pendencias: pendencias(todos, porItem2, v.nivel ?? 'ouro'),
+    });
   },
 
   /**
@@ -2312,7 +2371,7 @@ export const ROTAS = {
       status: 'aguardando_aceite',
       concluida_em: agora(),
       observacao: texto(corpo?.observacao, 1000),
-      conteudo_hash: hashConteudo(v, itens, midias),
+      conteudo_hash: hashConteudo(v, itens, midias, extrasDaVistoria(escopo, p.id)),
     };
     escopo.atualizar('vistorias', p.id, dados);
 
@@ -2342,7 +2401,7 @@ export const ROTAS = {
 
     const itens = escopo.todas('select * from vistoria_itens where {ESCOPO} and vistoria_id = ?', p.id);
     const midias = escopo.todas('select * from vistoria_midias where {ESCOPO} and vistoria_id = ?', p.id);
-    const agoraHash = hashConteudo(v, itens, midias);
+    const agoraHash = hashConteudo(v, itens, midias, extrasDaVistoria(escopo, p.id));
     if (agoraHash !== v.conteudo_hash) {
       escopo.atualizar('vistorias', p.id, { status: 'rascunho', concluida_em: null });
       throw new ErroHttp(409, 'conteudo_mudou',
@@ -2416,6 +2475,207 @@ export const ROTAS = {
       dados: { numero: os.numero, vistoria: vistoria.numero },
     });
     return ok({ ...os, status: 'em_bancada', vistoria_id: vistoria.id });
+  },
+
+  /**
+   * Marca uma avaria na carroceria.
+   *
+   * O check-list responde "está funcionando?"; o diagrama responde "COMO
+   * estava?" — e é essa a pergunta da devolução, quando o dono aponta um risco
+   * e ninguém sabe se já estava lá.
+   *
+   * A coordenada chega em FRAÇÃO da vista (0 a 1), e não em pixel: o desenho
+   * muda de tamanho entre o celular e o computador, e pixel gravado numa tela
+   * de 375 apareceria no lugar errado numa de 1440.
+   */
+  'POST /api/vistorias/:id/avarias': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select id, status, numero from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada',
+        'Esta vistoria já foi enviada: o desenho da carroceria é prova e não muda mais.');
+    }
+
+    const x = Number(corpo?.x);
+    const y = Number(corpo?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
+      throw new ErroHttp(422, 'coordenada_invalida', 'A marca precisa cair dentro do desenho.');
+    }
+    if (!VISTAS_CARROCERIA.includes(corpo?.vista)) {
+      throw new ErroHttp(422, 'vista_invalida', 'Vista fora do desenho.');
+    }
+    if (!TIPOS_AVARIA[corpo?.tipo]) {
+      throw new ErroHttp(422, 'tipo_invalido', 'Tipo de avaria desconhecido.');
+    }
+
+    const id = novoId();
+    escopo.inserir('vistoria_avarias', {
+      id,
+      vistoria_id: p.id,
+      vista: corpo.vista,
+      x,
+      y,
+      tipo: corpo.tipo,
+      nota: texto(corpo?.nota, 200),
+      criado_por: usuario.email,
+      criado_em: agora(),
+    });
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.avaria',
+      entidade: 'vistoria_avarias', entidadeId: id,
+      dados: { numero: v.numero, vista: corpo.vista, tipo: corpo.tipo },
+    });
+    return ok(escopo.uma('select * from vistoria_avarias where {ESCOPO} and id = ?', id));
+  },
+
+  'DELETE /api/vistorias/:id/avarias/:avariaId': (fed, req, p) => {
+    const { escopo } = contexto(fed, req);
+    const v = escopo.uma('select status from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Esta vistoria já foi enviada.');
+    }
+    return ok({ apagou: escopo.remover('vistoria_avarias', p.avariaId) > 0 });
+  },
+
+  /**
+   * Serviços — o que o CLIENTE pediu, e o que a oficina encontrou.
+   *
+   * As duas listas ficam separadas de propósito, pela `origem`. É a separação
+   * que permite a conversa honesta na entrega: "você pediu isto, e nós
+   * encontramos aquilo". Misturadas, todo achado parece venda empurrada.
+   */
+  'POST /api/vistorias/:id/servicos': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select id, status, numero from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Esta vistoria já foi enviada.');
+    }
+
+    const descricao = texto(corpo?.descricao, 300);
+    if (!descricao) throw new ErroHttp(422, 'descricao_obrigatoria', 'Descreva o serviço pedido.');
+
+    const ultimo = escopo.uma(
+      'select max(ordem) as n from vistoria_servicos where {ESCOPO} and vistoria_id = ?', p.id);
+    const id = novoId();
+    escopo.inserir('vistoria_servicos', {
+      id,
+      vistoria_id: p.id,
+      ordem: (ultimo?.n ?? 0) + 1,
+      descricao,
+      origem: corpo?.origem === 'vistoria' ? 'vistoria' : 'cliente',
+      item_chave: texto(corpo?.item_chave, 60),
+      estado: 'pendente',
+      tempo_min: corpo?.tempo_min == null ? null : num(corpo.tempo_min, 0),
+      valor_centavos: corpo?.valor_centavos == null ? null : num(corpo.valor_centavos, 0),
+      aprovado: null,
+      criado_em: agora(),
+    });
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.servico',
+      entidade: 'vistoria_servicos', entidadeId: id,
+      dados: { numero: v.numero, descricao, origem: corpo?.origem ?? 'cliente' },
+    });
+    return ok(escopo.uma('select * from vistoria_servicos where {ESCOPO} and id = ?', id));
+  },
+
+  'PATCH /api/vistorias/:id/servicos/:servicoId': (fed, req, p, corpo) => {
+    const { escopo } = contexto(fed, req);
+    const v = escopo.uma('select status from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    const sv = escopo.uma('select * from vistoria_servicos where {ESCOPO} and id = ?', p.servicoId);
+    if (!sv) throw new ErroHttp(404, 'nao_encontrado', 'Serviço não encontrado.');
+
+    /*
+     * Descrição, tempo e valor são o que o cliente aceitou: travam no envio.
+     * O estado (feito ou não) é execução, e continua andando depois do aceite —
+     * é assim que a lista da recepção vira a lista da entrega.
+     */
+    const dados = {};
+    if (corpo?.estado !== undefined) {
+      if (corpo.estado !== null && !['pendente', 'ok', 'nok'].includes(corpo.estado)) {
+        throw new ErroHttp(422, 'estado_invalido', 'Use pendente, ok ou nok.');
+      }
+      dados.estado = corpo.estado;
+    }
+    if (corpo?.aprovado !== undefined) dados.aprovado = corpo.aprovado ? 1 : 0;
+
+    const mudaConteudo = ['descricao', 'tempo_min', 'valor_centavos']
+      .some((c) => corpo?.[c] !== undefined);
+    if (mudaConteudo) {
+      if (v.status !== 'rascunho') {
+        throw new ErroHttp(409, 'vistoria_fechada',
+          'Esta vistoria já foi enviada: descrição, tempo e valor não mudam mais.');
+      }
+      if (corpo?.descricao !== undefined) {
+        const d = texto(corpo.descricao, 300);
+        if (!d) throw new ErroHttp(422, 'descricao_obrigatoria', 'Descreva o serviço.');
+        dados.descricao = d;
+      }
+      if (corpo?.tempo_min !== undefined) {
+        dados.tempo_min = corpo.tempo_min === null ? null : num(corpo.tempo_min, 0);
+      }
+      if (corpo?.valor_centavos !== undefined) {
+        dados.valor_centavos = corpo.valor_centavos === null ? null : num(corpo.valor_centavos, 0);
+      }
+    }
+
+    if (!Object.keys(dados).length) return ok(sv);
+    escopo.atualizar('vistoria_servicos', p.servicoId, dados);
+    return ok(escopo.uma('select * from vistoria_servicos where {ESCOPO} and id = ?', p.servicoId));
+  },
+
+  'DELETE /api/vistorias/:id/servicos/:servicoId': (fed, req, p) => {
+    const { escopo } = contexto(fed, req);
+    const v = escopo.uma('select status from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Esta vistoria já foi enviada.');
+    }
+    return ok({ apagou: escopo.remover('vistoria_servicos', p.servicoId) > 0 });
+  },
+
+  /**
+   * O que foi combinado na recepção: entrega, pagamento, próximo serviço.
+   *
+   * São promessas feitas ao cliente na entrada, e por isso ficam na vistoria
+   * que ele aceita — e não num campo solto de observação.
+   */
+  'PATCH /api/vistorias/:id': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select * from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Esta vistoria já foi enviada.');
+    }
+
+    const dados = {};
+    if (corpo?.tecnico !== undefined) dados.tecnico = texto(corpo.tecnico, 120);
+    if (corpo?.observacao !== undefined) dados.observacao = texto(corpo.observacao, 1000);
+    if (corpo?.proximo_servico_km !== undefined) {
+      dados.proximo_servico_km = corpo.proximo_servico_km === null || corpo.proximo_servico_km === ''
+        ? null : num(corpo.proximo_servico_km, 0);
+    }
+    if (corpo?.preferencia_pagamento !== undefined) {
+      const forma = texto(corpo.preferencia_pagamento, 60);
+      if (forma && !PAGAMENTOS.includes(forma)) {
+        throw new ErroHttp(422, 'pagamento_invalido', 'Forma de pagamento desconhecida.');
+      }
+      dados.preferencia_pagamento = forma;
+    }
+    if (corpo?.entrega_prevista !== undefined) {
+      dados.entrega_prevista = texto(corpo.entrega_prevista, 40);
+    }
+
+    if (!Object.keys(dados).length) return ok(v);
+    escopo.atualizar('vistorias', p.id, dados);
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.recepcao',
+      entidade: 'vistorias', entidadeId: p.id, dados: { numero: v.numero, ...dados },
+    });
+    return ok(escopo.uma('select * from vistorias where {ESCOPO} and id = ?', p.id));
   },
 
   // ── Campos personalizados ────────────────────────────────────────────────

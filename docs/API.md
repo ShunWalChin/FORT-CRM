@@ -1,6 +1,6 @@
 # Referência da API
 
-> Gerado a partir de `src/api.mjs`. **67 rotas.**
+> Gerado a partir de `src/api.mjs`. **73 rotas.**
 
 Todas as rotas devolvem `{ ok, dados }` ou `{ ok: false, erro: { codigo, mensagem } }`.
 
@@ -31,7 +31,7 @@ instâncias.
 | `POST /api/sessao` | 12 — sem teto, vira oráculo de senha por força bruta |
 | `POST /api/entrada/…` | 20 — única escrita anônima do sistema |
 | Escrita em geral | 60 |
-| `POST/PATCH/DELETE /api/vistorias/…` | 240 — são 63 marcações em poucos minutos, mais as fotos. O teto geral de escrita bloqueava o técnico **no meio** do check-list, com o carro no elevador |
+| `POST/PATCH/DELETE /api/vistorias/…` | 240 — são 86 marcações em poucos minutos, mais as fotos. O teto geral de escrita bloqueava o técnico **no meio** do check-list, com o carro no elevador |
 | `GET /api/buscar` | 120 — cada tecla pode virar consulta; balde próprio para não comer o orçamento de leitura do resto |
 | Leitura | 300 |
 
@@ -231,11 +231,17 @@ projeção devolve as duas contas mais qual delas mandou.
 
 | Método | Rota | O que faz |
 |---|---|---|
-| `GET` | `/api/checklist` | O catálogo dos 63 itens. A tela não guarda cópia. |
-| `POST` | `/api/vistorias` | Abre com os 63 itens já criados, todos sem estado. |
+| `GET` | `/api/checklist` | O catálogo dos 86 itens, recortável por `?nivel=`. A tela não guarda cópia. |
+| `POST` | `/api/vistorias` | Abre com os itens do `nivel` já criados, todos sem estado. |
 | `GET` | `/api/vistorias` | Lista, com filtro opcional `?status=`. |
-| `GET` | `/api/vistorias/:id` | Vistoria, itens, mídias por item, resumo e **pendências**. |
-| `PATCH` | `/api/vistorias/:id/itens/:chave` | Marca um item. A operação mais repetida do app. |
+| `GET` | `/api/vistorias/:id` | Vistoria, itens, mídias, avarias, serviços, resumo e **pendências**. |
+| `PATCH` | `/api/vistorias/:id/itens/:chave` | Marca um item — 86 vezes por vistoria. Devolve resumo **e pendências**, para a tela não recarregar tudo a cada toque. |
+| `PATCH` | `/api/vistorias/:id` | O combinado na recepção: entrega, pagamento, próximo serviço. |
+| `POST` | `/api/vistorias/:id/avarias` | Marca a lataria. `{vista, x, y, tipo}` — `x`/`y` em **fração** 0–1. |
+| `DELETE` | `/api/vistorias/:id/avarias/:avariaId` | Só enquanto rascunho: depois do envio o desenho é prova. |
+| `POST` | `/api/vistorias/:id/servicos` | O que o cliente pediu (`origem: cliente`) ou o que a oficina achou (`vistoria`). |
+| `PATCH` | `/api/vistorias/:id/servicos/:servicoId` | Preço e descrição travam no envio; o **estado** continua andando. |
+| `DELETE` | `/api/vistorias/:id/servicos/:servicoId` | Só enquanto rascunho. |
 | `POST` | `/api/vistorias/:id/midia` | Binário **cru**. `?item=&tipo=foto\|video&l=&a=`. Teto de 48 MB. |
 | `DELETE` | `/api/vistorias/:id/midia/:midiaId` | Só enquanto rascunho: depois do envio a mídia é prova. |
 | `POST` | `/api/vistorias/:id/concluir` | Valida e envia. Recusa dizendo **quais** itens faltam. |
@@ -243,9 +249,15 @@ projeção devolve as duas contas mais qual delas mandou.
 | `GET` | `/api/midia/:id` | Serve o arquivo, atrás de sessão. Sai como bytes, não JSON. |
 | `POST` | `/api/ordens/:id/iniciar` | **A trava**: recusa sem vistoria aceita, dizendo o que fazer. |
 
-`hashConteudo` resume o que foi aceito. Se algo mudou entre o envio e o aceite,
-a vistoria **volta para rascunho** em vez de gravar um aceite que não
-corresponde ao documento.
+`hashConteudo` resume o que foi aceito — itens, medidas, fotos, **o desenho da
+carroceria e a lista de serviços**. Se algo mudou entre o envio e o aceite, a
+vistoria **volta para rascunho** em vez de gravar um aceite que não corresponde
+ao documento.
+
+Avarias e serviços entram no resumo apenas quando existem. Uma chave sempre
+presente, ainda que vazia, mudaria o hash de toda vistoria já enviada e
+aguardando aceite — e o cliente veria "o conteúdo mudou" numa vistoria em que
+ninguém tocou.
 
 Criar os 63 itens de uma vez, e não conforme se marca, é o que permite perguntar
 *"quanto falta"* — e o que garante que a lista não mude no meio do preenchimento
