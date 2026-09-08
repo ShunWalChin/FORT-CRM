@@ -1,6 +1,6 @@
 # Referência da API
 
-> Gerado a partir de `src/api.mjs`. **53 rotas.**
+> Gerado a partir de `src/api.mjs`. **67 rotas.**
 
 Todas as rotas devolvem `{ ok, dados }` ou `{ ok: false, erro: { codigo, mensagem } }`.
 
@@ -31,6 +31,7 @@ instâncias.
 | `POST /api/sessao` | 12 — sem teto, vira oráculo de senha por força bruta |
 | `POST /api/entrada/…` | 20 — única escrita anônima do sistema |
 | Escrita em geral | 60 |
+| `POST/PATCH/DELETE /api/vistorias/…` | 240 — são 63 marcações em poucos minutos, mais as fotos. O teto geral de escrita bloqueava o técnico **no meio** do check-list, com o carro no elevador |
 | `GET /api/buscar` | 120 — cada tecla pode virar consulta; balde próprio para não comer o orçamento de leitura do resto |
 | Leitura | 300 |
 
@@ -206,6 +207,49 @@ Detalhes em [Credenciais](CREDENCIAIS.md).
 | `GET` | `/api/pipeline` | — |
 | `PATCH` | `/api/oportunidades/:id` | — |
 | `POST` | `/api/oportunidades` | — |
+
+## Oficina — veículos e vistoria
+
+> **Só na instância MP.** O menu esconde nas outras; o servidor recusa porque o
+> veículo não existe no escopo delas. Detalhes em [Oficina](OFICINA.md).
+
+### Vida do veículo
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `POST` | `/api/veiculos` | Cadastra e **já cria o plano de manutenção** — em dois passos, o segundo não acontece. |
+| `GET` | `/api/veiculos/:id` | Dados, uso, plano projetado, linha do tempo e vistorias, numa resposta só. |
+| `POST` | `/api/veiculos/:id/km` | Leitura de hodômetro. Recalcula a média real e reprojeta o plano inteiro. |
+
+A média de km/mês é **calculada** do histórico (`veiculo_km`), nunca digitada.
+O hodômetro só anda para a frente, e a recusa traz o número anterior.
+
+Cada serviço do plano vence **por km ou por tempo, o que chegar primeiro**, e a
+projeção devolve as duas contas mais qual delas mandou.
+
+### Vistoria de entrada
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/checklist` | O catálogo dos 63 itens. A tela não guarda cópia. |
+| `POST` | `/api/vistorias` | Abre com os 63 itens já criados, todos sem estado. |
+| `GET` | `/api/vistorias` | Lista, com filtro opcional `?status=`. |
+| `GET` | `/api/vistorias/:id` | Vistoria, itens, mídias por item, resumo e **pendências**. |
+| `PATCH` | `/api/vistorias/:id/itens/:chave` | Marca um item. A operação mais repetida do app. |
+| `POST` | `/api/vistorias/:id/midia` | Binário **cru**. `?item=&tipo=foto\|video&l=&a=`. Teto de 48 MB. |
+| `DELETE` | `/api/vistorias/:id/midia/:midiaId` | Só enquanto rascunho: depois do envio a mídia é prova. |
+| `POST` | `/api/vistorias/:id/concluir` | Valida e envia. Recusa dizendo **quais** itens faltam. |
+| `POST` | `/api/vistorias/:id/aceite` | Aceite ou recusa. Confere o hash antes de gravar. |
+| `GET` | `/api/midia/:id` | Serve o arquivo, atrás de sessão. Sai como bytes, não JSON. |
+| `POST` | `/api/ordens/:id/iniciar` | **A trava**: recusa sem vistoria aceita, dizendo o que fazer. |
+
+`hashConteudo` resume o que foi aceito. Se algo mudou entre o envio e o aceite,
+a vistoria **volta para rascunho** em vez de gravar um aceite que não
+corresponde ao documento.
+
+Criar os 63 itens de uma vez, e não conforme se marca, é o que permite perguntar
+*"quanto falta"* — e o que garante que a lista não mude no meio do preenchimento
+se o catálogo for editado.
 
 ## Porta pública de captação
 

@@ -1,23 +1,23 @@
 # FORT-CRM — Relatório Técnico
 
-**04 de setembro de 2026**
+**08 de setembro de 2026**
 
-CRM multiempresas com compliance de mensageria e conversão offline para Google
-Ads e Meta.
+CRM multiempresas com compliance de mensageria, conversão offline para Google
+Ads e Meta, e um módulo de oficina que prevê manutenção de frota.
 
 - **Em produção:** <https://fortcrm.fattech.com.br>
 - **Código:** <https://github.com/ShunWalChin/FORT-CRM>
 
 | | |
 |---|---|
-| Linhas de código | **14.490** |
+| Linhas de código | **20.746** |
 | Dependências | **0** |
-| Testes | **135** (45 unidade + 90 federação) |
-| Módulos | **24** |
-| Tabelas | **26** |
-| Rotas | **46** |
-| Telas | **23** |
-| Documentos | **11** |
+| Testes | **188** (45 unidade + 143 federação) |
+| Módulos | **28** |
+| Tabelas | **34** (28 por instância + 6 na central) |
+| Rotas | **67** |
+| Telas | **22** |
+| Documentos | **15** |
 
 ---
 
@@ -36,7 +36,7 @@ clique, para que a campanha que traz gente deixe de parecer que não traz.
 
 | Empresa | Segmento | O que tem de próprio |
 |---|---|---|
-| **Minas Peças** | Injeção diesel — Bosch Car Service | frota, ordens de serviço, laudo de bancada |
+| **Minas Peças** | Injeção diesel | frota, ordens de serviço, laudo de bancada, **vida do veículo e vistoria de entrada** |
 | **Fazenda Agrofort** | Queijo artesanal | pedidos, recompra, clube de assinatura |
 | **Fort Tintas** | Tintas e vernizes | pedidos, pintor parceiro, obra |
 
@@ -273,22 +273,186 @@ runtime pertence à aplicação.
 
 ---
 
+## Achar — uma busca, e não duas
+
+Havia um campo que filtrava o **menu**. Quem digitava `antonio` lia *"Nada com
+antonio"* e concluía, razoavelmente, que o sistema não tinha o Antônio.
+
+`Ctrl+K` (ou `/`, ou a porta na lateral) acha **registro**: cliente, veículo,
+ordem de serviço, pedido, oportunidade, item de catálogo — e também tela, por
+apelido (*cobrança* leva à régua, *meta* leva a Conversões).
+
+- **Sem acento e sem pontuação.** `lower()` do SQLite dobra apenas ASCII, então
+  `antonio` não achava *Antônio*. Uma função `sem_acento()` registrada na
+  conexão é aplicada **na coluna e no termo**. Telefone casa por dígitos, placa
+  sem traço, e CPF também.
+- **Não atravessa empresas.** Varrer as três seria o vazamento que a separação
+  por banco existe para impedir. Quando não acha, a resposta diz **em que outras
+  instâncias procurar**, e a travessia é escolha de quem opera.
+
+---
+
+## Adiar — a fila deixou de ter só duas saídas
+
+Disparar ou ignorar. E ignorar faz o item voltar idêntico no dia seguinte, até o
+operador aprender a desconfiar da lista.
+
+O adiamento é por **(cliente, gatilho)**: adiar a revisão de um caminhão não
+silencia a cobrança de orçamento do mesmo cliente. E **nunca é silencioso** — os
+adiados viajam em toda resposta, aparecem numa faixa com a data de volta, e o
+diagnóstico de fila vazia checa *"tudo adiado"* antes de qualquer outra causa.
+Sem isso, quem adiou dez pessoas numa terça abriria a quinta com uma tela
+dizendo que não há trabalho.
+
+---
+
+## Campanha — o nome por trás do `ad_id`
+
+Lead de Click-to-WhatsApp **não tem UTM**: o anúncio abre a conversa direto, sem
+navegador. A tela de origem agrupava por `utm_campaign`, então todo lead de
+anúncio caía em `sem_campanha` — o canal onde há verba era o único sem resposta.
+
+Agora o `ad_id` vira nome de campanha, conjunto e anúncio, lidos da Graph API e
+guardados por sete dias. Três regras:
+
+- **nunca inventa nome** — sem token, sem rede ou com erro, mostra o número e
+  diz por quê. Um *"Campanha 120109"* fabricado seria pior que o número: parece
+  resposta;
+- **resolver fica fora do caminho da tela** — buscar durante a renderização
+  deixaria a tela refém da latência da Meta;
+- **falha não apaga o que já resolveu** — token vencido não pode transformar
+  meses de nomes em ids crus.
+
+---
+
+## Credenciais — variável de ambiente é uma, e as empresas são três
+
+`FORTCRM_META_MARKETING_TOKEN` é do processo. Minas Peças, Agrofort e Fort
+Tintas têm contas de anúncio diferentes, e um token só servia a uma delas **em
+silêncio** — a Graph API apenas responde *"não encontrado"* para o anúncio de
+uma conta a que o token não tem acesso.
+
+A credencial passou a viver cifrada (AES-256-GCM) **no banco da própria
+empresa**, atrás do mesmo `empresa_id` que separa cliente e pedido. A cifra
+existe por um caso concreto: `VACUUM INTO` produz um backup que **sai da
+máquina**.
+
+O valor **nunca volta para a tela**, nem para quem é soberano — sai a pista de
+quatro caracteres, a origem e quem mudou. E sem chave-mestra o sistema **recusa
+guardar**, em vez de cair num padrão embutido que tornaria a cifra decorativa.
+
+---
+
+## Oficina — de registro do passado a previsão do próximo serviço
+
+Só na Minas Peças. É o módulo que responde à pergunta que sustenta uma oficina:
+*qual caminhão da minha carteira precisa de bico nos próximos trinta dias?*
+
+**A média de km/mês deixou de ser digitada.** Era coluna preenchida uma vez e
+nunca revista: um caminhão cadastrado como 4.000 km/mês que passou a rodar 1.200
+continuava sendo cobrado como 4.000, a revisão caía meses antes da hora, o
+cliente respondia *"acabei de fazer"*, e o operador aprendia a ignorar a fila.
+Agora cada leitura de hodômetro é guardada e a média é o que o veículo **andou**.
+
+**Nove serviços com intervalo próprio**, cada um vencendo por km **ou** por
+tempo, o que chegar primeiro — e a projeção diz qual dos dois mandou, porque
+*"vence em 12 dias"* e *"vence porque completa um ano"* são conversas diferentes
+com o cliente.
+
+**A vistoria de entrada** tem 63 itens em 11 sistemas, e é o documento que
+separa o que já estava no veículo do que a oficina fez. Três propriedades a
+fazem instrumento e não formulário:
+
+1. **guiada** — cada item diz o que olhar (*"fluido escuro absorveu água e ferve
+   na descida"*). Há teste que reprova item sem orientação;
+2. **crítico exige foto** — não se marca vermelho sem mostrar. O dono vê o pneu
+   careca antes de ouvir o preço;
+3. **o aceite vale para um conteúdo** — se algo mudar entre o envio e o aceite,
+   a vistoria volta para preenchimento em vez de gravar um aceite que não
+   corresponde.
+
+E a trava: **a ordem de serviço não sai de `aberta` sem vistoria aceita.** É a
+regra que dá sentido ao resto — sem ela a vistoria vira papel que se preenche
+depois, para constar.
+
+> A lista **não é a folha oficial de nenhuma rede**. É uma vistoria profissional
+> montada para injeção diesel, e os itens são **dados**: trocar pela folha
+> oficial é editar uma constante.
+
+---
+
+## Celular — segunda passada, medida
+
+A primeira passada tratou do formato (tabela virou cartão, navegação no
+polegar). Uma auditoria das 18 telas a 375 px mostrou o que sobrou:
+
+| | Antes | Depois |
+|---|---|---|
+| Alvos abaixo de 44 px | **86 de 86** na régua | **0 de 230** nas 18 telas |
+| Caixa de marcar | 17 × 17 px | 44 × 44 px |
+| Primeiro item da fila | 693 px do topo | 368 px |
+| Altura da régua | 9.637 px | 4.023 px |
+| Altura da auditoria | 7.564 px | 1.857 px |
+| Cromo permanente | 220 px | 119 px |
+
+A ação principal da tela principal — escolher quem recebe mensagem hoje — era um
+alvo de 17 px. Numa lista de vinte, errar o toque não é incômodo: é disparar
+para o cliente errado.
+
+A explicação da tela passou a recolher (693 px de prosa antes do primeiro
+cliente), a barra de disparo desceu para junto do polegar e só aparece com
+seleção, e as listas carregam oito por vez.
+
+Duas armadilhas que só a medição pegou: **`[hidden]` perde para o componente**
+(`.item { display: grid }` atropela o atributo, e treze itens marcados
+continuavam na tela), e **girar o aparelho perdia dois terços da fila** — o
+observador vigiava só o corte de 820 px, e as mudanças de DOM dependem do de 640.
+
+---
+
 ## Limites — o que o sistema ainda não é
 
 Escrito para que ninguém prometa ao cliente o que ele não entrega.
 
-- **Nada sai para fora.** `DEMO_MODE` ligado: mensagem não chega a número real,
-  conversão não chega ao Google nem à Meta. O payload é montado e gravado — é
-  ele que mostra numa reunião exatamente o que iria.
-- **Não há MFA, bloqueio por tentativas nem revogação de sessão.** Num endereço
-  público permanente, Cloudflare Access na frente do hostname é obrigatório — e
-  ainda não está posto.
+- **A conversão offline não tem fio.** Esta é a maior. Toda a cadeia existe — o
+  clique é capturado, o consentimento conferido, o telefone normalizado nos dois
+  formatos, a chave de idempotência gerada, o payload montado e gravado. E aí
+  para: **não existe uma linha de rede que envie**. Desligar `DEMO_MODE` não liga
+  o envio; a conversão passa a ser gravada como `desconhecido` com motivo
+  `sem_adaptador_de_rede`. O sistema é honesto sobre isso, mas o efeito prático é
+  que a frase que vende o produto hoje é promessa, não recurso. O conserto é
+  pequeno: o tratamento de resposta já está escrito e testado — faltam a
+  credencial e duas chamadas HTTP.
+- **A previsão de manutenção não chega à régua.** O plano calcula corretamente
+  qual veículo vence o quê e quando, mas isso **não entra sozinho na fila do
+  dia**. É a peça que falta para o pós-venda agir em vez de só saber.
+- **A tela de login está aberta na internet.** O que protege é o limitador de 12
+  tentativas por minuto e a senha em `scrypt`. Não há MFA, bloqueio por
+  tentativas repetidas nem revogação de sessão. Cloudflare Access na frente do
+  hostname é obrigatório num endereço permanente — e está travado por um token
+  do Zero Trust inválido.
+- **Chave de captação errada descarta o lead em silêncio.** A resposta constante
+  para chave válida, inválida ou desativada é deliberada (variar transformaria a
+  porta num oráculo de enumeração), mas não há contador do lado de dentro: se o
+  site do cliente for configurado com a chave errada, os leads somem e ninguém
+  percebe.
+- **Metade das rotas não é exercitada por teste.** O núcleo difícil está coberto
+  — compliance, idempotência, atribuição, conversão, cofre, papéis, oficina. O
+  que falta é o CRUD: ordens de serviço, pedidos, catálogo, gatilhos.
 - WhatsApp orgânico, Instagram e Mercado Livre dependem de conector que não
   existe.
-- Não dá para adiar um item da régua, nem cadastrar veículo ou ordem de serviço
-  pela interface.
+- Não dá para cadastrar ordem de serviço nem item de catálogo pela interface.
+  Cliente, oportunidade e **veículo** já nascem por aqui.
+- **Vídeo na vistoria não foi testado ponta a ponta.** O caminho existe e está
+  limitado a 40 MB, mas só fotos foram enviadas de verdade. Também não há laudo
+  em PDF da vistoria para entregar ao cliente, e o aceite só acontece presencial,
+  na tela do técnico.
+- **O teto de escala é um processo só.** Node é de thread única e o SQLite é
+  síncrono: com 50 mil clientes, montar a fila leva 201 ms e **bloqueia todo o
+  resto**. Faixa confortável medida: **~15 mil clientes por empresa**. É o teto
+  do desenho, não defeito dele, e a saída já está anotada no código.
 - A base é fictícia. Nenhum dado real de cliente está no sistema.
 
 ---
 
-*135 testes · zero dependências de terceiros · Januária/MG*
+*188 testes · zero dependências de terceiros · Januária/MG*

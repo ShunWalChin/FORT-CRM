@@ -10,7 +10,7 @@ fontes.
 🔗 **Sistema no ar: [fortcrm.fattech.com.br](https://fortcrm.fattech.com.br)**
 
 ```
-Node ≥ 23.4 · zero dependências · 139 testes · nenhum passo de build
+Node ≥ 23.4 · zero dependências · 188 testes · nenhum passo de build
 ```
 
 ---
@@ -53,7 +53,7 @@ flag a partir dessa versão. No Node 22 ele sobe e morre no primeiro `import`.
 
 ```bash
 node src/selftest.mjs       # 45 testes — CRM de uma empresa
-node src/selftest-fed.mjs   # 94 testes — federação, atribuição, conversão, CTWA
+node src/selftest-fed.mjs   # 143 testes — federação, aquisição, cofre, oficina
 ```
 
 ### Entrar
@@ -219,9 +219,13 @@ src/
   central.mjs           consolidação e chaves de captação
   senha.mjs             scrypt, migração automática
   limite.mjs            teto de requisições por origem
-  api.mjs               ~45 rotas
+  campanhas.mjs         nome da campanha por trás do ad_id
+  cofre.mjs             credencial cifrada por empresa (AES-256-GCM)
+  veiculos.mjs          uso, média real de km e previsão de manutenção
+  vistoria.mjs          check-list de 63 itens, aceite e a trava da OS
+  api.mjs               67 rotas
   seed.mjs              carga de demonstração
-  selftest*.mjs         139 testes
+  selftest*.mjs         188 testes
 web/
   app.js                SPA, sem framework
   ui.js                 ícones SVG e temas
@@ -229,6 +233,8 @@ web/
   styles.css            sistema visual
   temas.css             cinco temas
   mobile.css            dois pontos de corte: 820 e 640
+  oficina.js            app de vistoria e vida do veículo (só MP)
+  oficina.css           desenhado para o celular primeiro
   manual.js             o manual dentro do sistema
 deploy/                 Dockerfile, compose, túnel, manutenção
 docs/                   esta documentação

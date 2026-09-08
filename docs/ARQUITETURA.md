@@ -99,7 +99,7 @@ src/api.mjs          Rotas
 src/laudo.mjs        Laudo digital de bancada (HTML para impressão)
 src/seed.mjs         Carga de demonstração, relativa à data de hoje
 src/selftest.mjs     45 testes do CRM de uma empresa
-src/selftest-fed.mjs 44 testes de federação, atribuição, conversão, reancoragem e senha
+src/selftest-fed.mjs 143 testes de federação, aquisição, cofre, campanha e oficina
 web/manual.js        Manual didático embutido no sistema
 web/telas-aquisicao.js  Central, conversões e origem dos leads
 web/                 Interface — sem build, sem framework
