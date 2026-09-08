@@ -297,7 +297,11 @@ export function telaVistoria(ui) {
           d.pendencias = j.dados.pendencias;
           d.resumo = j.dados.resumo ?? d.resumo;
           recontarGrupos();
-          desenhar();
+          // Só o item que subiu muda de pendência — repintar a tela inteira
+          // aqui desfaria a rolagem do técnico enquanto ele já está no próximo.
+          pintarItem(String(t.chave).split(':').pop());
+          pintarResumo();
+          pintarAbas();
         }
       },
       aoMudar: (e) => pintarFila(e),
@@ -357,6 +361,15 @@ export function telaVistoria(ui) {
           </div>
         </div>
 
+        <button class="vt-grupo-atual" id="vt-abrir-grupos" aria-haspopup="dialog">
+          <span class="vt-grupo-onde">
+            Grupo ${abas.findIndex((a) => a.chave === atual) + 1} de ${abas.length}
+          </span>
+          <b>${esc(abas.find((a) => a.chave === atual)?.rotulo ?? '')}</b>
+          ${pendentePorGrupo[atual] ? `<span class="vt-falta">${pendentePorGrupo[atual]}</span>` : ''}
+          <span class="vt-grupo-seta" aria-hidden="true">▾</span>
+        </button>
+
         <div class="vt-grupos" id="vt-grupos">
           ${abas.map((a) => {
     const marca = a.chave === ABA_PEDIDO ? (d.servicos ?? []).length
@@ -373,6 +386,7 @@ export function telaVistoria(ui) {
         </div>
 
         <div id="vt-itens">${conteudoAba(atual)}</div>
+        <div class="vt-fim" id="vt-fim" hidden></div>
 
         ${soLeitura ? painelFechado(v, d, esc) : `
           <div class="vt-rodape">
@@ -438,15 +452,33 @@ export function telaVistoria(ui) {
                        placeholder="${def.medida.min != null ? `mínimo ${def.medida.min}` : 'medida'}">
               </label>` : ''}
 
-            <div class="vt-midias">
-              ${midias.map((m) => `
+            ${(() => {
+    /*
+     * A câmera e a observação só ocupam espaço quando têm o que mostrar.
+     *
+     * Medido: o cartão tinha 394 px de mediana num celular com 645 px úteis —
+     * 1,64 item por tela. Desses 394, a fileira da câmera gastava 76 px e o
+     * campo de observação vazio gastava 44, em TODOS os 86 itens, para algo
+     * usado em talvez quinze. Aberto por padrão só onde a foto é exigida ou já
+     * existe; nos outros vira um par de fichas de 34 px.
+     */
+    const exigeAgora = def.foto === 'sempre'
+      || (def.foto === 'defeito' && (item.estado === 'critico' || item.estado === 'atencao'));
+    const aberto = midias.length > 0 || exigeAgora;
+    const galeria = midias.map((m) => `
                 <div class="vt-foto">
                   ${m.tipo === 'video'
     ? `<video data-midia="${esc(m.id)}" controls playsinline preload="metadata"></video>`
     : `<img data-midia="${esc(m.id)}" alt="${esc(def.nome)}">`}
                   ${soLeitura ? '' : `<button class="vt-tirar" data-apagar="${esc(m.id)}" aria-label="Apagar">×</button>`}
-                </div>`).join('')}
-              ${soLeitura ? '' : `
+                </div>`).join('');
+
+    if (soLeitura) {
+      return (galeria ? `<div class="vt-midias">${galeria}</div>` : '')
+        + (item.nota ? `<div class="vt-nota-lida">${esc(item.nota)}</div>` : '');
+    }
+
+    const camera = `
                 <label class="vt-camera">
                   <input type="file" accept="image/*" capture="environment" hidden data-foto>
                   <span>+ Foto</span>
@@ -454,12 +486,19 @@ export function telaVistoria(ui) {
                 <label class="vt-camera video">
                   <input type="file" accept="video/*" capture="environment" hidden data-video>
                   <span>+ Vídeo</span>
-                </label>`}
-            </div>
+                </label>`;
 
-            ${soLeitura && !item.nota ? '' : `
-              <input class="vt-nota" type="text" data-nota placeholder="Observação (opcional)"
-                     value="${esc(item.nota ?? '')}" ${soLeitura ? 'disabled' : ''}>`}
+    const nota = `<input class="vt-nota" type="text" data-nota
+                     placeholder="Observação (opcional)" value="${esc(item.nota ?? '')}">`;
+
+    return `
+            <div class="vt-midias" ${aberto ? '' : 'hidden'}>${galeria}${camera}</div>
+            ${item.nota ? nota : ''}
+            <div class="vt-fichas">
+              ${aberto ? '' : '<button class="vt-ficha" data-abrir="midia">+ Foto ou vídeo</button>'}
+              ${item.nota ? '' : '<button class="vt-ficha" data-abrir="nota">+ Observação</button>'}
+            </div>`;
+  })()}
             ${precisa ? `<div class="vt-aviso">${precisa.falta === 'nao_avaliado'
     ? 'Falta avaliar este item.'
     : precisa.falta === 'foto_do_defeito'
@@ -690,6 +729,244 @@ export function telaVistoria(ui) {
       desenhar();
     };
 
+    /* ── Navegação: o técnico não deve caçar o próximo item ───────────────
+     *
+     * Medido no celular de 375 px: o cabeçalho fixo come 167 px, sobram 645, e
+     * o cartão do item tem 394 px de mediana — 1,64 item por tela. Percorrer
+     * os 86 itens custava uns cinquenta gestos de rolagem INTERCALADOS com os
+     * 86 toques, e é o intercalar que cansa.
+     *
+     * Verde ou "não se aplica" avança sozinho. Amarelo e vermelho NÃO: esses
+     * pedem foto, e levar o técnico embora do item que ele acabou de reprovar
+     * é levá-lo embora justamente da hora de fotografar.
+     *
+     * A regra usa só o catálogo (`foto: 'sempre'`), nunca decide sobre prova —
+     * quem valida continua sendo o servidor. Errar aqui custa uma rolagem a
+     * mais, e a lista de pendências pega o que passar.
+     */
+    const avancar = (chave, estado) => {
+      if (estado === 'critico' || estado === 'atencao') return;
+
+      const g = d.catalogo.find((x) => x.grupo === atual);
+      const def = g?.itens.find((i) => i.chave === chave);
+      if (def?.foto === 'sempre') {
+        const item = d.itens.find((i) => i.chave === chave);
+        if (!(d.midias[item?.id] ?? []).length) return; // ainda falta a foto
+      }
+
+      const ordem = g?.itens.map((i) => i.chave) ?? [];
+      const daqui = ordem.slice(ordem.indexOf(chave) + 1);
+      const proxima = daqui.find((c) => !d.itens.find((i) => i.chave === c)?.estado);
+
+      if (!proxima) { fimDoGrupo(); return; }
+
+      const alvo = el.querySelector(`.vt-item[data-chave="${CSS.escape(proxima)}"]`);
+      if (!alvo) return;
+      // `start` e não `center`: o cartão tem 394 px e a tela útil 645 — centrar
+      // deixaria o de cima meio visível e o técnico marcaria o item errado.
+      const topo = alvo.getBoundingClientRect().top + scrollY
+        - (el.querySelector('.vistoria-topo')?.getBoundingClientRect().height ?? 0) - 12;
+      scrollTo({ top: topo, behavior: 'smooth' });
+      alvo.classList.add('mirado');
+      setTimeout(() => alvo.classList.remove('mirado'), 900);
+    };
+
+    /**
+     * Fim do grupo: oferece o próximo com pendência, e não vai sozinho.
+     *
+     * Trocar de grupo é trocar a posição do VEÍCULO — descer o elevador, fechar
+     * o capô. Fazer isso sem perguntar arrastaria a tela para longe de onde o
+     * técnico está com as mãos.
+     */
+    const fimDoGrupo = () => {
+      const grupos = d.catalogo.map((x) => x.grupo);
+      const daqui = grupos.slice(grupos.indexOf(atual) + 1);
+      const proximo = daqui.find((g) => pendentePorGrupo[g])
+        ?? grupos.find((g) => pendentePorGrupo[g]);
+
+      const caixa = el.querySelector('#vt-fim');
+      if (!caixa) return;
+      caixa.hidden = false;
+      caixa.innerHTML = proximo
+        ? `<b>Grupo concluído.</b>
+           <button class="btn sm" data-ir-grupo="${esc(proximo)}">
+             Seguir para ${esc(proximo)} →
+           </button>`
+        : '<b>Todos os grupos preenchidos.</b> Confira as pendências e envie ao cliente.';
+      caixa.querySelector('[data-ir-grupo]')?.addEventListener('click', (ev) => {
+        trocarAba(ev.currentTarget.dataset.irGrupo);
+      });
+      caixa.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    };
+
+    /**
+     * A folha dos grupos.
+     *
+     * A tira horizontal media 1494 px de conteúdo dentro de 347 visíveis: 77%
+     * das abas ficavam fora da tela, e chegar em "Após o serviço" custava três
+     * arrastões laterais às cegas — num gesto que ninguém adivinha existir,
+     * porque a tira não mostra que continua.
+     *
+     * Vertical, os dez cabem de uma vez, e cada um diz ONDE o veículo tem de
+     * estar. Isso importa mais do que o nome: o técnico não escolhe "Meia
+     * altura", ele escolhe o que dá para fazer com o carro onde ele está.
+     */
+    const abrirGrupos = () => {
+      const linha = (a) => {
+        const g = d.catalogo.find((x) => x.grupo === a.chave);
+        const n = a.chave === ABA_PEDIDO ? (d.servicos ?? []).length
+          : a.chave === ABA_CARROCERIA ? (d.avarias ?? []).length
+            : pendentePorGrupo[a.chave] ?? 0;
+        const feitos = g
+          ? g.itens.filter((i) => d.itens.find((x) => x.chave === i.chave)?.estado).length
+          : 0;
+        return `
+          <button class="vt-lg ${a.chave === atual ? 'on' : ''}" data-grupo-folha="${esc(a.chave)}">
+            <span class="vt-lg-txt">
+              <b>${esc(a.rotulo)}</b>
+              ${g ? `<span class="fraco">${esc(g.posicao)}</span>` : ''}
+            </span>
+            ${g
+    ? `<span class="vt-lg-conta ${feitos === g.itens.length ? 'cheio' : ''}">
+                 ${feitos}/${g.itens.length}
+               </span>`
+    : `<span class="vt-lg-conta">${n || '—'}</span>`}
+            ${n && g ? `<span class="vt-falta">${n}</span>` : ''}
+          </button>`;
+      };
+
+      ui.abrirGaveta(`
+        <header class="gaveta-topo">
+          <h2>Onde está o veículo?</h2>
+          <button class="btn quiet sm" data-fechar>Fechar</button>
+        </header>
+        <div class="vt-lista-grupos">${abas.map(linha).join('')}</div>`);
+
+      for (const b of document.querySelectorAll('[data-grupo-folha]')) {
+        b.onclick = () => {
+          const alvo = b.dataset.grupoFolha;
+          document.querySelector('.gaveta [data-fechar]')?.click();
+          trocarAba(alvo);
+        };
+      }
+    };
+
+    /** Troca de aba num lugar só — a tira, o fim de grupo e o "ver o primeiro". */
+    const trocarAba = (nome) => {
+      atual = nome;
+      sessionStorage.setItem(`vist.${id}.grupo`, atual);
+      desenhar();
+      el.querySelector('#vt-itens')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
+
+    const irAoPendente = () => {
+      const pend = d.pendencias[0];
+      if (!pend) return;
+      if (pend.grupo !== atual) trocarAba(pend.grupo);
+      setTimeout(() => {
+        el.querySelector(`[data-chave="${CSS.escape(pend.chave)}"]`)
+          ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 60);
+    };
+
+    /* ── Pintura cirúrgica ────────────────────────────────────────────────
+     *
+     * Redesenhar a tela inteira a cada toque custava caro de um jeito que não
+     * aparece no relógio do computador: como o `innerHTML` da raiz é trocado,
+     * toda `<img>` de mídia nasce de novo, sem a marca de "já carregada" — e o
+     * app rebuscava TODAS as fotos do grupo aberto a cada item marcado.
+     *
+     * Medido: com duas fotos no grupo, três toques dispararam seis buscas. Num
+     * grupo real de 23 itens com seis fotos, marcar os dezessete restantes
+     * baixaria cento e duas imagens, no 4G do celular do técnico.
+     *
+     * Estes três pintores tocam só o que mudou. O `desenhar()` continua
+     * existindo para o que muda de estrutura — trocar de aba, abrir avaria.
+     */
+
+    const avisoDePendencia = (falta) => (falta === 'nao_avaliado'
+      ? 'Falta avaliar este item.'
+      : falta === 'foto_do_defeito'
+        ? 'Item fora do conforme exige foto — é ela que sustenta o orçamento.'
+        : 'Este item exige foto mesmo estando tudo certo.');
+
+    /** Repinta UM cartão: a tarja do semáforo, os botões e o aviso. */
+    const pintarItem = (chave) => {
+      const cx = el.querySelector(`.vt-item[data-chave="${CSS.escape(chave)}"]`);
+      if (!cx) return; // o técnico trocou de grupo antes da resposta chegar
+      const item = d.itens.find((i) => i.chave === chave) ?? {};
+      const precisa = d.pendencias.find((x) => x.chave === chave);
+
+      cx.className = `vt-item ${item.estado ? `marcado ${item.estado}` : ''} ${precisa ? 'falta' : ''}`;
+      for (const b of cx.querySelectorAll('[data-estado]')) {
+        b.classList.toggle('on', item.estado === b.dataset.estado);
+      }
+
+      /*
+       * Amarelo ou vermelho passa a exigir foto — e é por isso que o avanço
+       * automático para neste item. Deixar a câmera guardada atrás da ficha
+       * anularia a parada: o técnico fica parado sem o motivo à vista.
+       */
+      if (item.estado === 'critico' || item.estado === 'atencao') {
+        const midias = cx.querySelector('.vt-midias');
+        if (midias?.hidden) {
+          midias.hidden = false;
+          cx.querySelector('[data-abrir="midia"]')?.remove();
+        }
+      }
+
+      const aviso = cx.querySelector('.vt-aviso');
+      if (precisa && !aviso) {
+        cx.insertAdjacentHTML('beforeend',
+          `<div class="vt-aviso">${esc(avisoDePendencia(precisa.falta))}</div>`);
+      } else if (precisa) {
+        aviso.textContent = avisoDePendencia(precisa.falta);
+      } else if (aviso) {
+        aviso.remove();
+      }
+    };
+
+    /** Repinta a barra de progresso e os contadores do topo. */
+    const pintarResumo = () => {
+      const r = d.resumo;
+      const barra = el.querySelector('.vt-barra');
+      if (barra) barra.style.width = `${r.percentual}%`;
+      el.querySelector('.vt-progresso')?.setAttribute('aria-valuenow', String(r.percentual));
+      const conta = el.querySelector('.vt-conta');
+      if (conta) {
+        conta.innerHTML = `
+          <span><b>${r.avaliados}</b> de ${r.total}</span>
+          ${r.critico ? `<span class="tag crit">${r.critico} crítico${r.critico > 1 ? 's' : ''}</span>` : ''}
+          ${r.atencao ? `<span class="tag warn">${r.atencao} atenção</span>` : ''}
+          ${r.ok ? `<span class="tag ok">${r.ok} conforme</span>` : ''}`;
+      }
+    };
+
+    /** Repinta os números das abas, sem recriar a tira nem perder a rolagem. */
+    const pintarAbas = () => {
+      for (const aba of el.querySelectorAll('.vt-aba')) {
+        const g = aba.dataset.grupo;
+        const n = g === ABA_PEDIDO ? (d.servicos ?? []).length
+          : g === ABA_CARROCERIA ? (d.avarias ?? []).length
+            : pendentePorGrupo[g] ?? 0;
+        let selo = aba.querySelector('.vt-falta');
+        if (!n && selo) { selo.remove(); continue; }
+        if (!n) continue;
+        if (!selo) {
+          selo = document.createElement('span');
+          selo.className = `vt-falta ${g.startsWith('@') ? 'conta' : ''}`;
+          aba.appendChild(selo);
+        }
+        selo.textContent = String(n);
+      }
+      // O rodapé muda de forma quando a última pendência cai.
+      const pend = el.querySelector('.vt-pendente');
+      if (pend && !d.pendencias.length) desenhar();
+      else if (pend) pend.innerHTML = `<b>${d.pendencias.length}</b> item(ns) faltando —
+        <button class="btn quiet sm" id="ir-pendente">ver o primeiro</button>`;
+      if (pend) el.querySelector('#ir-pendente')?.addEventListener('click', irAoPendente);
+    };
+
     /**
      * Marca um item — e é a operação mais repetida do app, 86 vezes por vistoria.
      *
@@ -726,7 +1003,11 @@ export function telaVistoria(ui) {
         recontarGrupos();
       }
 
-      desenhar();
+      pintarItem(chave);
+      pintarResumo();
+      pintarAbas();
+      if (corpo.estado) avancar(chave, corpo.estado);
+
       fila.push({
         chave: `${id}:item:${chave}`,
         vistoria: id,
@@ -753,13 +1034,9 @@ export function telaVistoria(ui) {
 
     function ligar() {
       el.querySelectorAll('[data-grupo]').forEach((b) => {
-        b.onclick = () => {
-          atual = b.dataset.grupo;
-          sessionStorage.setItem(`vist.${id}.grupo`, atual);
-          desenhar();
-          el.querySelector('#vt-itens')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-        };
+        b.onclick = () => trocarAba(b.dataset.grupo);
       });
+      el.querySelector('#vt-abrir-grupos')?.addEventListener('click', abrirGrupos);
 
       el.querySelectorAll('.vt-item').forEach((cx) => {
         const chave = cx.dataset.chave;
@@ -774,6 +1051,28 @@ export function telaVistoria(ui) {
         }
         const nota = cx.querySelector('[data-nota]');
         if (nota) nota.onchange = () => marcar(chave, { nota: nota.value || null });
+
+        /*
+         * A ficha revela em vez de redesenhar: `desenhar()` aqui recriaria os
+         * 23 cartões do grupo e rebuscaria as fotos — para mostrar um campo.
+         */
+        cx.querySelectorAll('[data-abrir]').forEach((b) => {
+          b.onclick = () => {
+            if (b.dataset.abrir === 'midia') {
+              cx.querySelector('.vt-midias').hidden = false;
+            } else {
+              const campo = document.createElement('input');
+              campo.className = 'vt-nota';
+              campo.type = 'text';
+              campo.placeholder = 'Observação (opcional)';
+              campo.dataset.nota = '';
+              campo.onchange = () => marcar(chave, { nota: campo.value || null });
+              cx.querySelector('.vt-fichas').before(campo);
+              campo.focus();
+            }
+            b.remove();
+          };
+        });
 
         const foto = cx.querySelector('[data-foto]');
         if (foto) foto.onchange = () => enviarMidia(cx, chave, foto.files[0], 'foto');
@@ -790,14 +1089,7 @@ export function telaVistoria(ui) {
         });
       });
 
-      el.querySelector('#ir-pendente')?.addEventListener('click', () => {
-        const p = d.pendencias[0];
-        atual = p.grupo;
-        sessionStorage.setItem(`vist.${id}.grupo`, atual);
-        desenhar();
-        el.querySelector(`[data-chave="${CSS.escape(p.chave)}"]`)
-          ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      });
+      el.querySelector('#ir-pendente')?.addEventListener('click', irAoPendente);
 
       ligarCarroceria();
       ligarPedido();
