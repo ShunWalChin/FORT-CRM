@@ -177,6 +177,142 @@ create table if not exists credenciais (
 );
 create unique index if not exists ux_credencial_chave on credenciais(empresa_id, chave);
 
+-- ═══ Vida do veiculo ══════════════════════════════════════════════════════
+-- Leitura de hodometro, com data e procedencia.
+--
+-- A media de km/mes era uma coluna digitada uma vez e nunca revista. Um
+-- caminhao que rodava 4.000 km/mes e passou a rodar 1.200 continuava sendo
+-- cobrado como se rodasse 4.000 — e a revisao prevista caia meses antes da
+-- hora, ensinando o operador a desconfiar da previsao.
+--
+-- Com o historico, a media e o que o veiculo REALMENTE andou entre duas
+-- leituras. E leitura errada se conserta apagando a linha, sem reescrever a
+-- historia toda.
+create table if not exists veiculo_km (
+  id          text primary key,
+  empresa_id  text not null references empresas(id) on delete cascade,
+  veiculo_id  text not null references veiculos(id) on delete cascade,
+  km          integer not null,
+  medido_em   text not null,
+  -- De onde veio o numero: da OS, da vistoria, ou digitado no balcao.
+  origem      text not null default 'manual'
+              check (origem in ('manual','ordem_servico','vistoria','importacao')),
+  origem_id   text,
+  criado_por  text,
+  criado_em   text not null
+);
+create index if not exists ix_km_veiculo on veiculo_km(empresa_id, veiculo_id, medido_em);
+
+-- Plano de manutencao: o que ESTE veiculo precisa, e quando.
+--
+-- E o que transforma o CRM de registro do que ja aconteceu em previsao do que
+-- vai acontecer. Cada linha e um servico com intervalo proprio: filtro de
+-- combustivel a cada 20.000 km, bicos a cada 120.000, oleo a cada 6 meses OU
+-- 10.000 km — o que vencer primeiro.
+create table if not exists planos_manutencao (
+  id             text primary key,
+  empresa_id     text not null references empresas(id) on delete cascade,
+  veiculo_id     text not null references veiculos(id) on delete cascade,
+  servico_chave  text not null,
+  servico_nome   text not null,
+  intervalo_km   integer,
+  intervalo_meses integer,
+  ultimo_km      integer,
+  ultimo_em      text,
+  -- Calculados a cada leitura de km. Guardados para a fila poder consultar
+  -- sem recalcular a projecao de toda a frota a cada abertura de tela.
+  proximo_km     integer,
+  previsto_em    text,
+  ativo          integer not null default 1,
+  criado_em      text not null,
+  atualizado_em  text
+);
+create index if not exists ix_plano_veiculo on planos_manutencao(empresa_id, veiculo_id, ativo);
+create index if not exists ix_plano_previsto on planos_manutencao(empresa_id, previsto_em);
+create unique index if not exists ux_plano_servico
+  on planos_manutencao(empresa_id, veiculo_id, servico_chave);
+
+-- ═══ Vistoria de entrada (check-list) ═════════════════════════════════════
+-- A vistoria e o documento que separa "o que ja estava" de "o que a oficina
+-- fez". Sem ela, todo arranhao encontrado na entrega vira discussao sem
+-- arbitro — e a oficina perde as duas: o cliente e a razao.
+--
+-- Por isso ela e PRE-SERVICO e tem aceite: a OS so anda depois que o dono
+-- concorda com o estado registrado.
+create table if not exists vistorias (
+  id            text primary key,
+  empresa_id    text not null references empresas(id) on delete cascade,
+  cliente_id    text not null references clientes(id) on delete cascade,
+  veiculo_id    text not null references veiculos(id) on delete cascade,
+  ordem_id      text references ordens_servico(id) on delete set null,
+  numero        text not null,
+  km            integer,
+  nivel_combustivel text,
+  status        text not null default 'rascunho'
+                check (status in ('rascunho','aguardando_aceite','aceita','recusada','cancelada')),
+  tecnico       text,
+  observacao    text,
+  iniciada_em   text not null,
+  concluida_em  text,
+
+  -- Aceite do cliente. conteudo_hash e o que torna o aceite verificavel:
+  -- e o resumo do que foi aceito. Alterar um item depois muda o hash, e a
+  -- divergencia aparece — o aceite deixa de casar com o documento.
+  aceite_em     text,
+  aceite_nome   text,
+  aceite_cpf    text,
+  aceite_meio   text check (aceite_meio in ('assinatura_tela','whatsapp','presencial_verbal')),
+  aceite_assinatura text,
+  conteudo_hash text,
+  recusa_motivo text
+);
+create index if not exists ix_vistoria_veiculo on vistorias(empresa_id, veiculo_id);
+create index if not exists ix_vistoria_status on vistorias(empresa_id, status);
+create unique index if not exists ux_vistoria_numero on vistorias(empresa_id, numero);
+
+create table if not exists vistoria_itens (
+  id          text primary key,
+  empresa_id  text not null references empresas(id) on delete cascade,
+  vistoria_id text not null references vistorias(id) on delete cascade,
+  grupo       text not null,
+  chave       text not null,
+  nome        text not null,
+  -- Semaforo: verde passa, amarelo observar, vermelho nao roda. na e para o
+  -- item que nao existe naquele veiculo — e diferente de nao ter sido olhado.
+  estado      text check (estado in ('ok','atencao','critico','na')),
+  medida      real,
+  unidade     text,
+  nota        text,
+  posicao     integer not null default 0
+);
+create index if not exists ix_item_vistoria on vistoria_itens(empresa_id, vistoria_id);
+create unique index if not exists ux_item_chave on vistoria_itens(empresa_id, vistoria_id, chave);
+
+-- Foto e video ficam em ARQUIVO, e so o ponteiro no banco.
+--
+-- Blob em SQLite levaria o banco de 370 KB a gigabytes, e com ele o backup:
+-- VACUUM INTO copia o banco inteiro toda madrugada. Com o arquivo de fora,
+-- o backup do banco continua em segundos e a midia tem politica propria.
+create table if not exists vistoria_midias (
+  id          text primary key,
+  empresa_id  text not null references empresas(id) on delete cascade,
+  vistoria_id text not null references vistorias(id) on delete cascade,
+  item_id     text references vistoria_itens(id) on delete cascade,
+  tipo        text not null check (tipo in ('foto','video')),
+  arquivo     text not null,
+  bytes       integer not null default 0,
+  largura     integer,
+  altura      integer,
+  duracao_s   real,
+  -- Impede a mesma foto de entrar duas vezes, e prova que o arquivo nao mudou
+  -- depois do aceite.
+  sha256      text,
+  legenda     text,
+  criado_por  text,
+  criado_em   text not null
+);
+create index if not exists ix_midia_vistoria on vistoria_midias(empresa_id, vistoria_id);
+
 -- Dimensao de campanha: o nome por tras do source_ad_id.
 --
 -- Lead de Click-to-WhatsApp NAO TEM UTM. Nao houve navegador, nao houve pagina,

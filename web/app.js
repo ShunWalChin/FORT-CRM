@@ -12,6 +12,7 @@
 
 import { manualHtml, ligarManual } from './manual.js';
 import { telaCentral, telaConversoes, telaAtribuicao } from './telas-aquisicao.js';
+import { telaVistorias, telaVistoria, telaVeiculo } from './oficina.js';
 import { telaCanais } from './tela-canais.js';
 import { icone, aplicarTema, temaAtual, desenharSeletorDeTema } from './ui.js';
 import {
@@ -213,6 +214,14 @@ const MENU = [
   { grupo: 'POR EMPRESA' },
   { id: 'frota', nome: 'Frota e veículos', ic: 'frota', empresas: ['MP'] },
   { id: 'ordens', nome: 'Ordens de serviço', ic: 'ordens', empresas: ['MP'] },
+  /*
+   * Vistoria só existe onde há elevador.
+   *
+   * `empresas: ['MP']` esconde do menu; quem digitar o endereço na Agrofort
+   * recebe a tela, e o servidor recusa cada rota porque o veículo não existe
+   * no escopo daquela instância. São duas barreiras, e a que vale é a segunda.
+   */
+  { id: 'vistorias', nome: 'Vistorias de entrada', ic: 'ordens', empresas: ['MP'], destaque: true },
   { id: 'pedidos', nome: 'Pedidos e recompra', ic: 'pedidos', empresas: ['AF', 'FT'] },
   { id: 'catalogo', nome: 'Catálogo', ic: 'catalogo' },
   { grupo: 'AQUISIÇÃO' },
@@ -1068,7 +1077,11 @@ function perguntar({
                     ${esc(o.rotulo)}
                   </button>`).join('')}
               </div>`
-    : `<input id="dlg-${esc(c.nome)}" name="${esc(c.nome)}"
+    : c.tipo === 'selecao'
+      ? `<select id="dlg-${esc(c.nome)}" name="${esc(c.nome)}">
+                ${c.opcoes.map((o) => `<option value="${esc(o.valor)}">${esc(o.rotulo)}</option>`).join('')}
+              </select>`
+      : `<input id="dlg-${esc(c.nome)}" name="${esc(c.nome)}"
                  type="${c.tipo === 'decimal' ? 'text' : esc(c.tipo ?? 'text')}"
                  ${c.tipo === 'decimal' ? 'inputmode="decimal"' : ''}
                  ${c.passo ? `step="${esc(c.passo)}"` : ''}
@@ -1849,6 +1862,10 @@ function formularioCliente() {
     <form id="form-cliente" style="margin-top:18px">
       <div class="campo"><label>Nome *</label><input name="nome" required></div>
       <div class="campo"><label>Telefone (com DDI)</label><input name="telefone" placeholder="5538998112233"></div>
+      <div class="campo"><label>CPF ou CNPJ</label>
+        <input name="cpf" inputmode="numeric" placeholder="somente números">
+        <div class="campo-dica">Guardado sem máscara: com e sem ponto seriam duas pessoas diferentes na busca.</div>
+      </div>
       <div class="campo"><label>E-mail</label><input name="email" type="email"></div>
       <div class="campo"><label>Cidade</label><input name="cidade"></div>
       <div class="campo"><label>Perfil</label>
@@ -1951,7 +1968,7 @@ async function abrirFicha(id) {
         return `<div class="cartao" style="margin-bottom:9px">
           <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
             <div>
-              <span class="forte" style="font-family:var(--mono);letter-spacing:1px">${esc(v.placa)}</span>
+              <button class="placa-link" data-veiculo="${esc(v.id)}">${esc(v.placa)}</button>
               <div class="fraco">${esc([v.marca, v.modelo, v.ano].filter(Boolean).join(' '))} · ${esc(v.motorizacao ?? '')}</div>
             </div>
             <div style="text-align:right">
@@ -1961,7 +1978,18 @@ async function abrirFicha(id) {
             </div>
           </div>
         </div>`;
-      }).join('')}` : ''}
+      }).join('')}
+      <button class="btn quiet" data-novo-veiculo="${esc(d.cliente.id)}" style="width:100%">
+        + Cadastrar outro veículo
+      </button>` : `
+      <h2 class="secao">Veículos</h2>
+      <div class="aviso">
+        <strong>Nenhum veículo neste cliente.</strong> É a placa que amarra o histórico:
+        sem ela, ordem de serviço e vistoria não têm a que pertencer.
+      </div>
+      <button class="btn" data-novo-veiculo="${esc(d.cliente.id)}" style="width:100%">
+        + Cadastrar veículo
+      </button>`}
 
     ${d.ordens.length ? `
       <h2 class="secao">Ordens de serviço</h2>
@@ -2155,6 +2183,71 @@ const form = document.querySelector('#form-ficha');
     fecharGaveta();
     navegar();
   });
+
+  // A placa leva à vida do veículo: histórico, uso e o que vem a seguir.
+  document.querySelectorAll('[data-veiculo]').forEach((b) => {
+    b.onclick = () => {
+      fecharGaveta();
+      location.hash = `#/veiculo?id=${b.dataset.veiculo}`;
+    };
+  });
+
+  document.querySelector('[data-novo-veiculo]')?.addEventListener('click', () => {
+    cadastrarVeiculo(c);
+  });
+}
+
+/**
+ * Cadastro de veículo, a partir da ficha do dono.
+ *
+ * Nasce daqui, e não de uma tela própria, porque veículo sem dono não existe
+ * para a oficina: é a placa que amarra o histórico, e o histórico é de alguém.
+ *
+ * O km inicial não é opcional por acaso — é a primeira das duas leituras de que
+ * a previsão precisa. Sem ele o veículo entra sem uso conhecido e não aparece
+ * em previsão nenhuma até alguém lembrar de voltar aqui.
+ */
+async function cadastrarVeiculo(cliente) {
+  const r = await perguntar({
+    contexto: cliente.nome,
+    titulo: 'Cadastrar veículo',
+    texto: 'A placa identifica o veículo em toda a oficina — ordem de serviço, vistoria e '
+      + 'histórico penduram nela. O km de hoje é a primeira leitura do hodômetro.',
+    campos: [
+      { nome: 'placa', rotulo: 'Placa', obrigatorio: true, dica: 'ABC1D23 ou ABC1234' },
+      { nome: 'marca', rotulo: 'Marca', dica: 'Volvo, Scania, Mercedes…' },
+      { nome: 'modelo', rotulo: 'Modelo', dica: 'FH 460' },
+      { nome: 'ano', rotulo: 'Ano', tipo: 'number', min: 1950, max: 2100 },
+      { nome: 'km_ultima', rotulo: 'Km de hoje', tipo: 'decimal', min: 0, max: 3000000,
+        ajuda: 'É a primeira das duas leituras que a previsão de manutenção exige.' },
+      { nome: 'chassi', rotulo: 'Chassi (opcional)',
+        ajuda: 'Sobrevive à troca de placa — e placa troca.' },
+      { nome: 'apelido', rotulo: 'Como a oficina chama (opcional)', dica: 'o basculante do Antônio' },
+    ],
+    confirmar: 'Cadastrar veículo',
+  });
+  if (!r) return;
+
+  try {
+    const v = await api('/veiculos', {
+      method: 'POST',
+      corpo: { ...r, cliente_id: cliente.id },
+    });
+    toast(`${v.placa} cadastrado`, 'Plano de manutenção criado com os intervalos padrão.');
+    fecharGaveta();
+    location.hash = `#/veiculo?id=${v.id}`;
+  } catch (e) {
+    if (e.codigo === 'placa_repetida' && e.detalhe?.veiculoId) {
+      const ir = await perguntar({
+        titulo: 'Esta placa já existe',
+        texto: e.message + ' Quer abrir o veículo que já está cadastrado?',
+        confirmar: 'Abrir o veículo',
+      });
+      if (ir) { fecharGaveta(); location.hash = `#/veiculo?id=${e.detalhe.veiculoId}`; }
+      return;
+    }
+    toast('Não deu para cadastrar', e.message, 'erro');
+  }
 }
 
 // ── Frota ───────────────────────────────────────────────────────────────────
@@ -2709,12 +2802,19 @@ const UI = {
   api, esc, moeda, numero, data, dataHora, toast, perguntar,
   abrirGaveta: (html) => abrirGaveta(html),
   navegar: () => navegar(),
+  // O envio de mídia é `fetch` cru — binário não passa por `api()`, que
+  // serializa JSON. Estas duas dão a ele o mesmo contexto das outras chamadas.
+  token: () => estado.token,
+  instancia: () => estado.empresa?.instancia ?? '',
 };
 
 VISOES.central = telaCentral(UI);
 VISOES.conversoes = telaConversoes(UI);
 VISOES.atribuicao = telaAtribuicao(UI);
 VISOES.canais = telaCanais(UI);
+VISOES.vistorias = telaVistorias(UI);
+VISOES.vistoria = telaVistoria(UI);
+VISOES.veiculo = telaVeiculo(UI);
 
 // ── Manual ──────────────────────────────────────────────────────────────────
 VISOES.manual = async (el) => {

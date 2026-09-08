@@ -25,6 +25,18 @@ const TETOS = [
   // origem é folgado para um formulário de site e apertado para quem quiser
   // encher a triagem de lixo.
   { padrao: /^POST \/api\/entrada\//, max: 20 },
+  /*
+   * Vistoria: 63 itens marcados em poucos minutos, mais as fotos.
+   *
+   * O teto geral de escrita (60/min) bloqueava o tecnico NO MEIO do
+   * check-list — descoberto rodando o fluxo inteiro, que parou no item 54 com
+   * `limite_excedido`. E o pior momento possivel para o sistema recusar: o
+   * carro esta no elevador, o cliente esperando, e metade da vistoria feita.
+   *
+   * 240/min sustenta quatro tecnicos vistoriando ao mesmo tempo atras do mesmo
+   * IP da oficina, e continua sendo teto.
+   */
+  { padrao: /^(POST|PATCH|DELETE) \/api\/vistorias\//, max: 240 },
   // Escrita em geral.
   { padrao: /^(POST|PATCH|DELETE) /, max: 60 },
   // Busca ao digitar: cada tecla pode virar uma consulta. Balde proprio para

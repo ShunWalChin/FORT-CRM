@@ -73,13 +73,36 @@ function casar(padrao, metodo, caminho) {
   return params;
 }
 
+/*
+ * Teto do corpo, por rota.
+ *
+ * 1 MB serve a JSON e barra abuso. Foto de vistoria nao cabe: um celular
+ * moderno produz 4 a 8 MB por foto, e video curto passa de 30. Levantar o teto
+ * geral para acomodar midia abriria as outras cinquenta rotas para corpos de
+ * dezenas de megabytes — e este e um processo unico, com SQLite sincrono.
+ *
+ * Por isso o teto e da ROTA de midia, e so dela.
+ */
+const TETO_PADRAO = 1024 * 1024;
+const TETO_MIDIA = 48 * 1024 * 1024;
+
+function tetoDoCorpo(req) {
+  return /^\/api\/vistorias\/[^/]+\/midia$/.test(new URL(req.url, 'http://x').pathname)
+    ? TETO_MIDIA
+    : TETO_PADRAO;
+}
+
 async function lerCorpo(req) {
   if (req.method === 'GET' || req.method === 'HEAD') return null;
+  const teto = tetoDoCorpo(req);
   const pedacos = [];
   let bytes = 0;
   for await (const p of req) {
     bytes += p.length;
-    if (bytes > 1024 * 1024) throw new ErroHttp(413, 'corpo_grande', 'Corpo acima de 1 MB.');
+    if (bytes > teto) {
+      throw new ErroHttp(413, 'corpo_grande',
+        `Corpo acima de ${Math.round(teto / 1024 / 1024)} MB.`);
+    }
     pedacos.push(p);
   }
   if (!pedacos.length) return null;
@@ -97,6 +120,9 @@ async function lerCorpo(req) {
    */
   const bruto = Buffer.concat(pedacos);
   req.corpoBruto = bruto;
+
+  // Binario de midia nao passa por JSON.parse: quem consome pega `corpoBruto`.
+  if (teto === TETO_MIDIA) return null;
 
   try {
     return JSON.parse(bruto.toString('utf8'));
@@ -181,6 +207,24 @@ const servidor = createServer(async (req, res) => {
         // em TEXTO PURO. Devolver JSON faz a Meta recusar o endpoint.
         if (saida && typeof saida === 'object' && '__texto' in saida) {
           return responder(res, 200, saida.__texto, 'text/plain; charset=utf-8');
+        }
+        /*
+         * Foto e video saem como bytes, e nao embrulhados em JSON.
+         *
+         * Base64 dentro de `{ok, dados}` infla 33% e obriga o navegador a
+         * montar a imagem inteira em memoria antes de desenhar. Como arquivo,
+         * a tag <img> cuida disso sozinha — e o cache do navegador funciona.
+         */
+        if (saida && typeof saida === 'object' && '__binario' in saida) {
+          res.writeHead(200, {
+            'content-type': saida.__tipo ?? 'application/octet-stream',
+            'content-length': saida.__binario.length,
+            'x-content-type-options': 'nosniff',
+            // Midia de vistoria e imutavel: o id nunca aponta para outro
+            // arquivo. `private` porque e documento de um cliente so.
+            'cache-control': 'private, max-age=31536000, immutable',
+          });
+          return res.end(saida.__binario);
         }
         return responder(res, 200, saida);
       }

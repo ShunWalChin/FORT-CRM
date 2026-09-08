@@ -1,0 +1,198 @@
+/* =============================================================================
+   Oficina: vistoria de entrada e vida do veículo.
+
+   Desenhada para o CELULAR primeiro, e não adaptada depois. A vistoria é feita
+   em pé, ao lado do carro, com uma mão segurando o telefone e a outra na
+   lanterna. Isso decide quase tudo aqui: um grupo por vez em vez de sessenta e
+   três itens numa lista só, botões de estado do tamanho do polegar, e a câmera
+   a um toque de distância do item que está sendo avaliado.
+   ============================================================================= */
+
+.vistoria-topo {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 12px 14px; margin-bottom: 12px;
+}
+.vt-linha { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.vt-num { font: 600 14px var(--mono); color: var(--txt-hi); }
+.vt-veiculo { font-size: 14px; color: var(--dim); margin-bottom: 10px; }
+.vt-veiculo b { color: var(--txt-hi); margin-right: 7px; }
+
+.vt-progresso { height: 6px; background: var(--surface-3); border-radius: 20px; overflow: hidden; }
+.vt-barra { height: 100%; background: var(--acento); transition: width .25s; }
+.vt-conta {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin-top: 8px; font-size: 12.5px; color: var(--dim);
+}
+.vt-conta b { color: var(--txt-hi); font-size: 15px; }
+
+/* As abas de grupo rolam de lado: onze não cabem empilhadas sem comer a tela. */
+.vt-grupos {
+  display: flex; gap: 7px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px;
+  scrollbar-width: none;
+}
+.vt-grupos::-webkit-scrollbar { display: none; }
+.vt-aba {
+  flex: 0 0 auto; min-height: 44px; padding: 0 14px;
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--surface); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 20px;
+  font: 600 13px var(--sans); cursor: pointer; white-space: nowrap;
+}
+.vt-aba.on { background: var(--acento); color: var(--sobre-acento); border-color: var(--acento); }
+.vt-falta {
+  background: var(--crit); color: var(--sobre-crit);
+  font: 700 10px var(--mono); border-radius: 20px; padding: 2px 6px;
+  min-width: 18px; text-align: center;
+}
+.vt-aba.on .vt-falta { background: var(--sobre-acento); color: var(--acento); }
+
+/* A tarja da esquerda é o semáforo do item: dá para varrer a tela inteira sem
+   ler uma palavra e ver onde estão os problemas. */
+.vt-item {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-lg); padding: 14px 15px; margin-bottom: 10px;
+}
+.vt-item.marcado.ok { border-left-color: var(--ok); }
+.vt-item.marcado.atencao { border-left-color: var(--warn); }
+.vt-item.marcado.critico { border-left-color: var(--crit); }
+.vt-item.marcado.na { border-left-color: var(--line-strong); }
+/*
+ * Pendência não é reprovação.
+ *
+ * Pintar o cartão inteiro de vermelho fazia um item marcado CONFORME, a que só
+ * faltava a foto obrigatória, parecer reprovado — a tarja da esquerda dizia
+ * verde e o fundo dizia vermelho. A tarja é o estado do item; a pendência é
+ * outra coisa, e ganha o tracejado e a frase que já explica o que falta.
+ */
+.vt-item.falta {
+  outline: 1.5px dashed var(--warn);
+  outline-offset: -1px;
+}
+/* Item ainda não avaliado é o único caso em que a própria tarja fica pendente. */
+.vt-item.falta:not(.marcado) { border-left-color: var(--warn); }
+
+.vt-item-topo { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.vt-item h3 { font-size: 16px; color: var(--txt-hi); margin: 0; flex: 1; }
+.vt-sel {
+  font: 600 9.5px var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--acento); border: 1px solid var(--acento-borda);
+  border-radius: 3px; padding: 2px 6px;
+}
+/* A dica é o que torna isto guiado em vez de uma lista de nomes. Um check-list
+   preenchido no automático não vale como prova — nem para o cliente, nem para
+   a oficina. */
+.vt-dica { font-size: 13px; color: var(--dim); line-height: 1.5; margin: 6px 0 12px; }
+
+.vt-estados { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.vt-estado {
+  min-height: 48px; border-radius: var(--radius); cursor: pointer;
+  background: var(--ground); border: 1px solid var(--line-strong); color: var(--dim);
+  font: 600 12.5px var(--sans);
+}
+.vt-estado.ok.on { background: var(--ok); border-color: var(--ok); color: var(--sobre-acento); }
+.vt-estado.warn.on { background: var(--warn); border-color: var(--warn); color: #1a1200; }
+.vt-estado.crit.on { background: var(--crit); border-color: var(--crit); color: var(--sobre-crit); }
+.vt-estado.na.on { background: var(--surface-3); border-color: var(--line-strong); color: var(--txt-hi); }
+.vt-estado:disabled { opacity: .55; cursor: default; }
+
+.vt-medida { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.vt-medida span {
+  font: 600 12px var(--mono); color: var(--faint); min-width: 54px; text-align: right;
+}
+.vt-medida input {
+  flex: 1; min-height: 44px; padding: 0 12px;
+  background: var(--ground); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); color: var(--txt-hi); font: 600 15px var(--mono);
+}
+
+.vt-midias { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.vt-foto { position: relative; width: 84px; height: 84px; }
+.vt-foto img, .vt-foto video {
+  width: 100%; height: 100%; object-fit: cover;
+  border-radius: var(--radius); border: 1px solid var(--line-strong); background: var(--ground);
+}
+.vt-tirar {
+  position: absolute; top: -7px; right: -7px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--crit); color: var(--sobre-crit); border: 0;
+  font: 700 16px/1 var(--sans); cursor: pointer;
+}
+.vt-camera {
+  display: grid; place-content: center;
+  width: 84px; height: 84px; cursor: pointer;
+  border: 1.5px dashed var(--line-strong); border-radius: var(--radius);
+  color: var(--dim); font: 600 12px var(--sans); text-align: center;
+}
+.vt-camera:active { border-color: var(--acento); color: var(--acento); }
+.vt-camera.video { border-style: dotted; }
+
+.vt-nota {
+  width: 100%; min-height: 44px; margin-top: 10px; padding: 0 12px;
+  background: var(--ground); border: 1px solid var(--line);
+  border-radius: var(--radius); color: var(--txt); font-size: 13.5px;
+}
+.vt-aviso {
+  margin-top: 10px; padding: 8px 11px; border-radius: var(--radius);
+  background: var(--warn-dim); color: var(--warn); font-size: 12.5px; line-height: 1.45;
+}
+
+.vt-rodape {
+  position: sticky; bottom: 0; z-index: 21;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg); padding: 12px 14px; margin-top: 14px;
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, .16);
+}
+.vt-rodape .btn { width: 100%; min-height: 50px; margin-top: 10px; }
+.vt-pendente { font-size: 13.5px; color: var(--warn); }
+.vt-pendente b { font-size: 16px; }
+.vt-pronto { font-size: 13.5px; color: var(--ok); line-height: 1.5; }
+.vt-assinatura {
+  display: block; width: 100%; max-width: 320px; margin: 12px 0;
+  background: var(--ground); border: 1px solid var(--line); border-radius: var(--radius);
+}
+
+/* `touch-action: none` é obrigatório: sem ele o dedo rola a página em vez de
+   assinar, e a assinatura sai em pedaços. */
+.assinatura-tela {
+  width: 100%; height: 160px; touch-action: none; cursor: crosshair;
+  background: var(--ground); border: 1px solid var(--line-strong); border-radius: var(--radius);
+}
+
+/* ── Linha do tempo do veículo ─────────────────────────────────────────── */
+.linha-tempo { border-left: 2px solid var(--line); margin-left: 8px; padding-left: 18px; }
+.lt-item { position: relative; padding: 10px 0; }
+.lt-item::before {
+  content: ''; position: absolute; left: -25px; top: 16px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--line-strong);
+}
+.lt-item.ordem_servico::before { border-color: var(--acento); }
+.lt-item.vistoria::before { border-color: var(--ok); }
+.lt-item.leitura_km::before { border-color: var(--dim); }
+.lt-quando { font: 11px var(--mono); color: var(--faint); }
+.lt-corpo b { color: var(--txt-hi); font-size: 14.5px; }
+.lt-corpo .fraco { font-size: 12.5px; }
+
+.linha-crit td { background: var(--crit-dim); }
+.ficha-dl { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.ficha-dl .par { background: var(--surface); padding: 10px 14px; }
+
+@media (max-width: 640px) {
+  /* Quatro colunas de estado a 375 px dão 82 px cada, e o rótulo quebra.
+     "N/A" desce para a linha de baixo e os três que importam ficam largos. */
+  .vt-estados { grid-template-columns: repeat(3, 1fr); }
+  .vt-estado.na { grid-column: 1 / -1; min-height: 44px; }
+  .vt-item { padding: 13px 13px; }
+  .vt-foto, .vt-camera { width: 76px; height: 76px; }
+  .assinatura-tela { height: 200px; }
+}
+
+/* A placa é o identificador do veículo em toda a oficina — e é clicável. */
+.placa-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: 600 15px var(--mono); letter-spacing: 1px;
+  color: var(--acento); text-decoration: underline; text-underline-offset: 3px;
+}
+.placa-link:active { color: var(--txt-hi); }

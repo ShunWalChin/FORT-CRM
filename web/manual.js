@@ -709,7 +709,7 @@ export const LIMITES = [
   'As senhas desta demonstração são simples e a base é fictícia — nenhum dado real de cliente está aqui.',
   'A porta pública de captação e o webhook de Click-to-WhatsApp já funcionam. WhatsApp orgânico, Instagram e Mercado Livre ainda dependem de conector — em "Canais de entrada" eles aparecem como "Falta conector".',
   'Os eventos de conversão são montados e auditados, mas não saem para a Meta nem para o Google enquanto DEMO_MODE estiver ligado.',
-  'Não dá para cadastrar veículo, ordem de serviço ou item de catálogo pela interface — só clientes e oportunidades nascem por aqui.',
+  'Não dá para cadastrar ordem de serviço nem item de catálogo pela interface. Cliente, oportunidade e veículo já nascem por aqui.',
   'Edição de catálogo, metas, relatórios em PDF e aplicativo de celular estão na fila de evolução.',
 ];
 

@@ -45,6 +45,19 @@ export const COLUNAS_ESPERADAS = [
 
   // Referencia do pedido/contrato/OS da venda ganha.
   { tabela: 'oportunidades', coluna: 'pedido_ref', definicao: 'text' },
+
+  // Oficina: identificacao do cliente e do veiculo.
+  { tabela: 'clientes', coluna: 'cpf', definicao: 'text' },
+  { tabela: 'veiculos', coluna: 'chassi', definicao: 'text' },
+  { tabela: 'veiculos', coluna: 'renavam', definicao: 'text' },
+  { tabela: 'veiculos', coluna: 'cor', definicao: 'text' },
+  { tabela: 'veiculos', coluna: 'combustivel', definicao: "text not null default 'diesel_s10'" },
+  { tabela: 'veiculos', coluna: 'apelido', definicao: 'text' },
+  { tabela: 'veiculos', coluna: 'observacao', definicao: 'text' },
+  { tabela: 'veiculos', coluna: 'ativo', definicao: 'integer not null default 1' },
+
+  // A vistoria trava o inicio da OS.
+  { tabela: 'ordens_servico', coluna: 'vistoria_id', definicao: 'text' },
 ];
 
 /**

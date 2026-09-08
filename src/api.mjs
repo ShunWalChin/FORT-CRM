@@ -25,6 +25,17 @@ import { extrairAtribuicao, identificadoresHash, temSinal } from './atribuicao.m
 import { EVENTOS } from './conversoes.mjs';
 import { resolverAnuncios, LOTE_MAXIMO } from './campanhas.mjs';
 import {
+  CHECKLIST, ESTADOS, TOTAL_ITENS, exigeFoto, hashConteudo, itensDoChecklist,
+  pendencias, podeIniciarOS, proximoNumero, resumo as resumoVistoria,
+} from './vistoria.mjs';
+import {
+  PLANO_PADRAO, kmEstimado, linhaDoTempo, mediaKmMes, projetarServico,
+  recalcular, registrarKm, semearPlano, validarKm,
+} from './veiculos.mjs';
+import { mkdirSync, createWriteStream } from 'node:fs';
+import { readFile, unlink, stat } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import {
   CREDENCIAIS, apagarCredencial, gravarCredencial, lerCredencial, listarCredenciais, temChave,
 } from './cofre.mjs';
 import { reancorar, diagnosticoDaAncora } from './reancorar.mjs';
@@ -377,6 +388,13 @@ const PAPEL_MINIMO = {
    * (que nunca devolve o valor) fica em gestor, para quem cuida da campanha
    * poder conferir se esta configurado.
    */
+  /*
+   * A vistoria e trabalho de quem esta com o veiculo na mao: operador.
+   * Cancelar uma vistoria ja aceita apaga a prova do estado de entrada — e
+   * essa e a unica parte que sobe para gestor.
+   */
+  'DELETE /api/vistorias/:id': 'gestor',
+
   'GET /api/credenciais': 'gestor',
   'PUT /api/credenciais/:chave': 'soberano',
   'DELETE /api/credenciais/:chave': 'soberano',
@@ -431,6 +449,24 @@ function negarPorPapel(rota, papel) {
 function tokenDeMarketing(escopo) {
   if (!escopo) return process.env.FORTCRM_META_MARKETING_TOKEN || null;
   return lerCredencial(escopo, 'meta_marketing_token').valor;
+}
+
+/** Texto limpo e limitado, ou null. Usado por todas as escritas de oficina. */
+function texto(v, max) {
+  const t = String(v ?? '').trim();
+  return t ? t.slice(0, max) : null;
+}
+
+/**
+ * Onde a midia da vistoria mora.
+ *
+ * Irmao do diretorio das instancias, e nao dentro dele: `VACUUM INTO` copia o
+ * diretorio dos bancos toda madrugada, e foto e video nao tem por que entrar
+ * nessa copia — sao imutaveis depois de gravados e tem politica de retencao
+ * propria.
+ */
+function diretorioDeMidia(fed) {
+  return join(dirname(fed.diretorio), 'midia');
 }
 
 export const ROTAS = {
@@ -728,14 +764,15 @@ export const ROTAS = {
     const seguro = (oque, fn) => { try { fn(); } catch { indisponiveis.push(oque); } };
 
     seguro('clientes', () => escopo.todas(
-      `select id, nome, telefone, cidade, perfil from clientes
+      `select id, nome, telefone, cpf, cidade, perfil from clientes
        where {ESCOPO} and (sem_acento(nome) like ? or sem_acento(coalesce(email,'')) like ?
-                           or (? <> '' and telefone like ?))
+                           or (? <> '' and telefone like ?)
+                           or (? <> '' and coalesce(cpf,'') like ?))
        order by nome limit 8`,
-      like, like, foneLike, foneLike,
+      like, like, foneLike, foneLike, foneLike, foneLike,
     ).forEach((c) => achados.push({
       tipo: 'cliente', id: c.id, titulo: c.nome,
-      sub: [c.cidade, c.telefone].filter(Boolean).join(' · '),
+      sub: [c.cidade, c.telefone, c.cpf].filter(Boolean).join(' · '),
       rota: `clientes?ficha=${encodeURIComponent(c.id)}`,
       ponto: pontos(c.nome, c.telefone),
     })));
@@ -896,7 +933,12 @@ export const ROTAS = {
     const id = novoId();
     const consentimento = corpo.consentimento_lgpd ? 1 : 0;
     escopo.inserir('clientes', {
-      id, nome: corpo.nome, telefone: corpo.telefone ?? null, email: corpo.email ?? null,
+      id,
+      nome: corpo.nome,
+      telefone: corpo.telefone ?? null,
+      // Só dígitos: com e sem máscara seriam duas pessoas diferentes na busca.
+      cpf: String(corpo.cpf ?? '').replace(/\D/g, '') || null,
+      email: corpo.email ?? null,
       cidade: corpo.cidade ?? null, uf: corpo.uf ?? null,
       perfil: corpo.perfil ?? 'particular', origem: corpo.origem ?? 'manual',
       consentimento_lgpd: consentimento,
@@ -913,10 +955,12 @@ export const ROTAS = {
 
   'PATCH /api/clientes/:id': (fed, req, p, corpo) => {
     const { escopo, usuario, empresa, banco } = contexto(fed, req);
-    const permitidos = ['nome', 'telefone', 'email', 'cidade', 'uf', 'perfil', 'observacao'];
+    const permitidos = ['nome', 'telefone', 'cpf', 'email', 'cidade', 'uf', 'perfil', 'observacao'];
     const dados = Object.fromEntries(
       Object.entries(corpo ?? {}).filter(([k]) => permitidos.includes(k)),
     );
+    // Mesma regra da criacao: documento entra so com digitos.
+    if (dados.cpf !== undefined) dados.cpf = String(dados.cpf).replace(/\D/g, '') || null;
     if (corpo?.consentimento_lgpd !== undefined) {
       dados.consentimento_lgpd = corpo.consentimento_lgpd ? 1 : 0;
       dados.consentimento_em = corpo.consentimento_lgpd ? agora() : null;
@@ -1833,6 +1877,531 @@ export const ROTAS = {
     // saber disso, senão parece que a credencial continua lá por engano.
     const depois = lerCredencial(escopo, p.chave);
     return ok({ apagou, origem: depois.origem, aindaDefinida: !!depois.valor });
+  },
+
+  // ── Oficina: veiculos, vistoria e midia ──────────────────────────────────
+
+  /** O catalogo do check-list. A tela nao guarda copia dele. */
+  'GET /api/checklist': (fed, req) => {
+    contexto(fed, req);
+    return ok({ grupos: CHECKLIST, total: TOTAL_ITENS, estados: ESTADOS });
+  },
+
+  /**
+   * Cadastrar veiculo — que ate agora so entrava pela carga inicial.
+   *
+   * Junto com o veiculo nasce o PLANO de manutencao. Um veiculo sem plano nao
+   * aparece em previsao nenhuma, e cadastrar em dois passos garante que o
+   * segundo nao aconteca.
+   */
+  'POST /api/veiculos': (fed, req, _p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+
+    const placa = String(corpo?.placa ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (placa.length < 7) {
+      throw new ErroHttp(422, 'placa_invalida', 'A placa precisa de 7 caracteres (ABC1D23 ou ABC1234).');
+    }
+    const cliente = escopo.uma('select id, nome from clientes where {ESCOPO} and id = ?', corpo?.cliente_id);
+    if (!cliente) throw new ErroHttp(404, 'cliente_nao_encontrado', 'Informe o dono do veículo.');
+
+    const repetida = escopo.uma('select id from veiculos where {ESCOPO} and placa = ?', placa);
+    if (repetida) {
+      throw new ErroHttp(409, 'placa_repetida',
+        'Já existe um veículo com esta placa nesta empresa.', { veiculoId: repetida.id });
+    }
+
+    const id = novoId();
+    const km = corpo?.km_ultima != null ? num(corpo.km_ultima, 0) : null;
+    escopo.inserir('veiculos', {
+      id,
+      cliente_id: cliente.id,
+      placa,
+      marca: texto(corpo?.marca, 60),
+      modelo: texto(corpo?.modelo, 80),
+      ano: corpo?.ano ? num(corpo.ano, 0) : null,
+      motorizacao: texto(corpo?.motorizacao, 40),
+      sistema_injecao: corpo?.sistema_injecao ?? 'common_rail_cp3',
+      km_ultima: km,
+      horimetro: corpo?.horimetro != null ? num(corpo.horimetro, 0) : null,
+      media_km_mes: 0,
+      ultima_visita_em: km != null ? agora() : null,
+      chassi: texto(corpo?.chassi, 30),
+      renavam: texto(corpo?.renavam, 20),
+      cor: texto(corpo?.cor, 30),
+      combustivel: corpo?.combustivel ?? 'diesel_s10',
+      apelido: texto(corpo?.apelido, 60),
+      observacao: texto(corpo?.observacao, 400),
+      ativo: 1,
+      criado_em: agora(),
+    });
+
+    if (km != null) {
+      registrarKm(escopo, id, { km, origem: 'manual', ator: usuario.email });
+    }
+    semearPlano(escopo, id, { kmBase: km, dataBase: km != null ? agora() : null });
+    recalcular(escopo, id);
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'veiculo.criar',
+      entidade: 'veiculos', entidadeId: id, dados: { placa, cliente: cliente.nome },
+    });
+    return ok(escopo.uma('select * from veiculos where {ESCOPO} and id = ?', id));
+  },
+
+  /**
+   * A vida do veiculo numa resposta so.
+   *
+   * Dados, historico de km, media real, plano projetado e linha do tempo. Sao
+   * cinco consultas que respondem a UMA pergunta — o que aconteceu e o que vem
+   * com este caminhao — e separa-las obrigaria a tela a costurar cinco
+   * chamadas para desenhar uma pagina.
+   */
+  'GET /api/veiculos/:id': (fed, req, p) => {
+    const { escopo } = contexto(fed, req);
+    const veiculo = escopo.uma(
+      `select v.*, c.nome as cliente_nome, c.telefone as cliente_telefone, c.cpf as cliente_cpf
+       from veiculos v join clientes c on c.id = v.cliente_id
+       where v.{ESCOPO} and v.id = ?`, p.id,
+    );
+    if (!veiculo) throw new ErroHttp(404, 'nao_encontrado', 'Veículo não encontrado.');
+
+    const leituras = escopo.todas(
+      'select * from veiculo_km where {ESCOPO} and veiculo_id = ? order by medido_em desc limit 40', p.id);
+    const media = mediaKmMes(leituras);
+    const ultima = [...leituras].sort((a, b) => Date.parse(a.medido_em) - Date.parse(b.medido_em)).pop() ?? null;
+    const hoje = kmEstimado(veiculo, ultima, media);
+
+    const planos = escopo.todas(
+      'select * from planos_manutencao where {ESCOPO} and veiculo_id = ? and ativo = 1 order by previsto_em', p.id,
+    ).map((plano) => ({ ...plano, projecao: projetarServico(plano, { kmHoje: hoje, mediaMes: media }) }));
+
+    return ok({
+      veiculo,
+      uso: {
+        mediaKmMes: media,
+        kmHoje: hoje,
+        leituras: leituras.length,
+        // Sem duas leituras nao ha media, e a tela precisa dizer isso em vez de
+        // mostrar zero — zero parece um caminhao parado.
+        temHistorico: leituras.length >= 2,
+      },
+      leituras,
+      planos,
+      linhaDoTempo: linhaDoTempo(escopo, p.id),
+      vistorias: escopo.todas(
+        'select id, numero, status, km, iniciada_em, aceite_em from vistorias where {ESCOPO} and veiculo_id = ? order by iniciada_em desc limit 10', p.id),
+    });
+  },
+
+  'POST /api/veiculos/:id/km': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    try {
+      const r = registrarKm(escopo, p.id, {
+        km: corpo?.km,
+        medidoEm: corpo?.medido_em ?? agora(),
+        origem: 'manual',
+        ator: usuario.email,
+      });
+      banco.auditar({
+        empresaId: empresa.id, ator: usuario.email, acao: 'veiculo.km',
+        entidade: 'veiculos', entidadeId: p.id, dados: { km: corpo?.km, media: r.media },
+      });
+      return ok(r);
+    } catch (e) {
+      throw new ErroHttp(422, 'km_invalido', e.message);
+    }
+  },
+
+  /**
+   * Abre a vistoria com os 63 itens ja criados, todos sem estado.
+   *
+   * Criar os itens agora, e nao conforme se marca, e o que permite perguntar
+   * "quanto falta" — e o que garante que a lista nao mude no meio do
+   * preenchimento se o catalogo for editado.
+   */
+  'POST /api/vistorias': (fed, req, _p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+
+    const veiculo = escopo.uma(
+      'select v.*, c.nome cliente_nome from veiculos v join clientes c on c.id = v.cliente_id where v.{ESCOPO} and v.id = ?',
+      corpo?.veiculo_id,
+    );
+    if (!veiculo) throw new ErroHttp(404, 'veiculo_nao_encontrado', 'Informe o veículo da vistoria.');
+
+    const aberta = escopo.uma(
+      "select id, numero from vistorias where {ESCOPO} and veiculo_id = ? and status in ('rascunho','aguardando_aceite')",
+      veiculo.id,
+    );
+    if (aberta) {
+      throw new ErroHttp(409, 'vistoria_aberta',
+        `Este veículo já tem a vistoria ${aberta.numero} em andamento.`, { vistoriaId: aberta.id });
+    }
+
+    const id = novoId();
+    const numero = proximoNumero(escopo);
+    escopo.inserir('vistorias', {
+      id,
+      cliente_id: veiculo.cliente_id,
+      veiculo_id: veiculo.id,
+      ordem_id: corpo?.ordem_id ?? null,
+      numero,
+      km: corpo?.km != null ? num(corpo.km, 0) : null,
+      nivel_combustivel: texto(corpo?.nivel_combustivel, 20),
+      status: 'rascunho',
+      tecnico: usuario.nome ?? usuario.email,
+      observacao: null,
+      iniciada_em: agora(),
+    });
+
+    for (const item of itensDoChecklist()) {
+      escopo.inserir('vistoria_itens', {
+        id: novoId(),
+        vistoria_id: id,
+        grupo: item.grupo,
+        chave: item.chave,
+        nome: item.nome,
+        estado: null,
+        medida: null,
+        unidade: item.medida?.unidade ?? null,
+        nota: null,
+        posicao: item.posicao,
+      });
+    }
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.abrir',
+      entidade: 'vistorias', entidadeId: id,
+      dados: { numero, placa: veiculo.placa, cliente: veiculo.cliente_nome },
+    });
+    return ok({ id, numero, veiculo, itens: TOTAL_ITENS });
+  },
+
+  'GET /api/vistorias': (fed, req, _p, _c, url) => {
+    const { escopo } = contexto(fed, req);
+    const status = url.searchParams.get('status');
+    let sql = `select vi.*, c.nome cliente_nome, v.placa, v.marca, v.modelo
+               from vistorias vi
+               join clientes c on c.id = vi.cliente_id
+               join veiculos v on v.id = vi.veiculo_id
+               where vi.{ESCOPO}`;
+    const params = [];
+    if (status) { sql += ' and vi.status = ?'; params.push(status); }
+    sql += ' order by vi.iniciada_em desc limit 120';
+    return ok(escopo.todas(sql, ...params));
+  },
+
+  'GET /api/vistorias/:id': (fed, req, p) => {
+    const { escopo } = contexto(fed, req);
+    const v = escopo.uma(
+      `select vi.*, c.nome cliente_nome, c.telefone cliente_telefone, c.cpf cliente_cpf,
+              ve.placa, ve.marca, ve.modelo, ve.ano, ve.cor
+       from vistorias vi
+       join clientes c on c.id = vi.cliente_id
+       join veiculos ve on ve.id = vi.veiculo_id
+       where vi.{ESCOPO} and vi.id = ?`, p.id,
+    );
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+
+    const itens = escopo.todas(
+      'select * from vistoria_itens where {ESCOPO} and vistoria_id = ? order by posicao', p.id);
+    const midias = escopo.todas(
+      'select id, item_id, tipo, bytes, largura, altura, duracao_s, legenda, criado_em from vistoria_midias where {ESCOPO} and vistoria_id = ? order by criado_em',
+      p.id);
+
+    const porItem = {};
+    for (const m of midias) (porItem[m.item_id] ??= []).push(m);
+
+    return ok({
+      vistoria: v,
+      itens,
+      midias: porItem,
+      resumo: resumoVistoria(itens),
+      pendencias: pendencias(itens, porItem),
+      catalogo: CHECKLIST,
+    });
+  },
+
+  /** Marca um item. E a operacao mais repetida do app — 63 vezes por vistoria. */
+  'PATCH /api/vistorias/:id/itens/:chave': (fed, req, p, corpo) => {
+    const { escopo, usuario } = contexto(fed, req);
+    const v = escopo.uma('select id, status from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada',
+        'Esta vistoria já foi enviada ao cliente e não pode mais ser alterada. '
+        + 'Mudar item depois do envio quebraria o aceite — se precisa corrigir, abra outra.');
+    }
+
+    const item = escopo.uma(
+      'select * from vistoria_itens where {ESCOPO} and vistoria_id = ? and chave = ?', p.id, p.chave);
+    if (!item) throw new ErroHttp(404, 'item_nao_encontrado', 'Item fora do check-list.');
+
+    const dados = {};
+    if (corpo?.estado !== undefined) {
+      if (corpo.estado !== null && !ESTADOS[corpo.estado]) {
+        throw new ErroHttp(422, 'estado_invalido', 'Estado fora do semáforo.');
+      }
+      dados.estado = corpo.estado;
+    }
+    if (corpo?.medida !== undefined) {
+      dados.medida = corpo.medida === null || corpo.medida === '' ? null : Number(corpo.medida);
+      if (dados.medida !== null && !Number.isFinite(dados.medida)) {
+        throw new ErroHttp(422, 'medida_invalida', 'A medida precisa ser um número.');
+      }
+    }
+    if (corpo?.nota !== undefined) dados.nota = texto(corpo.nota, 500);
+
+    escopo.atualizar('vistoria_itens', item.id, dados);
+    const atual = escopo.uma('select * from vistoria_itens where {ESCOPO} and id = ?', item.id);
+
+    // O km do hodometro alimenta a vida do veiculo, e nao so o papel.
+    if (p.chave === 'hodometro' && dados.medida) {
+      const vi = escopo.uma('select veiculo_id from vistorias where {ESCOPO} and id = ?', p.id);
+      try {
+        registrarKm(escopo, vi.veiculo_id, {
+          km: dados.medida, origem: 'vistoria', origemId: p.id, ator: usuario.email,
+        });
+      } catch { /* leitura recusada nao derruba a vistoria; o item fica marcado */ }
+    }
+
+    const todos = escopo.todas('select * from vistoria_itens where {ESCOPO} and vistoria_id = ?', p.id);
+    return ok({ item: atual, resumo: resumoVistoria(todos) });
+  },
+
+  /**
+   * Anexa foto ou video a um item.
+   *
+   * O corpo e binario cru, e nao base64 dentro de JSON: base64 infla 33%, e um
+   * video de 30 MB viraria 40 MB de string para o `JSON.parse` engolir de uma
+   * vez num processo de thread unica.
+   *
+   * O arquivo vai para o disco; no banco fica so o ponteiro. Blob em SQLite
+   * levaria o banco de 370 KB a gigabytes — e com ele o backup, que copia o
+   * banco inteiro toda madrugada.
+   */
+  'POST /api/vistorias/:id/midia': async (fed, req, p, _corpo, url) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select id, status, veiculo_id from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Vistoria já enviada: não aceita mais mídia.');
+    }
+
+    const bytes = req.corpoBruto;
+    if (!bytes?.length) throw new ErroHttp(400, 'sem_arquivo', 'Nenhum arquivo recebido.');
+
+    const tipo = url.searchParams.get('tipo') === 'video' ? 'video' : 'foto';
+    const chave = url.searchParams.get('item');
+    const item = chave
+      ? escopo.uma('select id from vistoria_itens where {ESCOPO} and vistoria_id = ? and chave = ?', p.id, chave)
+      : null;
+    if (chave && !item) throw new ErroHttp(404, 'item_nao_encontrado', 'Item fora do check-list.');
+
+    const ext = tipo === 'video' ? 'mp4' : 'jpg';
+    const id = novoId();
+    const relativo = join(empresa.codigo, p.id, `${id}.${ext}`);
+    const destino = join(diretorioDeMidia(fed), relativo);
+    mkdirSync(dirname(destino), { recursive: true });
+    await new Promise((resolve, reject) => {
+      const fluxo = createWriteStream(destino);
+      fluxo.on('error', reject);
+      fluxo.on('finish', resolve);
+      fluxo.end(bytes);
+    });
+
+    escopo.inserir('vistoria_midias', {
+      id,
+      vistoria_id: p.id,
+      item_id: item?.id ?? null,
+      tipo,
+      arquivo: relativo.replaceAll('\\', '/'),
+      bytes: bytes.length,
+      largura: url.searchParams.get('l') ? Number(url.searchParams.get('l')) : null,
+      altura: url.searchParams.get('a') ? Number(url.searchParams.get('a')) : null,
+      duracao_s: url.searchParams.get('d') ? Number(url.searchParams.get('d')) : null,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      legenda: texto(url.searchParams.get('legenda'), 200),
+      criado_por: usuario.email,
+      criado_em: agora(),
+    });
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.midia',
+      entidade: 'vistoria_midias', entidadeId: id,
+      dados: { vistoria: p.id, tipo, item: chave, bytes: bytes.length },
+    });
+    return ok({ id, tipo, bytes: bytes.length, item: chave ?? null });
+  },
+
+  /** Serve o arquivo. Passa por sessao: vistoria e documento do cliente. */
+  'GET /api/midia/:id': async (fed, req, p) => {
+    const { escopo } = contexto(fed, req);
+    const m = escopo.uma('select * from vistoria_midias where {ESCOPO} and id = ?', p.id);
+    if (!m) throw new ErroHttp(404, 'nao_encontrado', 'Mídia não encontrada.');
+    try {
+      const conteudo = await readFile(join(diretorioDeMidia(fed), m.arquivo));
+      return {
+        __binario: conteudo,
+        __tipo: m.tipo === 'video' ? 'video/mp4' : 'image/jpeg',
+      };
+    } catch {
+      throw new ErroHttp(410, 'arquivo_sumiu',
+        'O registro existe e o arquivo não está mais no disco.');
+    }
+  },
+
+  'DELETE /api/vistorias/:id/midia/:midiaId': async (fed, req, p) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select status from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Vistoria enviada: a mídia dela é prova e não sai mais.');
+    }
+    const m = escopo.uma('select * from vistoria_midias where {ESCOPO} and id = ?', p.midiaId);
+    if (!m) throw new ErroHttp(404, 'nao_encontrado', 'Mídia não encontrada.');
+
+    escopo.remover('vistoria_midias', p.midiaId);
+    try { await unlink(join(diretorioDeMidia(fed), m.arquivo)); } catch { /* ja sumiu */ }
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.midia.apagar',
+      entidade: 'vistoria_midias', entidadeId: p.midiaId, dados: { vistoria: p.id },
+    });
+    return ok({ apagou: true });
+  },
+
+  /**
+   * Fecha o preenchimento e envia ao cliente.
+   *
+   * Recusa se faltar item ou foto obrigatoria, e diz QUAIS: "nao pode enviar"
+   * sem a lista obriga a caçar o pendente numa tela de sessenta e tres.
+   */
+  'POST /api/vistorias/:id/concluir': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select * from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'ja_concluida', 'Esta vistoria já foi enviada.');
+    }
+
+    const itens = escopo.todas('select * from vistoria_itens where {ESCOPO} and vistoria_id = ?', p.id);
+    const midias = escopo.todas('select * from vistoria_midias where {ESCOPO} and vistoria_id = ?', p.id);
+    const porItem = {};
+    for (const m of midias) (porItem[m.item_id] ??= []).push(m);
+
+    const faltas = pendencias(itens, porItem);
+    if (faltas.length) {
+      throw new ErroHttp(422, 'vistoria_incompleta',
+        `Faltam ${faltas.length} item(ns) para poder enviar.`, { pendencias: faltas });
+    }
+
+    const dados = {
+      status: 'aguardando_aceite',
+      concluida_em: agora(),
+      observacao: texto(corpo?.observacao, 1000),
+      conteudo_hash: hashConteudo(v, itens, midias),
+    };
+    escopo.atualizar('vistorias', p.id, dados);
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.concluir',
+      entidade: 'vistorias', entidadeId: p.id,
+      dados: { numero: v.numero, hash: dados.conteudo_hash, resumo: resumoVistoria(itens) },
+    });
+    return ok({ ...v, ...dados, resumo: resumoVistoria(itens) });
+  },
+
+  /**
+   * Aceite do cliente. E o que destrava a ordem de servico.
+   *
+   * O hash e conferido de novo AQUI: se algum item mudou entre o envio e o
+   * aceite, o cliente estaria assinando outra coisa. Nesse caso a vistoria
+   * volta para rascunho em vez de gravar um aceite que nao corresponde.
+   */
+  'POST /api/vistorias/:id/aceite': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select * from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status === 'aceita') return ok({ ...v, jaEstava: true });
+    if (v.status !== 'aguardando_aceite') {
+      throw new ErroHttp(409, 'sem_envio', 'A vistoria precisa estar concluída e enviada antes do aceite.');
+    }
+
+    const itens = escopo.todas('select * from vistoria_itens where {ESCOPO} and vistoria_id = ?', p.id);
+    const midias = escopo.todas('select * from vistoria_midias where {ESCOPO} and vistoria_id = ?', p.id);
+    const agoraHash = hashConteudo(v, itens, midias);
+    if (agoraHash !== v.conteudo_hash) {
+      escopo.atualizar('vistorias', p.id, { status: 'rascunho', concluida_em: null });
+      throw new ErroHttp(409, 'conteudo_mudou',
+        'O conteúdo da vistoria mudou depois do envio. Ela voltou para preenchimento — '
+        + 'envie de novo para o cliente aceitar o que está valendo agora.');
+    }
+
+    if (corpo?.recusa) {
+      const motivo = texto(corpo?.motivo, 500);
+      if (!motivo) throw new ErroHttp(422, 'motivo_obrigatorio', 'Recusa exige o motivo.');
+      escopo.atualizar('vistorias', p.id, { status: 'recusada', recusa_motivo: motivo, aceite_em: agora() });
+      banco.auditar({
+        empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.recusar',
+        entidade: 'vistorias', entidadeId: p.id, dados: { numero: v.numero, motivo },
+      });
+      return ok({ status: 'recusada', motivo });
+    }
+
+    const nome = texto(corpo?.nome, 120);
+    if (!nome) throw new ErroHttp(422, 'nome_obrigatorio', 'Informe quem está aceitando.');
+
+    const dados = {
+      status: 'aceita',
+      aceite_em: agora(),
+      aceite_nome: nome,
+      aceite_cpf: String(corpo?.cpf ?? '').replace(/\D/g, '') || null,
+      aceite_meio: corpo?.meio ?? 'assinatura_tela',
+      aceite_assinatura: typeof corpo?.assinatura === 'string' ? corpo.assinatura.slice(0, 200000) : null,
+    };
+    escopo.atualizar('vistorias', p.id, dados);
+
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.aceite',
+      entidade: 'vistorias', entidadeId: p.id,
+      dados: { numero: v.numero, nome, meio: dados.aceite_meio, hash: v.conteudo_hash },
+    });
+    return ok({ ...v, ...dados });
+  },
+
+  /**
+   * Inicia a ordem de servico — e e aqui que a vistoria vira regra.
+   *
+   * Sem esta trava, a vistoria seria papel que se preenche depois, para
+   * constar. Com ela, o servico so comeca com o dono de acordo sobre o estado
+   * em que o veiculo entrou.
+   */
+  'POST /api/ordens/:id/iniciar': (fed, req, p) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const os = escopo.uma('select * from ordens_servico where {ESCOPO} and id = ?', p.id);
+    if (!os) throw new ErroHttp(404, 'nao_encontrado', 'Ordem de serviço não encontrada.');
+    if (os.status !== 'aberta') {
+      throw new ErroHttp(409, 'ja_iniciada', `Esta OS está ${os.status}.`);
+    }
+
+    const vistoria = os.vistoria_id
+      ? escopo.uma('select * from vistorias where {ESCOPO} and id = ?', os.vistoria_id)
+      : escopo.uma(
+        "select * from vistorias where {ESCOPO} and veiculo_id = ? and status = 'aceita' order by aceite_em desc limit 1",
+        os.veiculo_id);
+
+    const porta = podeIniciarOS(vistoria);
+    if (!porta.pode) {
+      throw new ErroHttp(409, 'vistoria_pendente', porta.texto,
+        { motivo: porta.motivo, vistoriaId: vistoria?.id ?? null, veiculoId: os.veiculo_id });
+    }
+
+    escopo.atualizar('ordens_servico', p.id, { status: 'em_bancada', vistoria_id: vistoria.id });
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'os.iniciar',
+      entidade: 'ordens_servico', entidadeId: p.id,
+      dados: { numero: os.numero, vistoria: vistoria.numero },
+    });
+    return ok({ ...os, status: 'em_bancada', vistoria_id: vistoria.id });
   },
 
   // ── Campos personalizados ────────────────────────────────────────────────

@@ -62,6 +62,12 @@ create table if not exists clientes (
   empresa_id         text not null references empresas(id) on delete cascade,
   nome               text not null,
   telefone           text,
+  -- CPF/CNPJ so digitos, sem mascara.
+  --
+  -- Guardar formatado obrigaria a normalizar em toda busca, e a mesma pessoa
+  -- entraria duas vezes por ter sido digitada com e sem ponto. A mascara e
+  -- assunto da tela.
+  cpf                text,
   email              text,
   cidade             text,
   uf                 text,
@@ -101,8 +107,26 @@ create table if not exists veiculos (
                        'bomba_rotativa','uis_ups','injecao_eletronica')),
   km_ultima         integer,
   horimetro         integer,
+  /*
+   * media_km_mes continua aqui, mas deixou de ser digitada: passou a ser
+   * CALCULADA a partir das leituras de veiculo_km. A coluna e cache do
+   * ultimo calculo — quem manda e o historico.
+   */
   media_km_mes      integer not null default 0,
   ultima_visita_em  text,
+
+  -- Identificacao documental. Chassi e o unico identificador que sobrevive a
+  -- troca de placa, e placa troca (Mercosul, transferencia entre estados).
+  chassi            text,
+  renavam           text,
+  cor               text,
+  combustivel       text not null default 'diesel_s10'
+                    check (combustivel in
+                      ('diesel_s10','diesel_s500','gasolina','etanol','flex','gnv','eletrico')),
+  -- Como a oficina chama este veiculo: "o basculante do Antonio".
+  apelido           text,
+  observacao        text,
+  ativo             integer not null default 1,
   criado_em         text not null
 );
 create index if not exists ix_veiculos_empresa on veiculos(empresa_id);
@@ -125,6 +149,8 @@ create table if not exists ordens_servico (
   km_servico      integer,
   status          text not null default 'aberta'
                   check (status in ('aberta','em_bancada','concluida','cancelada')),
+  -- A vistoria aceita e a condicao para a OS sair de 'aberta'.
+  vistoria_id     text,
   aberta_em       text not null,
   concluida_em    text
 );

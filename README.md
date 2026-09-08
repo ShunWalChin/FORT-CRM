@@ -139,6 +139,7 @@ que o sistema ainda não faz. Cada seção tem um botão que abre a tela de verd
 | [Arquitetura](docs/ARQUITETURA.md) | Federação, instâncias, central, escopo e auditoria |
 | [Régua e compliance](docs/REGUA-E-COMPLIANCE.md) | Os 17 gatilhos, as 9 checagens, idempotência |
 | [Campanhas](docs/CAMPANHAS.md) | O nome por trás do `ad_id`, e por que o sistema nunca inventa um |
+| [Oficina](docs/OFICINA.md) | Vida do veículo, previsão de manutenção e a vistoria que trava a OS |
 | [Credenciais](docs/CREDENCIAIS.md) | Token da Meta por empresa, cifrado em repouso |
 | [Atribuição e conversões](docs/ATRIBUICAO-E-CONVERSOES.md) | Do clique no anúncio à conversão devolvida |
 | [Click-to-WhatsApp](docs/CTWA.md) | `ctwa_clid`, webhook assinado, Business Messaging |
@@ -249,8 +250,8 @@ Escrito aqui para que ninguém prometa ao cliente o que ele ainda não entrega.
   público permanente, Cloudflare Access na frente do hostname é obrigatório.
 - **A régua é calculada quando alguém abre a tela.** Em produção, roda de
   madrugada por timer.
-- **Não dá para cadastrar veículo, ordem de serviço ou item de catálogo pela
-  interface.** Só clientes e oportunidades nascem por aqui.
+- **Não dá para cadastrar ordem de serviço ou item de catálogo pela interface.**
+  Cliente, oportunidade e veículo já nascem por aqui; OS ainda não.
 - A base é fictícia. Nenhum dado real de cliente está aqui.
 
 ---

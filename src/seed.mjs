@@ -22,6 +22,7 @@ import { canaisDe } from './canais.mjs';
 import { garantirCamposSistema } from './propriedades.mjs';
 import { extrairAtribuicao, identificadoresHash } from './atribuicao.mjs';
 import { hashSenha } from './senha.mjs';
+import { PLANO_PADRAO, recalcular as recalcularVeiculo } from './veiculos.mjs';
 
 const DIA = 24 * 60 * 60 * 1000;
 const HOJE = Date.now();
@@ -511,6 +512,9 @@ function semearInterno(banco, codigo, reset) {
     escopo.inserir('clientes', {
       id, nome, telefone: tel, email, cidade,
       uf: ufDe(cidade), perfil,
+      // CPF/CNPJ so digitos, como o schema pede. Numeros de demonstracao,
+      // gerados do indice — nenhum documento real entra na carga.
+      cpf: String(10000000000 + i * 37121899).slice(0, 11),
       origem: origemDe(codigo, tipoAtr, i),
       consentimento_lgpd: semConsentimento ? 0 : 1,
       consentimento_em: semConsentimento ? null : iso(300 - i * 5),
@@ -562,7 +566,70 @@ function semearInterno(banco, codigo, reset) {
         sistema_injecao: sistema, km_ultima: km,
         horimetro: km === null ? 3200 + ci * 180 : null,
         media_km_mes: media, ultima_visita_em: iso(visitaDias), criado_em: iso(visitaDias + 200),
+        chassi: `9BV${String(100000 + ci * 7919).slice(0, 6)}${placa.slice(0, 3)}${1000 + ci}`,
+        renavam: String(1000000000 + ci * 8461),
+        cor: ['Branco', 'Prata', 'Vermelho', 'Azul', 'Cinza'][ci % 5],
+        combustivel: 'diesel_s10',
+        ativo: 1,
       });
+
+      /*
+       * Historico de hodometro, e nao so o numero de hoje.
+       *
+       * Sem duas leituras nao ha media, e sem media nao ha previsao — a tela de
+       * vida do veiculo abriria dizendo "faltam leituras" na demonstracao
+       * inteira, que e justamente o que ela existe para nao dizer.
+       *
+       * Quatro leituras espalhadas pelo ultimo ano, andando para tras a partir
+       * do km atual na media declarada do veiculo.
+       */
+      if (km !== null && media > 0) {
+        [0, 4, 8, 13].forEach((mesesAtras, n) => {
+          escopo.inserir('veiculo_km', {
+            id: novoId(),
+            veiculo_id: id,
+            km: Math.max(0, km - Math.round(media * mesesAtras)),
+            medido_em: iso(visitaDias + Math.round(mesesAtras * 30.44)),
+            origem: n === 0 ? 'ordem_servico' : 'manual',
+            origem_id: null,
+            criado_por: 'carga',
+            criado_em: iso(visitaDias + Math.round(mesesAtras * 30.44)),
+          });
+        });
+      }
+
+      // O plano de manutencao nasce com o veiculo: sem ele o caminhao nao
+      // aparece em previsao nenhuma.
+      PLANO_PADRAO.forEach((sv, n) => {
+        // Cada servico com um "ultimo" diferente, para o plano vencer escalonado
+        // em vez de tudo no mesmo dia.
+        const feitoHa = 40 + n * 55;
+        escopo.inserir('planos_manutencao', {
+          id: novoId(),
+          veiculo_id: id,
+          servico_chave: sv.chave,
+          servico_nome: sv.nome,
+          intervalo_km: sv.km,
+          intervalo_meses: sv.meses,
+          ultimo_km: km !== null ? Math.max(0, km - Math.round((media || 1500) * (feitoHa / 30.44))) : null,
+          ultimo_em: iso(feitoHa),
+          proximo_km: null,
+          previsto_em: null,
+          ativo: 1,
+          criado_em: iso(visitaDias + 200),
+          atualizado_em: iso(visitaDias),
+        });
+      });
+    });
+
+    /*
+     * Projeta o plano de todos, agora que ha historico.
+     *
+     * Feito aqui e nao no laco de cima porque `recalcular` le as leituras do
+     * banco — e no laco elas ainda nao terminaram de entrar.
+     */
+    veiculoIds.forEach((vid) => {
+      try { recalcularVeiculo(escopo, vid); } catch { /* veiculo sem km fica sem previsao */ }
     });
 
     VEICULOS.forEach(([ci], vi) => {

@@ -43,6 +43,13 @@ import {
   cifrar, decifrar, chaveMestra, temChave, pista, lerCredencial, gravarCredencial,
   apagarCredencial, listarCredenciais, CREDENCIAIS,
 } from './cofre.mjs';
+import {
+  CHECKLIST, TOTAL_ITENS, exigeFoto, hashConteudo, itensDoChecklist,
+  pendencias, podeIniciarOS, resumo as resumoVistoria,
+} from './vistoria.mjs';
+import {
+  PLANO_PADRAO, kmEstimado, mediaKmMes, projetarServico, validarKm,
+} from './veiculos.mjs';
 import { hashSenha, verificarSenha, ehHash, migrarSenhas, avaliarForca } from './senha.mjs';
 
 let passou = 0;
@@ -1620,6 +1627,180 @@ teste('fila vazia por adiamento nao pode ser lida como "nao ha trabalho"', () =>
   igual(diagnosticarFilaVazia(e, { fila: [], adiados }).causa, 'tudo_adiado',
     'a causa que o operador criou vence a que ele nao criou');
   ids.forEach((g) => e.atualizar('gatilhos', g.id, { ativo: 1 }));
+});
+
+/* -- Oficina: vida do veiculo --------------------------------------------- */
+
+teste('a media vem do que o veiculo ANDOU, e nao do que foi digitado', () => {
+  // 18.000 km em 6 meses.
+  const leituras = [
+    { km: 100000, medido_em: '2026-03-01T00:00:00Z' },
+    { km: 118000, medido_em: '2026-09-01T00:00:00Z' },
+  ];
+  const m = mediaKmMes(leituras);
+  verdadeiro(m > 2800 && m < 3100, `esperava ~2.980 km/mes, veio ${m}`);
+
+  // Uma leitura so nao e historico: nao da para saber quanto andou.
+  igual(mediaKmMes([leituras[0]]), null);
+
+  // Duas leituras no mesmo dia tambem nao: o intervalo e de horas, e a conta
+  // extrapolaria isso para o ano inteiro.
+  igual(mediaKmMes([
+    { km: 100000, medido_em: '2026-03-01T08:00:00Z' },
+    { km: 100300, medido_em: '2026-03-01T18:00:00Z' },
+  ]), null, 'intervalo curto demais nao vira media anual');
+});
+
+teste('o hodometro so anda para a frente', () => {
+  igual(validarKm(120000, 100000).ok, true);
+  igual(validarKm(90000, 100000).ok, false, 'km menor que o anterior e erro de digitacao');
+  verdadeiro(validarKm(90000, 100000).motivo.includes('não anda para trás'),
+    'e o motivo tem de explicar por que');
+  igual(validarKm(-5, null).ok, false);
+  igual(validarKm(9_000_000, null).ok, false, 'acima de 3 milhoes e digito a mais');
+});
+
+teste('o servico vence por km OU por tempo — o que chegar primeiro', () => {
+  const base = Date.parse('2026-09-08T00:00:00Z');
+
+  // Roda muito: o km chega antes do ano.
+  const rodador = projetarServico(
+    { intervalo_km: 10000, intervalo_meses: 12, ultimo_km: 100000, ultimo_em: '2026-06-01T00:00:00Z' },
+    { kmHoje: 108000, mediaMes: 4000, refMs: base },
+  );
+  igual(rodador.causa, 'km', 'quem roda 4.000/mes chega aos 10.000 antes do ano');
+
+  // Roda pouco: o fluido estraga por idade antes de o km chegar.
+  const parado = projetarServico(
+    { intervalo_km: 10000, intervalo_meses: 12, ultimo_km: 100000, ultimo_em: '2025-10-01T00:00:00Z' },
+    { kmHoje: 101000, mediaMes: 150, refMs: base },
+  );
+  igual(parado.causa, 'tempo', 'caminhao parado vence por tempo, e nao por km');
+
+  // Vencido aparece como vencido, e nao some da fila.
+  const atrasado = projetarServico(
+    { intervalo_km: 10000, ultimo_km: 100000 },
+    { kmHoje: 115000, mediaMes: 3000, refMs: base },
+  );
+  igual(atrasado.vencido, true);
+  verdadeiro(atrasado.dias < 0, `dias deveria ser negativo, veio ${atrasado.dias}`);
+});
+
+teste('sem media nao se inventa previsao', () => {
+  const p = projetarServico(
+    { intervalo_km: 10000, ultimo_km: 100000 },
+    { kmHoje: 105000, mediaMes: null },
+  );
+  igual(p.dias, null, 'sem saber quanto roda, nao ha data');
+  igual(p.porKm.faltamKm, 5000, 'mas o quanto falta em km continua sabido');
+});
+
+teste('km estimado estica a media desde a ultima leitura', () => {
+  const base = Date.parse('2026-09-08T00:00:00Z');
+  const km = kmEstimado(
+    { km_ultima: 100000 },
+    { km: 100000, medido_em: '2026-06-08T00:00:00Z' },
+    3000, base,
+  );
+  verdadeiro(km > 108000 && km < 110000, `3 meses a 3.000 = ~109.000, veio ${km}`);
+});
+
+teste('o plano padrao cobre o que uma oficina diesel troca', () => {
+  igual(PLANO_PADRAO.length, 9);
+  const chaves = PLANO_PADRAO.map((p) => p.chave);
+  for (const obrigatorio of ['oleo_motor', 'filtro_combustivel', 'teste_bicos', 'revisao_bomba']) {
+    verdadeiro(chaves.includes(obrigatorio), `falta ${obrigatorio} no plano`);
+  }
+  // Todo servico tem pelo menos um criterio de vencimento.
+  for (const p of PLANO_PADRAO) verdadeiro(p.km || p.meses, `${p.chave} nao vence nunca`);
+});
+
+/* -- Oficina: vistoria ---------------------------------------------------- */
+
+teste('o check-list e guiado: todo item diz o que olhar', () => {
+  const itens = itensDoChecklist();
+  igual(itens.length, TOTAL_ITENS);
+  verdadeiro(TOTAL_ITENS >= 60, `esperava um check-list completo, veio ${TOTAL_ITENS} itens`);
+  igual(CHECKLIST.length, 11, 'onze sistemas do veiculo');
+
+  for (const i of itens) {
+    verdadeiro(i.dica && i.dica.length > 20,
+      `"${i.nome}" sem dica: um check-list que so lista nomes e preenchido no automatico`);
+    verdadeiro(i.chave && i.nome && i.grupo);
+  }
+  // Chave repetida quebraria a gravacao do item.
+  igual(new Set(itens.map((i) => i.chave)).size, itens.length, 'ha chave repetida');
+});
+
+teste('critico exige foto — e conforme, so onde a foto e o registro', () => {
+  const pneu = itensDoChecklist().find((i) => i.chave === 'sulco_dianteiro');
+  igual(exigeFoto(pneu, 'critico'), true, 'nao se marca vermelho sem mostrar');
+  igual(exigeFoto(pneu, 'atencao'), true);
+  igual(exigeFoto(pneu, 'ok'), false, 'pneu bom nao precisa de foto');
+
+  const frente = itensDoChecklist().find((i) => i.chave === 'frente');
+  igual(exigeFoto(frente, 'ok'), true, 'a face do veiculo e o registro do estado de entrada');
+  igual(exigeFoto(frente, 'na'), false);
+});
+
+teste('a pendencia diz QUAL item falta, e nao so que falta', () => {
+  const itens = itensDoChecklist().map((i, n) => ({ id: `i${n}`, chave: i.chave, estado: 'ok' }));
+  // Tudo marcado, nenhuma foto: sobram as obrigatorias.
+  const semFoto = pendencias(itens, {});
+  verdadeiro(semFoto.length > 0);
+  verdadeiro(semFoto.every((p) => p.falta === 'foto_obrigatoria'));
+  verdadeiro(semFoto.every((p) => p.nome && p.grupo), 'a pendencia precisa dizer o nome e o grupo');
+
+  // Um item sem estado aparece como nao avaliado.
+  const comBuraco = itens.map((i) => (i.chave === 'bancos' ? { ...i, estado: null } : i));
+  verdadeiro(pendencias(comBuraco, {}).some((p) => p.chave === 'bancos' && p.falta === 'nao_avaliado'));
+});
+
+teste('o aceite vale para UM conteudo — mexer no item muda o resumo', () => {
+  const v = { veiculo_id: 'v1', km: 100000 };
+  const itens = [
+    { id: 'a', chave: 'freios', estado: 'ok', medida: null, nota: null },
+    { id: 'b', chave: 'pneus', estado: 'atencao', medida: 2.5, nota: 'gasto' },
+  ];
+  const h1 = hashConteudo(v, itens);
+  igual(hashConteudo(v, [...itens].reverse()), h1, 'a ordem dos itens nao pode mudar o resumo');
+
+  const mexido = itens.map((i) => (i.chave === 'freios' ? { ...i, estado: 'critico' } : i));
+  verdadeiro(hashConteudo(v, mexido) !== h1, 'mudar o estado TEM de mudar o resumo');
+
+  // A foto entra na conta: trocar a evidencia e trocar o documento.
+  verdadeiro(hashConteudo(v, itens, [{ item_id: 'a', sha256: 'x' }]) !== h1);
+});
+
+teste('a OS nao comeca sem vistoria aceita, e a recusa diz o que fazer', () => {
+  igual(podeIniciarOS({ status: 'aceita' }).pode, true);
+
+  for (const [status, motivo] of [
+    ['rascunho', 'em_andamento'],
+    ['aguardando_aceite', 'sem_aceite'],
+    ['recusada', 'recusada'],
+    ['cancelada', 'cancelada'],
+  ]) {
+    const r = podeIniciarOS({ status, recusa_motivo: 'faltou combinar o preco' });
+    igual(r.pode, false, `${status} nao pode iniciar`);
+    igual(r.motivo, motivo);
+    verdadeiro(r.texto.length > 30, `${status}: a recusa precisa explicar o que fazer`);
+  }
+
+  // Sem vistoria nenhuma tambem tranca — e este e o caso comum no comeco.
+  const sem = podeIniciarOS(null);
+  igual(sem.pode, false);
+  igual(sem.motivo, 'sem_vistoria');
+});
+
+teste('o resumo conta o que foi avaliado, e o que falta', () => {
+  const itens = itensDoChecklist().slice(0, 10).map((i, n) => ({ chave: i.chave, estado: n < 3 ? 'ok' : null }));
+  const r = resumoVistoria(itens);
+  igual(r.ok, 3);
+  igual(r.avaliados, 3);
+  igual(r.pendente, TOTAL_ITENS - 3);
+  igual(r.total, TOTAL_ITENS);
+  verdadeiro(r.percentual < 10, 'tres de sessenta e tres nao e "quase pronto"');
 });
 
 /* -- Cofre de credenciais ------------------------------------------------- */
