@@ -43,6 +43,16 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/*
+ * `hidden` tem de vencer o `display` do componente.
+ *
+ * O atributo vale como `display: none` só na folha do navegador, e qualquer
+ * regra do sistema o atropela: `.item { display: grid }` mantinha na tela um
+ * item marcado como escondido. Foi assim que a lista progressiva do celular
+ * carimbou `hidden` em treze itens e a página continuou com 9.744 px.
+ */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   background: var(--ground);
@@ -51,6 +61,64 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
+
+/*
+ * Caixa de marcar desenhada, e não a nativa.
+ *
+ * Medido a 375 px: a caixa nativa tinha 17x17. A ação PRINCIPAL da tela
+ * principal — escolher quem recebe mensagem hoje — era um alvo de 17 px, menos
+ * de metade do mínimo de 44 que Apple e Google publicam. Errar o toque numa
+ * lista de vinte itens não é incômodo: é disparar para o cliente errado.
+ *
+ * A nativa não deixa separar o DESENHO do ALVO — `padding` nela não estende a
+ * área de toque de forma confiável. Desenhando, o quadrado fica do tamanho que
+ * se enxerga e a caixa fica do tamanho que o dedo acerta.
+ */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: 30px; height: 30px;      /* alvo */
+  margin: 0; padding: 0;
+  display: grid; place-content: center;
+  background: none; border: 0;
+  cursor: pointer;
+}
+input[type="checkbox"]::before {
+  content: '';
+  grid-area: 1 / 1;
+  width: 17px; height: 17px;      /* desenho */
+  border: 1.5px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--ground);
+  transition: background .12s, border-color .12s;
+}
+/*
+ * O tique é um L girado, e não dois gradientes cruzados nem o caractere "✓".
+ *
+ * Cruzar dois gradientes desenha um X — que lê como "excluído", exatamente o
+ * contrário de selecionado. E o caractere depende da fonte do aparelho: muda
+ * de forma entre Android e iPhone, e some em algumas.
+ */
+input[type="checkbox"]::after {
+  content: '';
+  grid-area: 1 / 1;
+  place-self: center;
+  width: 5px; height: 10px;
+  margin-top: -2px;
+  border: solid var(--sobre-acento);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+  opacity: 0;
+  transition: opacity .12s;
+}
+input[type="checkbox"]:checked::before {
+  background: var(--acento);
+  border-color: var(--acento);
+}
+input[type="checkbox"]:checked::after { opacity: 1; }
+input[type="checkbox"]:disabled { cursor: not-allowed; }
+input[type="checkbox"]:disabled::before { opacity: .38; background: var(--surface-3); }
+input[type="checkbox"]:focus-visible::before { outline: 2px solid var(--acento); outline-offset: 2px; }
 a { color: var(--acento); }
 
 /* ── Login ────────────────────────────────────────────────────────────────── */

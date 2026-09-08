@@ -274,3 +274,96 @@ navegador jogar a página para o topo, de modo que abrir a busca no meio de uma
 lista longa e fechá-la devolvia a pessoa ao começo. O corpo vai para
 `position: fixed` deslocado pela rolagem guardada, o que congela a tela
 exatamente onde ela estava — e a devolve ao fechar. Medido: 320 → travado → 320.
+
+---
+
+## Segunda passada no mobile — medida, não estimada
+
+A primeira passada tratou do formato: tabela virou cartão, a navegação desceu
+para o polegar. Uma auditoria das 18 telas a 375 px mostrou o que sobrou.
+
+### O que a medição encontrou
+
+| | Antes | Depois |
+|---|---|---|
+| Alvos abaixo de 44 px | **86 de 86** na régua | **0 de 230** nas 18 telas |
+| Caixa de marcar | 17 × 17 px | 44 × 44 px |
+| Primeiro item da fila | 693 px do topo | 368 px |
+| Altura da régua | 9.637 px | 4.023 px |
+| Altura da Central | 10.247 px | 3.786 px |
+| Altura da auditoria | 7.564 px | 1.857 px |
+| Cromo permanente | 220 px | 119 px |
+
+### Alvo de dedo: 44 px
+
+Apple e Google publicam 44 pt / 48 dp como mínimo. A ação **principal da tela
+principal** — escolher quem recebe mensagem hoje — era um alvo de 17 px.
+
+A caixa nativa não deixa separar o desenho do alvo: `padding` nela não estende
+a área de toque de forma confiável. Passou a ser desenhada (`appearance: none`),
+com o quadrado do tamanho que se enxerga e a caixa do tamanho que o dedo acerta.
+
+O tique é um **L girado**, e não dois gradientes cruzados: cruzados desenham um
+X, que lê como *excluído* — o oposto de selecionado. Foi assim que saiu na
+primeira tentativa.
+
+### A explicação sai da frente do trabalho
+
+Na régua, 693 px de prosa antes do primeiro cliente: o parágrafo que explica a
+tela, o aviso de demonstração e o resumo de bloqueios. Tudo verdadeiro, tudo
+útil na primeira visita, tudo lido uma vez só.
+
+No computador o texto não custa — fica na coluna e o trabalho aparece ao lado.
+No celular ele empurra. Agora recolhe, com um toque para abrir.
+
+Duas regras que o recolhimento respeita:
+
+- **`.aviso.crit` nunca se recolhe.** Mensagem de erro atrás de um toque é erro
+  escondido. O que se dobra é explicação.
+- **O resumo herda o tom do bloco.** Pintar tudo de âmbar transformava o resumo
+  neutro de *"por que 21 não saem"* num alerta — e alerta que não é alerta
+  ensina a ignorar os que são.
+
+### A ação desce para o polegar
+
+A barra de disparo media 190 px empilhados **acima** da fila: empurrava o
+trabalho e ainda ficava longe da mão. Foi para o rodapé, acima da navegação —
+não no lugar dela, que prenderia a pessoa na régua.
+
+Ociosa é uma linha de 63 px. O botão aparece quando há seleção: ele já nascia
+`disabled` e não fazia nada com zero marcados, então 48 px permanentes eram
+puro custo.
+
+### Listas por partes
+
+Oito itens, e um botão que diz quantos faltam. As linhas continuam no DOM (só
+`hidden`), e não removidas: a busca do navegador e a leitura de tela dependem
+delas estarem lá.
+
+### Duas armadilhas que a medição pegou
+
+**`[hidden]` perde para o componente.** O atributo vale como `display: none` só
+na folha do navegador, e `.item { display: grid }` o atropela. A lista carimbou
+`hidden` em treze itens e a página continuou com 9.744 px. Resolvido com
+`[hidden] { display: none !important }` global.
+
+**Girar o aparelho perdia dois terços da fila.** O observador de redimensionamento
+vigiava só o corte de 820 px, mas as mudanças de DOM dependem do de **640**.
+Indo de 600 para 700 px, treze itens continuavam escondidos e as dobras
+permaneciam — sem nenhum aviso.
+
+Agora são os dois cortes, por `matchMedia` e não por `resize`: no iPhone a barra
+de endereço que recolhe ao rolar dispara `resize` a cada gesto, sem cruzar corte
+nenhum, e cada um viraria uma re-renderização no meio da rolagem. E `renderShell`
+sozinho não bastava — ele redesenha a casca e deixa o conteúdo com as marcas que
+o celular criou; é `navegar()` que devolve a lista inteira.
+
+### Detalhes menores
+
+- O botão *"mais N campos"* estava **dentro do título** do cartão, anunciando
+  campos logo acima dos que já estavam à vista. Foi para o fim, que é onde
+  "mais" quer dizer o que ainda falta.
+- A marca *"CRM MULTIEMPRESAS"* sai no celular; o nome da empresa ativa fica,
+  com um ponto na cor dela. São três instâncias, e mandar mensagem achando que
+  se está noutra empresa é o erro caro desta tela.
+- Endereço em mono não quebrava e estourava o cartão de Canais em 181 px.

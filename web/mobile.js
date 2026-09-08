@@ -120,7 +120,22 @@ function porLinhaMobile(linha) {
       : `mais ${quantos} campo${quantos > 1 ? 's' : ''}`;
   });
 
-  celulas[0].appendChild(b);
+  /*
+   * O botão vai para o FIM do cartão, e não para dentro do título.
+   *
+   * Dentro da primeira célula ele aparecia entre o nome e os campos — anunciava
+   * "mais 4 campos" logo acima dos dois que estavam à vista, o que lê como se
+   * fossem outros quatro além daqueles. No fim, ele diz o que ainda falta,
+   * que é o que a palavra "mais" promete.
+   *
+   * Numa célula própria sem `data-rot`: a regra de resumo esconde a partir da
+   * quarta célula rotulada, e sem rótulo esta fica de fora do corte — a mesma
+   * porta pela qual a coluna de ação já passa.
+   */
+  const cela = document.createElement('td');
+  cela.className = 'acao-abrir';
+  cela.appendChild(b);
+  linha.appendChild(cela);
 }
 
 /**
@@ -192,6 +207,122 @@ export function revelarColuna(etapa) {
  * Delegação em `document`, e não listener por campo: a régua é redesenhada a
  * cada navegação e a cada disparo, e listener preso ao elemento morre junto.
  */
+/**
+ * Quantos itens a lista mostra antes de pedir para continuar.
+ *
+ * Oito é o que cabe em cerca de duas rolagens de polegar. Menos parece
+ * truncado; mais volta ao problema que isto resolve.
+ */
+export const ITENS_POR_VEZ = 8;
+
+/*
+ * Listas longas passam a carregar por partes.
+ *
+ * Medido a 375 px: a régua tinha 9.637 px de altura, a Central 10.247 e a
+ * auditoria 7.564. São 12, 13 e 9 telas de rolagem — e o que a pessoa procura
+ * quase nunca está no fim.
+ *
+ * Nada é escondido de verdade: o botão diz quantos faltam, e uma segunda
+ * batida mostra o resto. O que muda é que a página nasce navegável.
+ *
+ * As linhas continuam no DOM (só `hidden`), e não removidas: a busca do
+ * navegador, o Ctrl+F e a leitura de tela dependem delas estarem lá — e
+ * recriá-las custaria mais do que esconder.
+ */
+export function limitarListas(raiz = document) {
+  if (!ehCompacto()) return;
+
+  const listas = [
+    ...raiz.querySelectorAll('#fila'),
+    ...raiz.querySelectorAll('.tabela-caixa tbody'),
+    ...raiz.querySelectorAll('.lista-longa'),
+  ];
+
+  for (const lista of listas) {
+    if (lista.dataset.limitada) continue;
+    const itens = [...lista.children].filter((x) => x.tagName !== 'BUTTON');
+    if (itens.length <= ITENS_POR_VEZ + 2) continue;   // não vale o botão
+
+    lista.dataset.limitada = '1';
+    let mostrando = ITENS_POR_VEZ;
+
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'mais-itens';
+
+    const aplicar = () => {
+      itens.forEach((it, i) => { it.hidden = i >= mostrando; });
+      const faltam = itens.length - mostrando;
+      if (faltam <= 0) { botao.remove(); return; }
+      botao.textContent = `Mostrar mais ${Math.min(faltam, ITENS_POR_VEZ)} de ${faltam}`;
+    };
+
+    botao.onclick = () => {
+      mostrando += ITENS_POR_VEZ;
+      aplicar();
+      // Sem isto o dedo fica no mesmo lugar e a tela parece não ter mudado.
+      itens[Math.min(mostrando - ITENS_POR_VEZ, itens.length - 1)]
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
+
+    aplicar();
+    // Fora do `tbody`, que só aceita linhas: o botão vai depois da tabela.
+    const dono = lista.tagName === 'TBODY' ? lista.closest('.tabela-caixa') : lista;
+    dono.append(botao);
+  }
+}
+
+/*
+ * Recolhe a prosa que fica ENTRE o topo da tela e o trabalho.
+ *
+ * Medido a 375 px, na régua: o primeiro cliente da fila começava a 693 px —
+ * mais de uma tela e meia de leitura antes de qualquer coisa acionável. O que
+ * ocupava esse espaço era o parágrafo que explica o que a tela é, o aviso de
+ * modo de demonstração e o resumo de bloqueios. Tudo verdadeiro, tudo útil na
+ * primeira visita, e tudo lido uma vez só.
+ *
+ * No computador o texto não custa nada: ele fica na coluna e o trabalho aparece
+ * ao lado. No celular ele empurra.
+ *
+ * Recolher, e não apagar: quem chega hoje toca uma vez e lê. Quem usa todo dia
+ * não paga por isso de novo.
+ *
+ * O aviso de demonstração é o único que mantém a primeira frase à vista mesmo
+ * fechado — esconder que nada está sendo enviado de verdade seria trocar altura
+ * por engano.
+ */
+export function recolherExplicacoes(raiz = document) {
+  if (!ehCompacto()) return;
+
+  const chamada = raiz.querySelector('.cabeca p.chamada');
+  if (chamada && !chamada.closest('.explica')) {
+    dobrar(chamada, 'O que é esta tela', { resumo: null });
+  }
+
+  /*
+   * `.crit` fica de fora: mensagem de erro atrás de um toque é erro escondido.
+   * O que se recolhe é explicação — o que aconteceu de errado permanece aberto.
+   */
+  for (const aviso of raiz.querySelectorAll('main > .aviso:not(.crit)')) {
+    if (aviso.dataset.dobrado) continue;
+    aviso.dataset.dobrado = '1';
+    // A primeira frase em negrito é o resumo — é assim que estes blocos são
+    // escritos no sistema inteiro.
+    const forte = aviso.querySelector('strong, b');
+    dobrar(aviso, forte ? forte.textContent.trim() : 'Entenda', { resumo: !!forte });
+  }
+}
+
+/** Envolve `el` num recolhimento com `rotulo` visível. */
+function dobrar(el, rotulo, { resumo }) {
+  const d = document.createElement('details');
+  d.className = `explica${resumo ? ' com-resumo' : ''}`;
+  const s = document.createElement('summary');
+  s.textContent = rotulo;
+  el.replaceWith(d);
+  d.append(s, el);
+}
+
 export function ligarAutoCrescer() {
   const crescer = (ta) => {
     if (!ta.classList.contains('editavel')) return;

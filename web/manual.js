@@ -855,6 +855,22 @@ export function manualHtml(codigoEmpresa) {
                   <td>Ocupa a tela quase inteira, com uma alça no topo. Toque fora para fechar.</td>
                 </tr>
                 <tr>
+                  <td class="forte">Tudo que se toca tem 44 px</td>
+                  <td>A caixa de marcar da fila tinha 17 px — menos da metade do mínimo. Numa lista de vinte, errar o toque não é incômodo: é disparar para o cliente errado.</td>
+                </tr>
+                <tr>
+                  <td class="forte">A explicação fica recolhida</td>
+                  <td>O texto que descreve a tela abre com um toque em “O que é esta tela”. Ele empurrava o primeiro cliente da fila para 693 px do topo — uma tela e meia de leitura antes de qualquer trabalho.</td>
+                </tr>
+                <tr>
+                  <td class="forte">Disparar fica embaixo</td>
+                  <td>A barra de seleção desceu para junto do polegar e só mostra o botão quando há alguém marcado — antes ela ocupava 190 px no alto, longe da mão e em cima do trabalho.</td>
+                </tr>
+                <tr>
+                  <td class="forte">Lista carrega por partes</td>
+                  <td>Oito itens por vez, com o botão dizendo quantos faltam. A régua tinha 9.637 px de altura; a Central, 10.247. Ninguém rola doze telas para achar alguém.</td>
+                </tr>
+                <tr>
                   <td class="forte">Funil desliza</td>
                   <td>Uma etapa por vez, arrastando de lado. Para mover um cartão, use o seletor no pé dele — arrastar e soltar não funciona no dedo.</td>
                 </tr>

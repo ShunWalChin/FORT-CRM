@@ -15,8 +15,8 @@ import { telaCentral, telaConversoes, telaAtribuicao } from './telas-aquisicao.j
 import { telaCanais } from './tela-canais.js';
 import { icone, aplicarTema, temaAtual, desenharSeletorDeTema } from './ui.js';
 import {
-  ehMobile, rotularTabelas, desenharNavBaixo, removerNavBaixo, revelarColuna,
-  ligarAutoCrescer, CORTE_MOBILE,
+  ehMobile, rotularTabelas, recolherExplicacoes, limitarListas, desenharNavBaixo, removerNavBaixo, revelarColuna,
+  ligarAutoCrescer, CORTE_MOBILE, CORTE_COMPACTO,
 } from './mobile.js';
 
 const raiz = document.getElementById('raiz');
@@ -561,6 +561,16 @@ async function navegar() {
    * dia divirjam. Vale no desktop também — o atributo fica lá, sem efeito.
    */
   rotularTabelas(alvo);
+  /*
+   * No celular a explicação da tela sai da frente do trabalho.
+   *
+   * Roda aqui, depois da renderização, pelo mesmo motivo de `rotularTabelas`:
+   * são dezoito telas com cabeçalho, e duplicar a regra em cada uma é garantir
+   * que um dia divirjam.
+   */
+  recolherExplicacoes(alvo);
+  // Listas de dez telas de altura passam a nascer com oito itens.
+  limitarListas(alvo);
   sincronizarNavBaixo();
   // Link colado ou pagina recarregada com `?ficha=` reabre a ficha.
   restaurarGavetaDaUrl();
@@ -599,14 +609,35 @@ function sincronizarNavBaixo() {
  * isto o celular ficaria com a barra de polegar num layout de desktop — ou
  * pior, sem barra nenhuma e com o menu escondido.
  */
-let eraMobile = null;
-window.addEventListener('resize', () => {
-  const agora = ehMobile();
-  if (eraMobile === null) { eraMobile = agora; return; }
-  if (agora === eraMobile) return;
-  eraMobile = agora;
-  if (estado.token && estado.empresas.length) renderShell();
-});
+/*
+ * Travessia de ponto de corte: `matchMedia`, e não `resize`.
+ *
+ * São dois cortes e os dois importam. O de 820 muda a CASCA (a lateral vira
+ * menu, aparece a barra de polegar). O de 640 muda o CONTEÚDO: tabela vira
+ * cartão, a explicação se recolhe e a lista passa a carregar por partes — e
+ * essas três mexem no DOM. Vigiando só o primeiro, girar um tablet de 600 para
+ * 700 px atravessava o corte de conteúdo sem redesenhar: treze dos vinte e um
+ * itens da fila continuavam com `hidden`, e a pessoa perdia dois terços do
+ * trabalho sem nenhum aviso.
+ *
+ * `resize` seria o reflexo, e é o sinal errado. No iPhone a barra de endereço
+ * que recolhe ao rolar dispara `resize` a cada gesto, sem que ponto de corte
+ * nenhum tenha sido cruzado — e cada um desses viraria uma re-renderização da
+ * tela inteira no meio da rolagem. `matchMedia` avisa quando a resposta MUDA,
+ * que é exatamente a pergunta que está sendo feita.
+ */
+for (const largura of [CORTE_MOBILE, CORTE_COMPACTO]) {
+  window.matchMedia(`(max-width: ${largura}px)`).addEventListener('change', () => {
+    if (!estado.token || !estado.empresas.length) return;
+    renderShell();
+    /*
+     * `navegar()` junto é obrigatório: `renderShell` redesenha a casca e deixa
+     * o conteúdo como estava — com as marcas de `hidden` e as dobras que o
+     * celular criou. É a re-renderização que devolve a lista inteira.
+     */
+    navegar();
+  });
+}
 
 window.addEventListener('hashchange', navegar);
 ligarAutoCrescer();
@@ -1440,7 +1471,7 @@ VISOES.regua = async (el) => {
 
     <div class="regua-topo">
       <label style="display:flex;gap:8px;align-items:center;cursor:pointer">
-        <input type="checkbox" id="marcar-todos" style="width:17px;height:17px;accent-color:var(--acento)">
+        <input type="checkbox" id="marcar-todos">
         <span style="font-size:13.5px">Marcar todos os liberados</span>
       </label>
       <span class="conta"><b id="conta-sel">0</b> selecionados</span>
@@ -1824,7 +1855,7 @@ function formularioCliente() {
         <select name="perfil">${Object.entries(PERFIS).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('')}</select>
       </div>
       <label style="display:flex;gap:9px;align-items:flex-start;margin:16px 0;cursor:pointer">
-        <input type="checkbox" name="consentimento" style="width:17px;height:17px;margin-top:2px;accent-color:var(--acento)">
+        <input type="checkbox" name="consentimento">
         <span style="font-size:13.5px;color:var(--dim)">
           O cliente autorizou receber mensagens.
           <strong style="color:var(--txt)">Sem esta marcação ele entra na base, mas fica fora da régua.</strong>
