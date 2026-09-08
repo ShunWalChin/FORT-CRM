@@ -204,3 +204,28 @@
   border: 1px dashed var(--crit); border-radius: var(--radius);
   color: var(--crit); font: 500 10px/1.3 var(--sans);
 }
+
+/* ── Nível da revisão e posição do veículo ─────────────────────────────── */
+.vt-nivel {
+  font: 700 9.5px var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 3px; border: 1px solid;
+}
+.vt-nivel.bronze { color: #b07a3c; border-color: #b07a3c55; background: #b07a3c1a; }
+.vt-nivel.prata  { color: #9aa7b0; border-color: #9aa7b055; background: #9aa7b01a; }
+.vt-nivel.ouro   { color: #d4a63c; border-color: #d4a63c55; background: #d4a63c1a; }
+
+/*
+ * Onde o carro tem de estar para este grupo.
+ *
+ * Os grupos seguem a ordem do TRABALHO — recepção, capô, meia altura, altura
+ * total, abaixado, rodagem —, e não a dos sistemas. Sem dizer a posição, a
+ * sequência perde o sentido e vira só outra forma de agrupar.
+ */
+.vt-posicao {
+  background: var(--surface-2); border-left: 3px solid var(--acento);
+  border-radius: var(--radius); padding: 11px 14px; margin-bottom: 12px;
+}
+.vt-posicao b {
+  display: block; font: 600 13.5px var(--sans); color: var(--txt-hi); margin-bottom: 3px;
+}
+.vt-posicao span { font-size: 12.5px; color: var(--dim); line-height: 1.5; }

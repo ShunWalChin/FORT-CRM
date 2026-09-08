@@ -77,15 +77,65 @@ aviso em vez de um zero — zero parece um caminhão parado.
 
 ## 3. Vistoria de entrada
 
-**63 itens, 11 sistemas do veículo.** É o documento que separa o que já estava
-no veículo do que a oficina fez. Sem ele, todo arranhão encontrado na entrega
-vira discussão sem árbitro — e a oficina perde as duas coisas, o cliente e a
-razão.
+**86 itens em 8 etapas, e três profundidades de revisão.** É o documento que
+separa o que já estava no veículo do que a oficina fez. Sem ele, todo arranhão
+encontrado na entrega vira discussão sem árbitro — e a oficina perde as duas
+coisas, o cliente e a razão.
 
-> **Sobre a origem da lista.** É uma vistoria profissional montada para oficina
-> de injeção diesel, e **não** a transcrição da folha oficial de nenhuma rede.
-> Os itens são **dados** (`CHECKLIST` em `src/vistoria.mjs`), não código —
-> trocar pela folha oficial é editar essa constante, sem tocar em regra nenhuma.
+### Os grupos são a ordem do TRABALHO, não a dos sistemas
+
+Esta foi a mudança que veio das folhas da rede, e é a mais importante de todas.
+
+Agrupar por sistema — freios, suspensão, motor — é como se **pensa** sobre um
+carro. Não é como se **trabalha** nele: o técnico não pula do freio dianteiro
+para o motor e volta ao freio traseiro. Ele recebe o carro no chão com o cliente
+ao lado, abre o capô, sobe o elevador até a meia altura, sobe até o fim, desce,
+e por último roda.
+
+| Etapa | Onde o veículo está | Itens |
+|---|---|---|
+| Recepção com o cliente | No chão, cliente presente | 16 |
+| Exterior | Volta ao redor | 8 |
+| Sob o capô | Capô aberto, motor frio | 23 |
+| Meia altura | Altura da cintura, rodas removidas | 16 |
+| Altura total | Elevador no alto | 8 |
+| Veículo abaixado | De volta ao chão | 3 |
+| Diagnóstico eletrônico | Scanner conectado | 5 |
+| Após o serviço | Teste de rodagem e entrega | 7 |
+
+A lista na ordem do trabalho elimina o vai-e-vem — e é a diferença entre uma
+vistoria de quinze minutos e uma de quarenta.
+
+### Três profundidades
+
+| Nível | Itens | O que cobre |
+|---|---|---|
+| **Bronze** | 64 | Segurança e fluidos. O que não pode faltar para o carro rodar. |
+| **Prata** | 80 | Bronze mais filtros, suspensão sob elevador e teste de rodagem. |
+| **Ouro** | 86 | Prata mais câmbio, diferencial, chassi e diagnóstico completo. |
+
+Os níveis são **concêntricos**: todo item de Bronze aparece em Prata e em Ouro.
+São uma lista só filtrada, e não três listas que um dia divergem — há teste que
+garante isso.
+
+O nível fica **gravado na vistoria**: editar o catálogo depois não muda uma
+vistoria já feita. E o resumo conta sobre os itens *daquela* vistoria — mostrar
+"32 de 86" numa Bronze faria a barra parecer parada num serviço que está pela
+metade.
+
+### Os quatro pneus, um a um
+
+A folha da rede tem um diagrama com quatro caixas, uma por roda. *"Dianteiro"* e
+*"traseiro"* escondia o pneu único que está gasto — e é sempre um só.
+
+> **Sobre a origem da lista.** A estrutura foi reconstruída a partir de folhas
+> reais fornecidas pelo Soberano — a de recepção junto ao cliente, a de revisão
+> por níveis Bronze/Prata/Ouro, e uma folha de manutenção preventiva. Dela vêm
+> a **sequência por posição do veículo**, os **três níveis**, a **medição por
+> roda** e o **aceite do cliente com assinatura**.
+>
+> Os itens continuam sendo **dados** (`CHECKLIST` em `src/vistoria.mjs`), não
+> código: ajustar a lista é editar essa constante, sem tocar em regra nenhuma.
 
 ### Três propriedades que fazem dela um instrumento, e não um formulário
 
@@ -120,10 +170,12 @@ corrigir a própria grafia numa nota é o comportamento certo.
 veículo** — é diferente de não ter sido olhado, e a contagem de pendências
 depende dessa distinção.
 
-### Nove itens pedem medida
+### Dezesseis itens pedem medida
 
-Sulco de pneu em mm (mínimo legal 1,6), pastilha em mm, bateria e alternador em
-V, pressão de rail em bar, retorno de bico em ml/min, calibragem em psi. Número
+Sulco em mm nas **quatro rodas** (mínimo legal 1,6), freio dianteiro e traseiro
+em mm, bateria e alternador em V, pressão de rail em bar, retorno de bico em
+ml/min, calibragem em psi, torque de roda em Nm, aditivo e teor de água em %.
+Número
 é o que transforma "pneu gasto" em "1,2 mm, abaixo do limite legal".
 
 ### Fluxo

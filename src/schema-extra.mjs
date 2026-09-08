@@ -246,6 +246,10 @@ create table if not exists vistorias (
   veiculo_id    text not null references veiculos(id) on delete cascade,
   ordem_id      text references ordens_servico(id) on delete set null,
   numero        text not null,
+  -- Profundidade da revisao: bronze, prata ou ouro. Decide QUAIS itens a
+  -- vistoria tem, e fica gravado porque o catalogo pode mudar depois.
+  nivel         text not null default 'prata'
+                check (nivel in ('bronze','prata','ouro')),
   km            integer,
   nivel_combustivel text,
   status        text not null default 'rascunho'

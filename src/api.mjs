@@ -25,8 +25,9 @@ import { extrairAtribuicao, identificadoresHash, temSinal } from './atribuicao.m
 import { EVENTOS } from './conversoes.mjs';
 import { resolverAnuncios, LOTE_MAXIMO } from './campanhas.mjs';
 import {
-  CHECKLIST, ESTADOS, TOTAL_ITENS, exigeFoto, hashConteudo, itensDoChecklist,
-  pendencias, podeIniciarOS, proximoNumero, resumo as resumoVistoria,
+  CHECKLIST, ESTADOS, NIVEIS, TAMANHO_POR_NIVEL, TOTAL_ITENS, catalogoDoNivel,
+  exigeFoto, hashConteudo, itensDoChecklist, pendencias, podeIniciarOS,
+  proximoNumero, resumo as resumoVistoria,
 } from './vistoria.mjs';
 import {
   PLANO_PADRAO, kmEstimado, linhaDoTempo, mediaKmMes, projetarServico,
@@ -1882,9 +1883,16 @@ export const ROTAS = {
   // ── Oficina: veiculos, vistoria e midia ──────────────────────────────────
 
   /** O catalogo do check-list. A tela nao guarda copia dele. */
-  'GET /api/checklist': (fed, req) => {
+  'GET /api/checklist': (fed, req, _p, _c, url) => {
     contexto(fed, req);
-    return ok({ grupos: CHECKLIST, total: TOTAL_ITENS, estados: ESTADOS });
+    const nivel = url?.searchParams.get('nivel');
+    return ok({
+      grupos: nivel ? catalogoDoNivel(nivel) : CHECKLIST,
+      total: nivel ? TAMANHO_POR_NIVEL[nivel] : TOTAL_ITENS,
+      estados: ESTADOS,
+      niveis: NIVEIS,
+      tamanhos: TAMANHO_POR_NIVEL,
+    });
   },
 
   /**
@@ -2037,6 +2045,10 @@ export const ROTAS = {
         `Este veículo já tem a vistoria ${aberta.numero} em andamento.`, { vistoriaId: aberta.id });
     }
 
+    // O nivel decide QUAIS itens a vistoria tem, e fica gravado: o catalogo
+    // pode mudar depois, e a vistoria continua sendo a que foi feita.
+    const nivel = NIVEIS[corpo?.nivel] ? corpo.nivel : 'prata';
+
     const id = novoId();
     const numero = proximoNumero(escopo);
     escopo.inserir('vistorias', {
@@ -2045,6 +2057,7 @@ export const ROTAS = {
       veiculo_id: veiculo.id,
       ordem_id: corpo?.ordem_id ?? null,
       numero,
+      nivel,
       km: corpo?.km != null ? num(corpo.km, 0) : null,
       nivel_combustivel: texto(corpo?.nivel_combustivel, 20),
       status: 'rascunho',
@@ -2053,7 +2066,7 @@ export const ROTAS = {
       iniciada_em: agora(),
     });
 
-    for (const item of itensDoChecklist()) {
+    for (const item of itensDoChecklist(nivel)) {
       escopo.inserir('vistoria_itens', {
         id: novoId(),
         vistoria_id: id,
@@ -2071,9 +2084,9 @@ export const ROTAS = {
     banco.auditar({
       empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.abrir',
       entidade: 'vistorias', entidadeId: id,
-      dados: { numero, placa: veiculo.placa, cliente: veiculo.cliente_nome },
+      dados: { numero, nivel, placa: veiculo.placa, cliente: veiculo.cliente_nome },
     });
-    return ok({ id, numero, veiculo, itens: TOTAL_ITENS });
+    return ok({ id, numero, nivel, veiculo, itens: TAMANHO_POR_NIVEL[nivel] });
   },
 
   'GET /api/vistorias': (fed, req, _p, _c, url) => {
@@ -2116,8 +2129,9 @@ export const ROTAS = {
       itens,
       midias: porItem,
       resumo: resumoVistoria(itens),
-      pendencias: pendencias(itens, porItem),
-      catalogo: CHECKLIST,
+      pendencias: pendencias(itens, porItem, v.nivel ?? 'ouro'),
+      catalogo: catalogoDoNivel(v.nivel ?? 'ouro'),
+      niveis: NIVEIS,
     });
   },
 
@@ -2288,7 +2302,7 @@ export const ROTAS = {
     const porItem = {};
     for (const m of midias) (porItem[m.item_id] ??= []).push(m);
 
-    const faltas = pendencias(itens, porItem);
+    const faltas = pendencias(itens, porItem, v.nivel ?? 'ouro');
     if (faltas.length) {
       throw new ErroHttp(422, 'vistoria_incompleta',
         `Faltam ${faltas.length} item(ns) para poder enviar.`, { pendencias: faltas });

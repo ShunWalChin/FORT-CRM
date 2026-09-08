@@ -58,6 +58,9 @@ export const COLUNAS_ESPERADAS = [
 
   // A vistoria trava o inicio da OS.
   { tabela: 'ordens_servico', coluna: 'vistoria_id', definicao: 'text' },
+
+  // Profundidade da revisao na vistoria.
+  { tabela: 'vistorias', coluna: 'nivel', definicao: "text not null default 'prata'" },
 ];
 
 /**

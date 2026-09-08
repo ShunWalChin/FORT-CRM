@@ -44,133 +44,220 @@ export const ESTADOS = {
  * `foto: 'defeito'` — foto exigida quando o item não passa.
  * `medida` — o item pede número, com unidade e faixa saudável.
  */
+/**
+ * Níveis de serviço.
+ *
+ * Vem da folha da rede, que separa a revisão em três profundidades. É a
+ * diferença entre "conferir o filtro de ar" e "trocar o filtro de ar", e entre
+ * uma revisão de 40 minutos e uma de três horas.
+ *
+ * Cada item declara o nível MÍNIMO em que entra: um item `bronze` está nos
+ * três, um `ouro` só no mais completo. Assim a mesma lista serve às três
+ * revisões, sem manter três listas que um dia divergem.
+ */
+export const NIVEIS = {
+  bronze: {
+    nome: 'Bronze',
+    resumo: 'Revisão essencial',
+    descricao: 'Segurança e fluidos. O que não pode faltar para o carro rodar.',
+    ordem: 0,
+  },
+  prata: {
+    nome: 'Prata',
+    resumo: 'Revisão completa',
+    descricao: 'Bronze mais os filtros, a suspensão sob elevador e o teste de rodagem.',
+    ordem: 1,
+  },
+  ouro: {
+    nome: 'Ouro',
+    resumo: 'Revisão maior',
+    descricao: 'Prata mais câmbio, diferencial, chassi e diagnóstico eletrônico completo.',
+    ordem: 2,
+  },
+};
+
+/** Um item de nível N entra em todas as revisões de N para cima. */
+export function itemNoNivel(item, nivel) {
+  return (NIVEIS[item.nivel]?.ordem ?? 0) <= (NIVEIS[nivel]?.ordem ?? 2);
+}
+
+/**
+ * Os itens, agrupados por POSIÇÃO DO VEÍCULO — e não por sistema.
+ *
+ * Esta é a mudança que veio da folha da rede, e é a mais importante de todas.
+ *
+ * Agrupar por sistema (freios, suspensão, motor) é como se PENSA sobre um
+ * carro. Não é como se TRABALHA nele: o técnico não pula do freio dianteiro
+ * para o motor e volta ao freio traseiro. Ele recebe o carro no chão com o
+ * cliente do lado, abre o capô, sobe o elevador até a meia altura, sobe até o
+ * fim, desce, entra na cabine, e por último roda.
+ *
+ * A lista na ordem do trabalho elimina o vai-e-vem — e é a diferença entre uma
+ * vistoria de quinze minutos e uma de quarenta.
+ *
+ * `foto: 'sempre'` — registro obrigatório mesmo estando tudo certo.
+ * `foto: 'defeito'` — foto exigida quando o item não passa.
+ * `medida` — o item pede número, com unidade e faixa.
+ * `nivel` — a partir de qual revisão o item entra.
+ */
 export const CHECKLIST = [
   {
-    grupo: 'Recepção',
+    grupo: 'Recepção com o cliente',
+    posicao: 'Veículo no chão, cliente presente',
+    dica: 'Feito ao lado do cliente, antes de o carro entrar. É o que ele vê e confirma.',
     itens: [
-      { chave: 'hodometro', nome: 'Hodômetro', dica: 'Fotografe o painel com o número legível. É a leitura que alimenta a previsão dos próximos serviços.', foto: 'sempre', medida: { unidade: 'km' } },
-      { chave: 'combustivel', nome: 'Nível de combustível', dica: 'Anote o nível na entrada. Evita a pergunta "saiu com menos?" na devolução.', foto: 'sempre' },
-      { chave: 'placa_chassi', nome: 'Placa e chassi', dica: 'Confira a placa contra o chassi gravado no monobloco. Divergência é assunto de documentação, não de oficina.', foto: 'sempre' },
-      { chave: 'crlv', nome: 'CRLV em dia', dica: 'Documento vencido impede o teste de rodagem em via pública.', foto: 'defeito' },
-      { chave: 'pertences', nome: 'Pertences no interior', dica: 'Registre o que fica no veículo. Ferramenta, carga e documento somem da memória, não do vídeo.', foto: 'defeito' },
+      { chave: 'hodometro', nome: 'Hodômetro', nivel: 'bronze', dica: 'Fotografe o painel com o número legível. É a leitura que alimenta a previsão dos próximos serviços.', foto: 'sempre', medida: { unidade: 'km' } },
+      { chave: 'combustivel', nome: 'Nível de combustível', nivel: 'bronze', dica: 'Anote o nível na entrada. Evita a pergunta "saiu com menos?" na devolução.', foto: 'sempre' },
+      { chave: 'placa_chassi', nome: 'Placa e chassi', nivel: 'bronze', dica: 'Confira a placa contra o chassi gravado. Divergência é assunto de documentação, não de oficina.', foto: 'sempre' },
+      { chave: 'codigos_falha', nome: 'Leitura de códigos de avaria', nivel: 'bronze', dica: 'Scanner ANTES de mexer: motor e sistemas de segurança. Apagar sem anotar perde a pista.', foto: 'defeito' },
+      { chave: 'servo_freio', nome: 'Servo-freio', nivel: 'bronze', dica: 'Motor desligado, pise cinco vezes; ao dar partida o pedal deve descer sozinho.', foto: 'defeito' },
+      { chave: 'freio_hidraulico', nome: 'Retenção de pressão hidráulica', nivel: 'bronze', dica: 'Mantenha o pé no pedal por trinta segundos. Se afundar devagar, há vazamento interno.', foto: 'defeito' },
+      { chave: 'freio_estacionamento', nome: 'Freio de estacionamento', nivel: 'bronze', dica: 'Tem de segurar o veículo em rampa. Conte os cliques do curso.', foto: 'defeito' },
+      { chave: 'cintos', nome: 'Cintos de segurança', nivel: 'bronze', dica: 'Puxe com força: o cinto tem de travar. Confira enrolamento, fivela e fixações.', foto: 'defeito' },
+      { chave: 'painel_luzes', nome: 'Painel e luzes de advertência', nivel: 'bronze', dica: 'Dê partida e fotografe o painel. Luz de injeção, ABS ou airbag acesa muda o orçamento inteiro.', foto: 'sempre' },
+      { chave: 'ar_condicionado', nome: 'Ar-condicionado e climatização', nivel: 'bronze', dica: 'Ligue no máximo por um minuto e sinta a saída. Cheiro de mofo é filtro de cabine.', foto: 'defeito' },
+      { chave: 'buzina', nome: 'Buzina', nivel: 'bronze', dica: 'Item obrigatório de segurança, e o mais esquecido da lista.', foto: 'defeito' },
+      { chave: 'iluminacao_interna', nome: 'Iluminação interna', nivel: 'bronze', dica: 'Teto, porta-luvas e cortesia das portas.', foto: 'defeito' },
+      { chave: 'iluminacao_ext', nome: 'Iluminação externa', nivel: 'bronze', dica: 'Acenda tudo: faróis, lanternas, placa, ré, freio e setas. Peça ajuda para conferir por trás.', foto: 'defeito' },
+      { chave: 'limpador_esguicho', nome: 'Limpador e esguichos', nivel: 'bronze', dica: 'Jato mirado no vidro, e palheta que limpa sem riscar. Palheta ressecada risca o para-brisa.', foto: 'defeito' },
+      { chave: 'pertences', nome: 'Pertences no interior', nivel: 'bronze', dica: 'Registre o que fica no veículo. Ferramenta, carga e documento somem da memória, não do vídeo.', foto: 'defeito' },
+      { chave: 'extintor_triangulo', nome: 'Extintor, triângulo e macaco', nivel: 'bronze', dica: 'Itens obrigatórios; confira a validade do extintor e se o macaco está completo.', foto: 'defeito' },
     ],
   },
   {
     grupo: 'Exterior',
+    posicao: 'Volta ao redor do veículo',
+    dica: 'Uma volta completa, sempre no mesmo sentido. As quatro faces são o registro do estado de entrada.',
     itens: [
-      { chave: 'frente', nome: 'Frente', dica: 'Enquadre o veículo inteiro, de frente, com a placa visível.', foto: 'sempre' },
-      { chave: 'traseira', nome: 'Traseira', dica: 'Veículo inteiro, de trás. Inclua o para-choque.', foto: 'sempre' },
-      { chave: 'lateral_esq', nome: 'Lateral esquerda', dica: 'De ponta a ponta. É onde aparecem amassados de corredor.', foto: 'sempre' },
-      { chave: 'lateral_dir', nome: 'Lateral direita', dica: 'De ponta a ponta, como na esquerda. É o lado que encosta no meio-fio e junta risco de guia.', foto: 'sempre' },
-      { chave: 'parabrisa', nome: 'Para-brisa e vidros', dica: 'Trinca no campo de visão do motorista reprova em vistoria. Fotografe de dentro, contra a luz.', foto: 'defeito' },
-      { chave: 'retrovisores', nome: 'Retrovisores', dica: 'Inteiros, firmes e reguláveis.', foto: 'defeito' },
-      { chave: 'iluminacao_ext', nome: 'Faróis, lanternas e setas', dica: 'Acenda tudo, incluindo a ré e o freio. Peça ajuda para conferir por trás.', foto: 'defeito' },
+      { chave: 'frente', nome: 'Frente', nivel: 'bronze', dica: 'Enquadre o veículo inteiro, de frente, com a placa visível.', foto: 'sempre' },
+      { chave: 'traseira', nome: 'Traseira', nivel: 'bronze', dica: 'Veículo inteiro, de trás. Inclua o para-choque.', foto: 'sempre' },
+      { chave: 'lateral_esq', nome: 'Lateral esquerda', nivel: 'bronze', dica: 'De ponta a ponta. É onde aparecem amassados de corredor.', foto: 'sempre' },
+      { chave: 'lateral_dir', nome: 'Lateral direita', nivel: 'bronze', dica: 'De ponta a ponta. É o lado do meio-fio, e junta risco de guia.', foto: 'sempre' },
+      { chave: 'parabrisa', nome: 'Para-brisa e vidros', nivel: 'bronze', dica: 'Trinca no campo de visão do motorista reprova em vistoria. Fotografe de dentro, contra a luz.', foto: 'defeito' },
+      { chave: 'carroceria', nome: 'Carroceria: corrosão e pintura', nivel: 'bronze', dica: 'Bolha de ferrugem na caixa de roda e na soleira. Marque cada avaria no diagrama.', foto: 'defeito' },
+      { chave: 'retrovisores', nome: 'Retrovisores', nivel: 'bronze', dica: 'Inteiros, firmes e reguláveis.', foto: 'defeito' },
+      { chave: 'dobradicas', nome: 'Dobradiças, travas e capô', nivel: 'prata', dica: 'Lubrifique dobradiças de porta, trinco do capô e batentes. Rangido vira reclamação.', foto: 'defeito' },
     ],
   },
   {
-    grupo: 'Cabine',
+    grupo: 'Sob o capô',
+    posicao: 'Capô aberto, motor frio',
+    dica: 'Com o motor FRIO. Abrir o sistema de arrefecimento quente queima.',
     itens: [
-      { chave: 'painel_luzes', nome: 'Luzes de advertência', dica: 'Dê partida e fotografe o painel. Luz de injeção acesa muda o orçamento inteiro.', foto: 'sempre' },
-      { chave: 'cintos', nome: 'Cintos de segurança', dica: 'Puxe com força: o cinto tem de travar. Confira o enrolamento e a fivela.', foto: 'defeito' },
-      { chave: 'bancos', nome: 'Bancos e travas', dica: 'Regulagem e travamento. Banco que corre no freio é risco.', foto: 'defeito' },
-      { chave: 'buzina_limpador', nome: 'Buzina e limpador', dica: 'Palheta ressecada risca o para-brisa — informe antes de trocar.', foto: 'defeito' },
-      { chave: 'ar_condicionado', nome: 'Ar-condicionado e ventilação', dica: 'Ligue no máximo por um minuto e sinta a saída.', foto: 'defeito' },
-      { chave: 'extintor_triangulo', nome: 'Extintor e triângulo', dica: 'Itens obrigatórios; confira a validade do extintor.', foto: 'defeito' },
+      { chave: 'oleo_nivel', nome: 'Nível e aspecto do óleo', nivel: 'bronze', dica: 'Óleo leitoso é água na câmara — pare o serviço e avise. Fotografe a vareta.', foto: 'sempre' },
+      { chave: 'liquido_nivel', nome: 'Líquido de arrefecimento', nivel: 'bronze', dica: 'Nível entre as marcas, com o motor frio. Ferrugem ou óleo boiando é problema sério.', foto: 'defeito' },
+      { chave: 'antifreeze', nome: 'Concentração do aditivo', nivel: 'prata', dica: 'Meça com o refratômetro. Abaixo de -20 °C de proteção, troque.', foto: 'defeito', medida: { unidade: '%', min: 30, alerta: 40 } },
+      { chave: 'fluido_freio', nome: 'Fluido de freio', nivel: 'bronze', dica: 'Nível entre as marcas e cor clara. Escuro absorveu água e ferve na descida.', foto: 'defeito' },
+      { chave: 'fluido_freio_teor', nome: 'Teor de água no fluido', nivel: 'prata', dica: 'Teste com o medidor. Acima de 3% o ponto de ebulição cai perigosamente.', foto: 'defeito', medida: { unidade: '%', alerta: 2, max: 3 } },
+      { chave: 'direcao_hidraulica', nome: 'Fluido da direção hidráulica', nivel: 'bronze', dica: 'Nível e cor. Escuro ou com cheiro de queimado é bomba sofrendo.', foto: 'defeito' },
+      { chave: 'filtro_ar', nome: 'Filtro de ar', nivel: 'bronze', dica: 'Contra a luz: se não passa claridade, troque. Filtro saturado rouba potência.', foto: 'defeito' },
+      { chave: 'filtro_cabine', nome: 'Filtro de cabine (ar-condicionado)', nivel: 'prata', dica: 'É o culpado do cheiro de mofo e do ar fraco. Quase sempre esquecido.', foto: 'defeito' },
+      { chave: 'filtro_combustivel', nome: 'Filtro de combustível', nivel: 'bronze', dica: 'Confira a data da última troca. Filtro saturado mata bomba de alta.', foto: 'defeito' },
+      { chave: 'separador_agua', nome: 'Separador de água', nivel: 'bronze', dica: 'Drene e fotografe o que sair. Água no diesel é a causa número um de bomba queimada.', foto: 'sempre' },
+      { chave: 'correias', nome: 'Correias e tensores', nivel: 'bronze', dica: 'Trinca transversal, brilho de patinação e ruído no tensor.', foto: 'defeito' },
+      { chave: 'correia_dentada', nome: 'Correia dentada', nivel: 'ouro', dica: 'Confira o intervalo contra o km. Romper significa motor fundido.', foto: 'defeito' },
+      { chave: 'mangueiras', nome: 'Mangueiras e abraçadeiras', nivel: 'bronze', dica: 'Aperte com a mão: mangueira boa volta, mangueira velha fica marcada.', foto: 'defeito' },
+      { chave: 'radiador', nome: 'Radiador e colmeia', nivel: 'bronze', dica: 'Colmeia entupida de barro e inseto derruba a troca de calor.', foto: 'defeito' },
+      { chave: 'bateria', nome: 'Bateria: tensão em repouso', nivel: 'bronze', dica: 'Abaixo de 12,4 V está descarregada; abaixo de 12,0 V, sulfatada.', foto: 'defeito', medida: { unidade: 'V', min: 12.0, alerta: 12.4 } },
+      { chave: 'terminais_bateria', nome: 'Terminais e cabos', nivel: 'bronze', dica: 'Zinabre e terminal frouxo derrubam a partida e enganam o diagnóstico.', foto: 'defeito' },
+      { chave: 'alternador', nome: 'Carga do alternador', nivel: 'bronze', dica: 'Com o motor em marcha, a tensão deve subir para 13,8–14,4 V.', foto: 'defeito', medida: { unidade: 'V', min: 13.5, alerta: 13.8 } },
+      { chave: 'chicotes', nome: 'Chicotes e componentes', nivel: 'prata', dica: 'Emenda com fita isolante perto do escape é começo de incêndio.', foto: 'defeito' },
+      { chave: 'vazamentos_motor', nome: 'Vazamentos no motor', nivel: 'bronze', dica: 'Cárter, tampa de válvulas e retentor. Fotografe a poça, se houver.', foto: 'defeito' },
+      { chave: 'coxins', nome: 'Coxins e fixações', nivel: 'prata', dica: 'Motor batendo na carroceria em aceleração.', foto: 'defeito' },
+      { chave: 'tubulacoes_diesel', nome: 'Tubulações e conexões de diesel', nivel: 'bronze', dica: 'Umidade de diesel em conexão é entrada de ar no sistema.', foto: 'defeito' },
+      { chave: 'respiro_motor', nome: 'Respiro do motor', nivel: 'prata', dica: 'Respiro entupido pressuriza o cárter e empurra óleo pelos retentores.', foto: 'defeito' },
+      { chave: 'vacuo', nome: 'Mangueiras de vácuo', nivel: 'prata', dica: 'Trinca em mangueira de vácuo dá marcha lenta irregular e engana o scanner.', foto: 'defeito' },
     ],
   },
   {
-    grupo: 'Pneus e rodas',
+    grupo: 'Meia altura',
+    posicao: 'Elevador na altura da cintura, rodas removidas',
+    dica: 'A altura em que se trabalha nas rodas. Remova as quatro antes de começar.',
     itens: [
-      { chave: 'sulco_dianteiro', nome: 'Sulco dos pneus dianteiros', dica: 'Meça no ponto mais gasto. O mínimo legal é 1,6 mm — abaixo disso o veículo não pode rodar.', foto: 'defeito', medida: { unidade: 'mm', min: 1.6, alerta: 3 } },
-      { chave: 'sulco_traseiro', nome: 'Sulco dos pneus traseiros', dica: 'Meça no ponto mais gasto de cada eixo.', foto: 'defeito', medida: { unidade: 'mm', min: 1.6, alerta: 3 } },
-      { chave: 'desgaste_irregular', nome: 'Desgaste irregular', dica: 'Gasto só na borda é geometria; gasto no centro é calibragem alta. Fotografe a banda.', foto: 'defeito' },
-      { chave: 'calibragem', nome: 'Calibragem', dica: 'Confira contra a etiqueta da coluna, com o pneu frio.', foto: 'defeito', medida: { unidade: 'psi' } },
-      { chave: 'estepe', nome: 'Estepe e macaco', dica: 'Estepe calibrado e ferramenta completa. Ninguém descobre que falta no acostamento.', foto: 'defeito' },
-      { chave: 'rodas', nome: 'Rodas e parafusos', dica: 'Trinca na roda e parafuso faltando são reprovação imediata.', foto: 'defeito' },
+      { chave: 'sulco_de', nome: 'Sulco — dianteiro esquerdo', nivel: 'bronze', dica: 'Meça no ponto mais gasto. Mínimo legal 1,6 mm.', foto: 'defeito', medida: { unidade: 'mm', min: 1.6, alerta: 3 } },
+      { chave: 'sulco_dd', nome: 'Sulco — dianteiro direito', nivel: 'bronze', dica: 'Compare com o esquerdo: diferença grande é geometria.', foto: 'defeito', medida: { unidade: 'mm', min: 1.6, alerta: 3 } },
+      { chave: 'sulco_te', nome: 'Sulco — traseiro esquerdo', nivel: 'bronze', dica: 'Meça no ponto mais gasto do eixo.', foto: 'defeito', medida: { unidade: 'mm', min: 1.6, alerta: 3 } },
+      { chave: 'sulco_td', nome: 'Sulco — traseiro direito', nivel: 'bronze', dica: 'Meça no ponto mais gasto do eixo.', foto: 'defeito', medida: { unidade: 'mm', min: 1.6, alerta: 3 } },
+      { chave: 'desgaste_irregular', nome: 'Desgaste irregular', nivel: 'bronze', dica: 'Gasto só na borda é geometria; no centro é calibragem alta. Fotografe a banda.', foto: 'defeito' },
+      { chave: 'calibragem', nome: 'Calibragem dos pneus', nivel: 'bronze', dica: 'Confira contra a etiqueta da coluna, com o pneu frio.', foto: 'defeito', medida: { unidade: 'psi' } },
+      { chave: 'rodas', nome: 'Rodas e parafusos', nivel: 'bronze', dica: 'Trinca na roda e parafuso faltando são reprovação imediata.', foto: 'defeito' },
+      { chave: 'rolamentos', nome: 'Rolamentos de roda', nivel: 'prata', dica: 'Gire a roda solta e balance nas posições 12/6 e 3/9. Folga ou ronco condena.', foto: 'defeito' },
+      { chave: 'freio_dianteiro', nome: 'Freio dianteiro (visual)', nivel: 'bronze', dica: 'Pastilha, disco e pinça. Passe a unha na face do disco.', foto: 'defeito', medida: { unidade: 'mm', min: 2, alerta: 3 } },
+      { chave: 'freio_traseiro', nome: 'Freio traseiro (visual)', nivel: 'bronze', dica: 'Lona, tambor ou disco. Cilindro de roda vazando molha a lona.', foto: 'defeito', medida: { unidade: 'mm', min: 2, alerta: 3 } },
+      { chave: 'flexiveis_freio', nome: 'Flexíveis de freio', nivel: 'bronze', dica: 'Trinca na borracha e bolha sob pressão. Qualquer umidade é crítico.', foto: 'defeito' },
+      { chave: 'amortecedores', nome: 'Amortecedores e molas', nivel: 'bronze', dica: 'Óleo escorrido na haste. Amortecedor vazando não amortece.', foto: 'defeito' },
+      { chave: 'pivos_bandejas', nome: 'Pivôs, bandejas e buchas', nivel: 'bronze', dica: 'Alavanque com a barra e sinta a folga. Bucha rachada bate em lombada.', foto: 'defeito' },
+      { chave: 'terminais_coifas', nome: 'Terminais e coifas de direção', nivel: 'bronze', dica: 'Coifa rasgada deixa entrar água e barro: a peça morre em semanas.', foto: 'defeito' },
+      { chave: 'homocineticas', nome: 'Homocinéticas e semieixos', nivel: 'prata', dica: 'Coifa rasgada joga graxa na roda. Estalo em curva é junta batendo.', foto: 'defeito' },
+      { chave: 'caixa_direcao', nome: 'Caixa de direção', nivel: 'prata', dica: 'Folga axial e vazamento nas coifas dos dois lados.', foto: 'defeito' },
     ],
   },
   {
-    grupo: 'Freios',
+    grupo: 'Altura total',
+    posicao: 'Elevador no alto',
+    dica: 'A altura da parte de baixo. É onde o chassi e o escapamento aparecem.',
     itens: [
-      { chave: 'pastilhas', nome: 'Pastilhas e lonas', dica: 'Meça a espessura do material de atrito. Abaixo de 3 mm, troque.', foto: 'defeito', medida: { unidade: 'mm', min: 2, alerta: 3 } },
-      { chave: 'discos_tambores', nome: 'Discos e tambores', dica: 'Sulco profundo, borda alta ou empenamento. Passe a unha na face.', foto: 'defeito' },
-      { chave: 'fluido_freio', nome: 'Fluido de freio', dica: 'Nível entre as marcas e cor clara. Fluido escuro absorveu água e ferve na descida.', foto: 'defeito' },
-      { chave: 'vazamento_freio', nome: 'Vazamentos no sistema', dica: 'Olhe atrás de cada roda e ao longo das linhas. Qualquer umidade é crítico.', foto: 'defeito' },
-      { chave: 'freio_estacionamento', nome: 'Freio de estacionamento', dica: 'Tem de segurar o veículo em rampa.', foto: 'defeito' },
-      { chave: 'ar_freio', nome: 'Sistema pneumático (se houver)', dica: 'Tempo de enchimento e vazamento audível com o motor desligado.', foto: 'defeito' },
+      { chave: 'dreno_oleo', nome: 'Dreno do óleo e filtro', nivel: 'bronze', dica: 'Drene quente, troque a arruela do bujão e aperte no torque.', foto: 'defeito' },
+      { chave: 'oleo_cambio', nome: 'Óleo do câmbio', nivel: 'ouro', dica: 'Nível pelo bujão lateral, se houver. Cheiro de queimado condena.', foto: 'defeito' },
+      { chave: 'oleo_diferencial', nome: 'Óleo do diferencial', nivel: 'ouro', dica: 'Nível e presença de limalha no bujão magnético.', foto: 'defeito' },
+      { chave: 'vazamento_transmissao', nome: 'Vazamentos: motor, câmbio, diferencial', nivel: 'bronze', dica: 'Olhe de baixo com lanterna. Poça no chão denuncia antes.', foto: 'defeito' },
+      { chave: 'escapamento', nome: 'Escapamento e coxins', nivel: 'bronze', dica: 'Furo, solda aberta e abraçadeira frouxa. Escapamento roçando vibra a carroceria.', foto: 'defeito' },
+      { chave: 'linhas_freio', nome: 'Linhas de freio e combustível', nivel: 'bronze', dica: 'Corrosão na tubulação rígida ao longo do assoalho.', foto: 'defeito' },
+      { chave: 'cabos_freio_mao', nome: 'Cabos do freio de mão', nivel: 'prata', dica: 'Cabo enferrujado agarra e o freio não solta.', foto: 'defeito' },
+      { chave: 'assoalho', nome: 'Assoalho e chassi: corrosão', nivel: 'ouro', dica: 'Bata com o cabo da chave: som surdo é ferrugem por baixo da tinta.', foto: 'defeito' },
     ],
   },
   {
-    grupo: 'Suspensão e direção',
+    grupo: 'Veículo abaixado',
+    posicao: 'De volta ao chão',
+    dica: 'Os três passos que fecham o serviço mecânico.',
     itens: [
-      { chave: 'amortecedores', nome: 'Amortecedores', dica: 'Procure óleo escorrido na haste. Amortecedor vazando não amortece.', foto: 'defeito' },
-      { chave: 'molas_feixes', nome: 'Molas e feixes', dica: 'Lâmina quebrada e mola cedida mudam a altura e comem pneu.', foto: 'defeito' },
-      { chave: 'folga_direcao', nome: 'Folga na direção', dica: 'Com o veículo parado, gire o volante e sinta a folga morta.', foto: 'defeito' },
-      { chave: 'terminais_coifas', nome: 'Terminais, pivôs e coifas', dica: 'Coifa rasgada deixa entrar água e barro: a peça morre em semanas.', foto: 'defeito' },
-      { chave: 'alinhamento', nome: 'Alinhamento e balanceamento', dica: 'Veículo puxando para um lado ou volante tremendo em velocidade.', foto: 'defeito' },
+      { chave: 'reabastecer_oleo', nome: 'Reabastecer o óleo', nivel: 'bronze', dica: 'Complete na especificação do fabricante e confira na vareta depois de assentar.', foto: 'defeito' },
+      { chave: 'estepe', nome: 'Estepe: estado, sulco e pressão', nivel: 'bronze', dica: 'Ninguém descobre que o estepe está vazio no acostamento.', foto: 'defeito', medida: { unidade: 'mm', min: 1.6 } },
+      { chave: 'torque_rodas', nome: 'Torque dos parafusos de roda', nivel: 'bronze', dica: 'Torquímetro, em estrela, no valor do fabricante. Roda solta mata.', foto: 'defeito', medida: { unidade: 'Nm' } },
     ],
   },
   {
-    grupo: 'Motor',
+    grupo: 'Diagnóstico eletrônico',
+    posicao: 'Scanner conectado',
+    dica: 'Só quando o plano de revisão inclui, ou quando há luz acesa no painel.',
     itens: [
-      { chave: 'oleo_nivel', nome: 'Nível e aspecto do óleo', dica: 'Óleo leitoso é água na câmara — pare o serviço e avise. Fotografe a vareta.', foto: 'sempre' },
-      { chave: 'vazamentos_motor', nome: 'Vazamentos', dica: 'Olhe o cárter, a tampa de válvulas e o retentor. Fotografe a poça, se houver.', foto: 'defeito' },
-      { chave: 'correias', nome: 'Correias e tensores', dica: 'Trinca transversal, brilho de patinação e ruído no tensor.', foto: 'defeito' },
-      { chave: 'mangueiras', nome: 'Mangueiras e abraçadeiras', dica: 'Aperte com a mão: mangueira boa volta, mangueira velha fica marcada.', foto: 'defeito' },
-      { chave: 'coxins', nome: 'Coxins e fixações', dica: 'Motor batendo na carroceria em aceleração.', foto: 'defeito' },
-      { chave: 'partida_frio', nome: 'Partida a frio', dica: 'Conte os segundos até pegar e observe a fumaça inicial.', foto: 'defeito' },
+      { chave: 'ecu_codigos', nome: 'Códigos armazenados na ECU', nivel: 'prata', dica: 'Leia e ANOTE antes de apagar. Código intermitente some e volta em semanas.', foto: 'defeito' },
+      { chave: 'pressao_rail', nome: 'Pressão de rail', nivel: 'prata', dica: 'Em marcha lenta e em aceleração. Fora da faixa é bomba ou regulador.', foto: 'defeito', medida: { unidade: 'bar' } },
+      { chave: 'retorno_bicos', nome: 'Retorno dos bicos', nivel: 'ouro', dica: 'Retorno excessivo num cilindro isola o bico com defeito antes de desmontar.', foto: 'defeito', medida: { unidade: 'ml/min' } },
+      { chave: 'opacidade', nome: 'Teste de opacidade (fumaça)', nivel: 'ouro', dica: 'Preta é excesso de combustível, azul é óleo, branca é água. Grave um vídeo acelerando.', foto: 'defeito' },
+      { chave: 'reset_revisao', nome: 'Reset do aviso de revisão', nivel: 'bronze', dica: 'Zere o indicador de manutenção, se o veículo tiver.', foto: 'defeito' },
     ],
   },
   {
-    grupo: 'Arrefecimento',
+    grupo: 'Após o serviço',
+    posicao: 'Teste de rodagem e entrega',
+    dica: 'O que separa "consertado" de "conferido". Janela aberta, rádio desligado.',
     itens: [
-      { chave: 'liquido_nivel', nome: 'Nível do líquido', dica: 'Com o motor FRIO. Abrir quente queima.', foto: 'defeito' },
-      { chave: 'liquido_aspecto', nome: 'Aspecto do aditivo', dica: 'Ferrugem ou óleo boiando indicam problema sério. Fotografe o reservatório.', foto: 'defeito' },
-      { chave: 'radiador', nome: 'Radiador e colmeia', dica: 'Colmeia entupida de barro e inseto derruba a troca de calor.', foto: 'defeito' },
-      { chave: 'ventoinha', nome: 'Ventoinha e embreagem viscosa', dica: 'Aciona na temperatura certa?', foto: 'defeito' },
-      { chave: 'vazamento_arref', nome: 'Vazamentos', dica: 'Crosta esbranquiçada denuncia vazamento antigo.', foto: 'defeito' },
-    ],
-  },
-  {
-    grupo: 'Injeção diesel',
-    itens: [
-      { chave: 'filtro_combustivel', nome: 'Filtro de combustível', dica: 'Confira a data da última troca. Filtro saturado mata bomba de alta.', foto: 'defeito' },
-      { chave: 'separador_agua', nome: 'Separador de água', dica: 'Drene e fotografe o que sair. Água no diesel é a causa número um de bomba queimada.', foto: 'sempre' },
-      { chave: 'tubulacoes', nome: 'Tubulações e conexões', dica: 'Umidade de diesel em conexão é entrada de ar no sistema.', foto: 'defeito' },
-      { chave: 'retorno_bicos', nome: 'Retorno dos bicos', dica: 'Retorno excessivo num cilindro isola o bico com defeito antes de desmontar.', foto: 'defeito', medida: { unidade: 'ml/min' } },
-      { chave: 'pressao_rail', nome: 'Pressão de rail', dica: 'Leia no scanner em marcha lenta e em aceleração. Fora da faixa é bomba ou regulador.', foto: 'defeito', medida: { unidade: 'bar' } },
-      { chave: 'fumaca', nome: 'Fumaça de escape', dica: 'Preta é excesso de combustível, azul é óleo, branca é água. Grave um vídeo curto acelerando.', foto: 'defeito' },
-      { chave: 'codigos_falha', nome: 'Códigos de falha', dica: 'Leia com o scanner ANTES de mexer. Apagar sem anotar perde a pista.', foto: 'defeito' },
-    ],
-  },
-  {
-    grupo: 'Elétrica',
-    itens: [
-      { chave: 'bateria', nome: 'Bateria', dica: 'Meça a tensão em repouso. Abaixo de 12,4 V está descarregada; abaixo de 12,0 V, sulfatada.', foto: 'defeito', medida: { unidade: 'V', min: 12.0, alerta: 12.4 } },
-      { chave: 'terminais_bateria', nome: 'Terminais e cabos', dica: 'Zinabre e terminal frouxo derrubam a partida e enganam o diagnóstico.', foto: 'defeito' },
-      { chave: 'alternador', nome: 'Carga do alternador', dica: 'Com o motor em marcha, a tensão deve subir para 13,8–14,4 V.', foto: 'defeito', medida: { unidade: 'V', min: 13.5, alerta: 13.8 } },
-      { chave: 'motor_partida', nome: 'Motor de partida', dica: 'Giro lento com bateria boa é o próprio motor de partida.', foto: 'defeito' },
-      { chave: 'chicotes', nome: 'Chicotes e emendas', dica: 'Emenda com fita isolante perto do escape é começo de incêndio.', foto: 'defeito' },
-    ],
-  },
-  {
-    grupo: 'Teste de rodagem',
-    itens: [
-      { chave: 'ruidos', nome: 'Ruídos anormais', dica: 'Janela aberta, rádio desligado. Passe em lombada e em piso irregular.', foto: 'defeito' },
-      { chave: 'pedal_freio', nome: 'Resposta do freio', dica: 'Pedal baixo, esponjoso ou puxando para um lado.', foto: 'defeito' },
-      { chave: 'temperatura', nome: 'Temperatura em operação', dica: 'Acompanhe o ponteiro depois de dez minutos rodando.', foto: 'defeito' },
-      { chave: 'cambio_embreagem', nome: 'Câmbio e embreagem', dica: 'Ponto de embreagem alto e dificuldade de engate.', foto: 'defeito' },
-      { chave: 'desempenho', nome: 'Desempenho e resposta', dica: 'Falha de aceleração, engasgo em carga e perda de força em subida.', foto: 'defeito' },
+      { chave: 'partida_frio', nome: 'Partida a frio', nivel: 'bronze', dica: 'Conte os segundos até pegar e observe a fumaça inicial.', foto: 'defeito' },
+      { chave: 'ventoinha', nome: 'Ventoinha do radiador', nivel: 'bronze', dica: 'Deixe aquecer e confirme que aciona na temperatura certa.', foto: 'defeito' },
+      { chave: 'ruidos', nome: 'Ruídos anormais em rodagem', nivel: 'prata', dica: 'Passe em lombada e piso irregular. Batida em buraco é suspensão.', foto: 'defeito' },
+      { chave: 'pedal_freio', nome: 'Resposta e curso do freio', nivel: 'bronze', dica: 'Pedal baixo, esponjoso ou puxando para um lado.', foto: 'defeito' },
+      { chave: 'desempenho', nome: 'Desempenho e resposta', nivel: 'prata', dica: 'Falha de aceleração, engasgo em carga e perda de força em subida.', foto: 'defeito' },
+      { chave: 'temperatura', nome: 'Temperatura em operação', nivel: 'bronze', dica: 'Acompanhe o ponteiro depois de dez minutos rodando.', foto: 'defeito' },
+      { chave: 'qc_final', nome: 'Conferência final e limpeza', nivel: 'bronze', dica: 'Ferramenta fora do vão do motor, tapete no lugar, nada de graxa no volante.', foto: 'defeito' },
     ],
   },
 ];
 
-/** Todos os itens numa lista só, já com o grupo e a posição. */
-export function itensDoChecklist() {
+/**
+ * Todos os itens do nível pedido, numa lista só, na ordem do trabalho.
+ *
+ * A posição é atribuída DEPOIS do filtro: numa revisão Bronze os itens ficam
+ * numerados de 0 a 63 sem buracos, e não com os saltos dos itens de Ouro que
+ * não entraram.
+ */
+export function itensDoChecklist(nivel = 'ouro') {
   const saida = [];
   let pos = 0;
   for (const g of CHECKLIST) {
     for (const i of g.itens) {
+      if (!itemNoNivel(i, nivel)) continue;
       saida.push({ ...i, grupo: g.grupo, posicao: pos });
       pos += 1;
     }
@@ -178,7 +265,19 @@ export function itensDoChecklist() {
   return saida;
 }
 
-export const TOTAL_ITENS = itensDoChecklist().length;
+/** O catálogo completo, recortado no nível — para a tela desenhar as abas. */
+export function catalogoDoNivel(nivel = 'ouro') {
+  return CHECKLIST
+    .map((g) => ({ ...g, itens: g.itens.filter((i) => itemNoNivel(i, nivel)) }))
+    .filter((g) => g.itens.length);
+}
+
+/** Quantos itens cada revisão tem. A tela usa para explicar a escolha. */
+export const TAMANHO_POR_NIVEL = Object.fromEntries(
+  Object.keys(NIVEIS).map((n) => [n, itensDoChecklist(n).length]),
+);
+
+export const TOTAL_ITENS = itensDoChecklist('ouro').length;
 
 /** O item exige foto no estado em que foi marcado? */
 export function exigeFoto(item, estado) {
@@ -193,8 +292,18 @@ export function exigeFoto(item, estado) {
  * Devolve a lista de pendências, e não um booleano: "não pode enviar" sem dizer
  * o que falta obriga a pessoa a caçar o item numa lista de sessenta.
  */
-export function pendencias(itens, midiasPorItem = {}) {
-  const catalogo = new Map(itensDoChecklist().map((i) => [i.chave, i]));
+export function pendencias(itens, midiasPorItem = {}, nivel = 'ouro') {
+  /*
+   * O catálogo vem dos ITENS DA VISTORIA, e não do nível.
+   *
+   * Uma vistoria aberta como Prata e o catálogo depois editado para mover um
+   * item de nível passaria a cobrar algo que aquela vistoria nunca teve. Os
+   * itens foram criados na abertura; são eles que valem.
+   */
+  const doNivel = new Map(itensDoChecklist(nivel).map((i) => [i.chave, i]));
+  const catalogo = new Map(
+    itens.map((i) => [i.chave, doNivel.get(i.chave) ?? { nome: i.nome, grupo: i.grupo, foto: 'defeito' }]),
+  );
   const faltas = [];
 
   for (const [chave, def] of catalogo) {
@@ -275,15 +384,20 @@ export function podeIniciarOS(vistoria) {
 }
 
 /** Contagem por estado, para o resumo da tela e do laudo. */
+/**
+ * Contagem por estado.
+ *
+ * O total vem dos ITENS DA VISTORIA, e não do catálogo: uma revisão Bronze tem
+ * 64 itens, e mostrar "12 de 86" faria a barra parecer parada num serviço que
+ * está quase pronto.
+ */
 export function resumo(itens) {
-  const r = { ok: 0, atencao: 0, critico: 0, na: 0, pendente: 0, total: TOTAL_ITENS };
-  for (const i of itens) {
-    if (!i.estado) r.pendente += 1;
-    else r[i.estado] = (r[i.estado] ?? 0) + 1;
-  }
-  r.pendente = TOTAL_ITENS - itens.filter((i) => i.estado).length;
-  r.avaliados = TOTAL_ITENS - r.pendente;
-  r.percentual = Math.round((r.avaliados / TOTAL_ITENS) * 100);
+  const total = itens.length || 1;
+  const r = { ok: 0, atencao: 0, critico: 0, na: 0, total: itens.length };
+  for (const i of itens) if (i.estado) r[i.estado] = (r[i.estado] ?? 0) + 1;
+  r.avaliados = itens.filter((i) => i.estado).length;
+  r.pendente = itens.length - r.avaliados;
+  r.percentual = Math.round((r.avaliados / total) * 100);
   return r;
 }
 

@@ -44,8 +44,9 @@ import {
   apagarCredencial, listarCredenciais, CREDENCIAIS,
 } from './cofre.mjs';
 import {
-  CHECKLIST, TOTAL_ITENS, exigeFoto, hashConteudo, itensDoChecklist,
-  pendencias, podeIniciarOS, resumo as resumoVistoria,
+  CHECKLIST, NIVEIS, TAMANHO_POR_NIVEL, TOTAL_ITENS, catalogoDoNivel, exigeFoto,
+  hashConteudo, itemNoNivel, itensDoChecklist, pendencias, podeIniciarOS,
+  resumo as resumoVistoria,
 } from './vistoria.mjs';
 import {
   PLANO_PADRAO, kmEstimado, mediaKmMes, projetarServico, validarKm,
@@ -1720,20 +1721,80 @@ teste('o plano padrao cobre o que uma oficina diesel troca', () => {
 teste('o check-list e guiado: todo item diz o que olhar', () => {
   const itens = itensDoChecklist();
   igual(itens.length, TOTAL_ITENS);
-  verdadeiro(TOTAL_ITENS >= 60, `esperava um check-list completo, veio ${TOTAL_ITENS} itens`);
-  igual(CHECKLIST.length, 11, 'onze sistemas do veiculo');
+  verdadeiro(TOTAL_ITENS >= 80, `esperava um check-list completo, veio ${TOTAL_ITENS} itens`);
 
   for (const i of itens) {
     verdadeiro(i.dica && i.dica.length > 20,
       `"${i.nome}" sem dica: um check-list que so lista nomes e preenchido no automatico`);
     verdadeiro(i.chave && i.nome && i.grupo);
+    verdadeiro(NIVEIS[i.nivel], `"${i.nome}" sem nivel de revisao`);
   }
   // Chave repetida quebraria a gravacao do item.
   igual(new Set(itens.map((i) => i.chave)).size, itens.length, 'ha chave repetida');
 });
 
+teste('os grupos sao a ordem do TRABALHO, e nao a dos sistemas', () => {
+  /*
+   * Esta e a mudanca que veio das folhas da rede. Agrupar por sistema (freios,
+   * suspensao, motor) e como se PENSA num carro; nao e como se trabalha nele.
+   * O tecnico levanta o elevador uma vez e confere tudo naquela altura.
+   */
+  for (const g of CHECKLIST) {
+    verdadeiro(g.posicao && g.posicao.length > 8,
+      `grupo "${g.grupo}" nao diz onde o veiculo tem de estar`);
+  }
+  const ordem = CHECKLIST.map((g) => g.grupo);
+  const iRecepcao = ordem.findIndex((g) => /Recep/.test(g));
+  const iMeia = ordem.findIndex((g) => /Meia altura/.test(g));
+  const iTotal = ordem.findIndex((g) => /Altura total/.test(g));
+  const iAbaixado = ordem.findIndex((g) => /abaixado/.test(g));
+  const iRodagem = ordem.findIndex((g) => /Apos|Após/.test(g));
+
+  igual(iRecepcao, 0, 'a recepcao com o cliente vem primeiro');
+  verdadeiro(iMeia < iTotal, 'meia altura antes da altura total: o elevador sobe uma vez');
+  verdadeiro(iTotal < iAbaixado, 'o carro desce depois de subir');
+  igual(iRodagem, ordem.length - 1, 'o teste de rodagem e o ultimo');
+});
+
+teste('os quatro pneus sao medidos um a um', () => {
+  // A folha da rede tem quatro caixas, uma por roda. "Dianteiro" e "traseiro"
+  // escondia o pneu unico que esta gasto — e e sempre um so.
+  const rodas = itensDoChecklist().filter((i) => /^sulco_/.test(i.chave));
+  igual(rodas.length, 4, 'quatro rodas, quatro medidas');
+  for (const r of rodas) {
+    igual(r.medida.unidade, 'mm');
+    igual(r.medida.min, 1.6, 'o minimo legal e o mesmo para todas');
+  }
+});
+
+teste('a revisao tem tres profundidades, e a menor cabe dentro da maior', () => {
+  igual(Object.keys(NIVEIS).length, 3);
+  const b = TAMANHO_POR_NIVEL.bronze;
+  const p = TAMANHO_POR_NIVEL.prata;
+  const o = TAMANHO_POR_NIVEL.ouro;
+  verdadeiro(b < p && p < o, `bronze ${b} < prata ${p} < ouro ${o}`);
+  igual(o, TOTAL_ITENS, 'ouro e o catalogo inteiro');
+
+  // Todo item de bronze aparece em prata e em ouro: os niveis sao concentricos,
+  // e nao tres listas diferentes que um dia divergem.
+  const chavesB = new Set(itensDoChecklist('bronze').map((i) => i.chave));
+  const chavesP = new Set(itensDoChecklist('prata').map((i) => i.chave));
+  for (const c of chavesB) verdadeiro(chavesP.has(c), `${c} sumiu do prata`);
+
+  // Segurança e fluido estao no bronze: sao o que nao pode faltar para rodar.
+  for (const obrigatorio of ['cintos', 'freio_estacionamento', 'oleo_nivel', 'sulco_de']) {
+    verdadeiro(chavesB.has(obrigatorio), `${obrigatorio} tinha de estar no bronze`);
+  }
+
+  // A numeracao nao pula: numa revisao bronze os itens vao de 0 a 63 sem
+  // buracos, e nao com os saltos dos itens de ouro que nao entraram.
+  igual(itensDoChecklist('bronze').every((i, n) => i.posicao === n), true);
+  igual(catalogoDoNivel('bronze').every((g) => g.itens.length > 0), true,
+    'grupo vazio nao pode aparecer como aba');
+});
+
 teste('critico exige foto — e conforme, so onde a foto e o registro', () => {
-  const pneu = itensDoChecklist().find((i) => i.chave === 'sulco_dianteiro');
+  const pneu = itensDoChecklist().find((i) => i.chave === 'sulco_de');
   igual(exigeFoto(pneu, 'critico'), true, 'nao se marca vermelho sem mostrar');
   igual(exigeFoto(pneu, 'atencao'), true);
   igual(exigeFoto(pneu, 'ok'), false, 'pneu bom nao precisa de foto');
@@ -1744,7 +1805,9 @@ teste('critico exige foto — e conforme, so onde a foto e o registro', () => {
 });
 
 teste('a pendencia diz QUAL item falta, e nao so que falta', () => {
-  const itens = itensDoChecklist().map((i, n) => ({ id: `i${n}`, chave: i.chave, estado: 'ok' }));
+  const itens = itensDoChecklist().map((i, n) => ({
+    id: `i${n}`, chave: i.chave, nome: i.nome, grupo: i.grupo, estado: 'ok',
+  }));
   // Tudo marcado, nenhuma foto: sobram as obrigatorias.
   const semFoto = pendencias(itens, {});
   verdadeiro(semFoto.length > 0);
@@ -1752,8 +1815,8 @@ teste('a pendencia diz QUAL item falta, e nao so que falta', () => {
   verdadeiro(semFoto.every((p) => p.nome && p.grupo), 'a pendencia precisa dizer o nome e o grupo');
 
   // Um item sem estado aparece como nao avaliado.
-  const comBuraco = itens.map((i) => (i.chave === 'bancos' ? { ...i, estado: null } : i));
-  verdadeiro(pendencias(comBuraco, {}).some((p) => p.chave === 'bancos' && p.falta === 'nao_avaliado'));
+  const comBuraco = itens.map((i) => (i.chave === 'cintos' ? { ...i, estado: null } : i));
+  verdadeiro(pendencias(comBuraco, {}).some((p) => p.chave === 'cintos' && p.falta === 'nao_avaliado'));
 });
 
 teste('o aceite vale para UM conteudo — mexer no item muda o resumo', () => {
@@ -1793,14 +1856,28 @@ teste('a OS nao comeca sem vistoria aceita, e a recusa diz o que fazer', () => {
   igual(sem.motivo, 'sem_vistoria');
 });
 
-teste('o resumo conta o que foi avaliado, e o que falta', () => {
-  const itens = itensDoChecklist().slice(0, 10).map((i, n) => ({ chave: i.chave, estado: n < 3 ? 'ok' : null }));
-  const r = resumoVistoria(itens);
-  igual(r.ok, 3);
-  igual(r.avaliados, 3);
-  igual(r.pendente, TOTAL_ITENS - 3);
-  igual(r.total, TOTAL_ITENS);
-  verdadeiro(r.percentual < 10, 'tres de sessenta e tres nao e "quase pronto"');
+teste('o resumo conta sobre os itens DA VISTORIA, e nao do catalogo', () => {
+  /*
+   * Uma revisao bronze tem 64 itens. Contar sobre os 86 do catalogo faria a
+   * barra parecer parada num servico que esta quase pronto.
+   */
+  const bronze = itensDoChecklist('bronze').map((i, n) => ({
+    chave: i.chave, estado: n < 32 ? 'ok' : null,
+  }));
+  const r = resumoVistoria(bronze);
+  igual(r.total, TAMANHO_POR_NIVEL.bronze, 'o total e o da revisao, nao o do catalogo');
+  igual(r.ok, 32);
+  igual(r.avaliados, 32);
+  igual(r.pendente, TAMANHO_POR_NIVEL.bronze - 32);
+  igual(r.percentual, 50, 'metade de uma bronze e metade, e nao 37% de 86');
+});
+
+teste('itemNoNivel: um item entra do seu nivel para cima', () => {
+  igual(itemNoNivel({ nivel: 'bronze' }, 'bronze'), true);
+  igual(itemNoNivel({ nivel: 'bronze' }, 'ouro'), true);
+  igual(itemNoNivel({ nivel: 'ouro' }, 'bronze'), false, 'ouro nao cabe numa bronze');
+  igual(itemNoNivel({ nivel: 'prata' }, 'bronze'), false);
+  igual(itemNoNivel({ nivel: 'prata' }, 'prata'), true);
 });
 
 /* -- Cofre de credenciais ------------------------------------------------- */

@@ -150,23 +150,41 @@ async function abrirNova(ui) {
     ui.toast('Nenhum veículo cadastrado', 'Cadastre o veículo na ficha do cliente primeiro.', 'erro');
     return;
   }
+  const cat = await ui.api('/checklist');
+  const t = cat.tamanhos;
   const r = await ui.perguntar({
     titulo: 'Abrir vistoria de entrada',
-    texto: 'Escolha o veículo. A vistoria nasce com os 63 itens em branco e pode ser '
-      + 'preenchida em qualquer ordem — o sistema cobra o que faltar no final.',
-    campos: [{
-      nome: 'veiculo', rotulo: 'Veículo', tipo: 'selecao', obrigatorio: true,
-      opcoes: veiculos.map((v) => ({
-        valor: v.id,
-        rotulo: `${v.placa} — ${[v.marca, v.modelo].filter(Boolean).join(' ')} · ${v.cliente_nome ?? ''}`,
-      })),
-    }],
+    texto: 'Escolha o veículo e a profundidade da revisão. Os itens são criados agora e '
+      + 'ficam gravados — mudar o catálogo depois não muda esta vistoria.',
+    campos: [
+      {
+        nome: 'veiculo', rotulo: 'Veículo', tipo: 'selecao', obrigatorio: true,
+        opcoes: veiculos.map((v) => ({
+          valor: v.id,
+          rotulo: `${v.placa} — ${[v.marca, v.modelo].filter(Boolean).join(' ')} · ${v.cliente_nome ?? ''}`,
+        })),
+      },
+      {
+        nome: 'nivel', rotulo: 'Revisão', tipo: 'selecao',
+        opcoes: [
+          { valor: 'bronze', rotulo: `Bronze — essencial · ${t.bronze} itens` },
+          { valor: 'prata', rotulo: `Prata — completa · ${t.prata} itens` },
+          { valor: 'ouro', rotulo: `Ouro — maior · ${t.ouro} itens` },
+        ],
+        ajuda: 'Bronze é segurança e fluidos. Prata acrescenta filtros, suspensão sob elevador e '
+          + 'teste de rodagem. Ouro acrescenta câmbio, diferencial, chassi e diagnóstico completo.',
+      },
+    ],
     confirmar: 'Abrir vistoria',
   });
   if (!r) return;
   try {
-    const v = await ui.api('/vistorias', { method: 'POST', corpo: { veiculo_id: r.veiculo } });
-    ui.toast(`Vistoria ${v.numero} aberta`, 'Comece pela recepção: hodômetro e as quatro faces.');
+    const v = await ui.api('/vistorias', {
+      method: 'POST',
+      corpo: { veiculo_id: r.veiculo, nivel: r.nivel ?? 'prata' },
+    });
+    ui.toast(`Vistoria ${v.numero} aberta`,
+      `Revisão ${v.nivel} · ${v.itens} itens. Comece pela recepção, com o cliente ao lado.`);
     location.hash = `#/vistoria?id=${v.id}`;
   } catch (e) {
     ui.toast('Não deu para abrir', e.message, 'erro');
@@ -199,6 +217,7 @@ export function telaVistoria(ui) {
           <div class="vt-linha">
             <a class="btn quiet sm" href="#/vistorias">‹ Vistorias</a>
             <span class="vt-num">${esc(v.numero)}</span>
+            <span class="vt-nivel ${esc(v.nivel ?? 'prata')}">${esc(d.niveis?.[v.nivel]?.nome ?? 'Prata')}</span>
             <span class="tag ${soLeitura ? 'ok' : 'warn'}">${esc(v.status.replaceAll('_', ' '))}</span>
           </div>
           <div class="vt-veiculo">
@@ -245,7 +264,19 @@ export function telaVistoria(ui) {
     const desenharGrupo = (nome) => {
       const g = d.catalogo.find((x) => x.grupo === nome);
       if (!g) return '';
-      return g.itens.map((def) => {
+      /*
+       * A posição do veículo abre o grupo.
+       *
+       * Os grupos são a ordem do TRABALHO, e não a dos sistemas: o técnico não
+       * pula do freio dianteiro para o motor e volta ao traseiro. Dizer onde o
+       * carro tem de estar é o que torna a sequência utilizável.
+       */
+      const cabeca = g.posicao ? `
+        <div class="vt-posicao">
+          <b>${esc(g.posicao)}</b>
+          ${g.dica ? `<span>${esc(g.dica)}</span>` : ''}
+        </div>` : '';
+      return cabeca + g.itens.map((def) => {
         const item = d.itens.find((i) => i.chave === def.chave) ?? {};
         const midias = d.midias[item.id] ?? [];
         const precisa = d.pendencias.find((p) => p.chave === def.chave);
