@@ -50,6 +50,44 @@ const ESTADO_BOTOES = [
   { valor: 'na', rotulo: 'N/A', classe: 'na' },
 ];
 
+/*
+ * A mídia é carregada por `fetch`, e não por `src` direto.
+ *
+ * `<img src="/api/midia/…">` não envia o cabeçalho de autorização — a tag não
+ * tem como. O resultado era 401 e miniatura quebrada em toda a vistoria, com o
+ * texto alternativo vazando por cima do desenho.
+ *
+ * A saída óbvia seria aceitar o token na query, como o laudo já faz. Aqui não:
+ * o laudo é UM link aberto em aba nova, e estas são até sessenta imagens numa
+ * página só — o token entraria sessenta vezes no histórico do navegador e em
+ * qualquer log de proxy pelo caminho. Foto de vistoria é documento de um
+ * cliente; o token fica no cabeçalho.
+ *
+ * O `blob:` criado é revogado quando o elemento sai da tela, senão cada
+ * re-render da vistoria vazaria dezenas de megabytes na aba.
+ */
+async function carregarMidias(raiz, ui) {
+  for (const el of raiz.querySelectorAll('[data-midia]:not([data-carregada])')) {
+    el.dataset.carregada = '1';
+    try {
+      const r = await fetch(`/api/midia/${el.dataset.midia}`, {
+        headers: { authorization: `Bearer ${ui.token()}`, 'x-instancia': ui.instancia() },
+      });
+      if (!r.ok) throw new Error(String(r.status));
+      const url = URL.createObjectURL(await r.blob());
+      el.src = url;
+      el.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+    } catch {
+      // Arquivo sumiu do disco: o registro continua, e a tela diz isso em vez
+      // de mostrar um quadrado quebrado sem explicação.
+      el.replaceWith(Object.assign(document.createElement('div'), {
+        className: 'vt-foto-sumiu',
+        textContent: 'arquivo indisponível',
+      }));
+    }
+  }
+}
+
 /* ══ Vistorias: lista e abertura ═══════════════════════════════════════════ */
 
 export function telaVistorias(ui) {
@@ -201,6 +239,7 @@ export function telaVistoria(ui) {
           </div>`}`;
 
       ligar();
+      carregarMidias(el, ui);
     };
 
     const desenharGrupo = (nome) => {
@@ -237,8 +276,8 @@ export function telaVistoria(ui) {
               ${midias.map((m) => `
                 <div class="vt-foto">
                   ${m.tipo === 'video'
-    ? `<video src="/api/midia/${esc(m.id)}" controls playsinline preload="metadata"></video>`
-    : `<img src="/api/midia/${esc(m.id)}" alt="${esc(def.nome)}" loading="lazy">`}
+    ? `<video data-midia="${esc(m.id)}" controls playsinline preload="metadata"></video>`
+    : `<img data-midia="${esc(m.id)}" alt="${esc(def.nome)}">`}
                   ${soLeitura ? '' : `<button class="vt-tirar" data-apagar="${esc(m.id)}" aria-label="Apagar">×</button>`}
                 </div>`).join('')}
               ${soLeitura ? '' : `
