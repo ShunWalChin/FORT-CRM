@@ -186,6 +186,34 @@ leituras. A rota passou a **recusar número cru** — ou `valor_centavos` inteir
 ou `valor` como texto. O teste que guarda isso diz, em uma linha, que as duas
 leituras são mil vezes diferentes.
 
+**A recarga da demonstração dobrava a receita.** Descoberto por acidente: o
+Soberano disse que faltava o deploy do ERP, fui verificar, e a senha da direção
+tinha parado de funcionar. A auditoria mostrou que alguém clicara em *Recarregar
+demonstração* dois minutos antes do deploy.
+
+A recarga funcionou como devia — o problema era o que ela **não** fazia. A chave
+de idempotência dos fatos é `(instância, tipo, ref)`, e `ref` é o id da linha na
+instância. A recarga recria as instâncias com ids novos, então os 48 fatos
+passaram a apontar para registros mortos, esperando o próximo *Sincronizar* para
+colher as mesmas 18 ordens de serviço como inéditas: R$ 49.376 virariam
+R$ 98.752, sem nada acusar.
+
+O incômodo é que o princípio já estava escrito, na própria rota que recarrega:
+*"a carga gera IDs novos, e a Central é uma projeção das três instâncias —
+recarregar uma só deixaria a Central apontando para clientes que deixaram de
+existir"*. Eu li isso ao construir o ERP e não apliquei ao ERP.
+
+`limparMovimento()` zera lançamentos, partidas, títulos, baixas e fatos, e
+**preserva as definições** — plano de contas, parceiros, períodos, permissões,
+que não vieram das instâncias. Só a recarga chama: apagar movimento contábil não
+é operação de sistema, é decisão de quem responde pelo livro, e para essa existe
+o estorno.
+
+**O ERP subiu funcionando e sem caminho até ele.** As rotas existiam, os
+arquivos eram servidos, as telas respondiam — e o menu não as citava. Registrar
+a visão, pôr palavra-chave na busca e criar um cartão no Início são três passos
+que funcionam sozinhos, e nenhum deles é a porta.
+
 ## 6. Ordem recomendada daqui
 
 1. **Agregados pré-calculados** (débito 10) antes que o razão cresça. O painel
