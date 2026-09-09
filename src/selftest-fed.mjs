@@ -6,7 +6,7 @@
  * acontece no funil precisa voltar para as plataformas de anúncio.
  */
 
-import { rmSync } from 'node:fs';
+import { rmSync, readFileSync } from 'node:fs';
 import { Federacao, CATALOGO } from './federacao.mjs';
 import { semear } from './seed.mjs';
 import {
@@ -2394,6 +2394,25 @@ teste('a tabela de papeis cobre toda rota de governanca', () => {
     igual(negarPorPapel(r, 'gestor'), null, `gestor pode chamar ${r}`);
     igual(negarPorPapel(r, 'soberano'), null, `soberano pode chamar ${r}`);
   }
+});
+
+teste('a referencia da API cobre TODA rota — senao ela envelhece calada', () => {
+  /*
+   * docs/API.md e o contrato que outra pessoa le para integrar. Uma rota nova
+   * que nao chega la nao quebra nada — e por isso ninguem percebe, ate alguem
+   * precisar dela e concluir que nao existe.
+   *
+   * Tres rotas de campos personalizados estavam fora, e foram achadas por esta
+   * conferencia, nao por leitura.
+   */
+  const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
+  const fora = Object.keys(ROTAS).filter((r) => !doc.includes(r.split(' ')[1]));
+  igual(fora.length, 0, `rotas fora da referencia: ${fora.join(', ')}`);
+
+  // E o numero declarado no topo tem de ser o numero real.
+  const declarado = Number(/\*\*(\d+) rotas\.\*\*/.exec(doc)?.[1] ?? 0);
+  igual(declarado, Object.keys(ROTAS).length,
+    'o total no topo do API.md nao bate com as rotas de verdade');
 });
 
 teste('nenhuma rota do ERP fica aberta ao balcao', () => {

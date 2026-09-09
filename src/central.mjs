@@ -10,10 +10,18 @@
  * A central é, então, uma projeção de leitura. Duas propriedades que a
  * mantêm honesta:
  *
- * NUNCA É FONTE DE VERDADE. Nada é criado nem editado aqui. Se a central
- * discordar de uma instância, a instância está certa e a central está velha.
- * Por isso cada linha carrega `sincronizado_em`: quem lê sabe a idade do que
- * está vendo, em vez de supor que é agora.
+ * A PROJEÇÃO NUNCA É FONTE DE VERDADE. Nada nas tabelas deste arquivo é criado
+ * ou editado aqui. Se `leads_consolidados` discordar de uma instância, a
+ * instância está certa e a projeção está velha. Por isso cada linha carrega
+ * `sincronizado_em`: quem lê sabe a idade do que está vendo, em vez de supor
+ * que é agora.
+ *
+ * **Isto vale para a projeção, e não para o arquivo inteiro.** O ERP do grupo
+ * mora no mesmo banco central e é o oposto: lá a central É fonte de verdade,
+ * porque partida dobrada exige transação e não há transação que atravesse três
+ * SQLite. As duas coisas convivem no mesmo arquivo com regras opostas, e é
+ * proposital — ver `erp-schema.mjs` para a decisão completa. A fronteira é o
+ * prefixo da tabela: `erp_*` é livro, o resto é projeção.
  *
  * A SINCRONIZAÇÃO É IDEMPOTENTE. Rodar duas vezes seguidas produz o mesmo
  * resultado — a chave é (instância, cliente), e reprocessar atualiza em vez de

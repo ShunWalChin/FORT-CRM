@@ -2213,7 +2213,7 @@ export const ROTAS = {
   },
 
   /**
-   * Abre a vistoria com os 63 itens ja criados, todos sem estado.
+   * Abre a vistoria com os itens do nivel ja criados, todos sem estado.
    *
    * Criar os itens agora, e nao conforme se marca, e o que permite perguntar
    * "quanto falta" — e o que garante que a lista nao mude no meio do

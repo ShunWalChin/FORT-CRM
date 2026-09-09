@@ -96,8 +96,12 @@ export class Federacao {
   /**
    * A central tem esquema PRÓPRIO, não o de uma empresa. Dar a ela as mesmas
    * tabelas convidaria alguém a operar dentro dela, e o isolamento por
-   * instância perderia o sentido — ela é ponto de chegada e de leitura, não
-   * lugar de trabalho.
+   * instância perderia o sentido — dar a ela as tabelas de uma empresa
+   * convidaria alguém a operar dentro dela.
+   *
+   * O que ela ganhou foi outra coisa: as tabelas `erp_*`, do ERP do grupo, que
+   * são fonte de verdade do que é do GRUPO — plano de contas, razão, títulos.
+   * Não são o trabalho de nenhuma empresa; são o livro que soma as três.
    */
   abrirCentral() {
     if (!this.#abertos.has(CENTRAL)) {

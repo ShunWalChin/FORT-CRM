@@ -1,6 +1,6 @@
 # Referência da API
 
-> Gerado a partir de `src/api.mjs`. **73 rotas.**
+> Gerado a partir de `src/api.mjs`. **102 rotas.**
 
 Todas as rotas devolvem `{ ok, dados }` ou `{ ok: false, erro: { codigo, mensagem } }`.
 
@@ -259,15 +259,114 @@ presente, ainda que vazia, mudaria o hash de toda vistoria já enviada e
 aguardando aceite — e o cliente veria "o conteúdo mudou" numa vistoria em que
 ninguém tocou.
 
-Criar os 63 itens de uma vez, e não conforme se marca, é o que permite perguntar
+Criar os itens do nível de uma vez, e não conforme se marca, é o que permite perguntar
 *"quanto falta"* — e o que garante que a lista não mude no meio do preenchimento
 se o catálogo for editado.
+
+## ERP do grupo
+
+Tudo aqui roda contra a **central**, que para o ERP deixa de ser projeção e
+passa a ser fonte de verdade do grupo. Ver [ERP do grupo](ERP.md) para a decisão
+de arquitetura e as seis invariantes.
+
+**Duas camadas de permissão, e as duas são checadas.** A tabela de papéis barra
+no despachante, antes de qualquer trabalho de banco; a concessão por módulo
+barra dentro da rota. Escrever no razão é do soberano — um gestor lê e não
+lança.
+
+### Acesso por módulo
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/erp/acesso` | O que **este** usuário pode. A tela desenha o menu a partir daqui, e não de lista fixa. |
+| `GET` | `/api/erp/acesso/todos` | Quem tem o quê. Soberano. |
+| `PUT` | `/api/erp/acesso/:email/:modulo` | Concede. `{nivel: ler\|escrever\|administrar}`. |
+| `DELETE` | `/api/erp/acesso/:email/:modulo` | Revoga. |
+
+Os módulos: `razao`, `financeiro`, `contas_pagar`, `contas_receber`, `rh`, `ti`,
+`comercial`, `marketing`, `bi`, `admin`.
+
+### Razão
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/erp/contas` | Plano de contas e centros de custo. |
+| `POST` | `/api/erp/contas/semear` | Semeia o plano padrão. Idempotente — conta que já existe fica. |
+| `POST` | `/api/erp/lancamentos` | Partida dobrada. Recusa `nao_fecha` **com a diferença no texto**. |
+| `GET` | `/api/erp/lancamentos` | Filtra por `?competencia=&instancia=&origem=`. |
+| `GET` | `/api/erp/lancamentos/:id` | O lançamento e as suas partidas. |
+| `POST` | `/api/erp/lancamentos/:id/estornar` | Cria o espelho e amarra os dois. **Não altera o original.** |
+| `GET` | `/api/erp/balancete` | `?competencia=&instancia=&centro=`. Traz `confere` e `diferenca`. |
+| `GET` | `/api/erp/conferir` | As quatro perguntas de um livro saudável. **Olhe esta primeiro.** |
+| `GET` | `/api/erp/periodos` | As competências e o estado de cada uma. |
+| `POST` | `/api/erp/periodos/:competencia/fechar` | Recusa fechar mês que não bate, e fora de ordem. |
+| `POST` | `/api/erp/periodos/:competencia/reabrir` | Exige `motivo` — é o que a auditoria vai ler. |
+| `POST` | `/api/erp/rateio` | Divide custo do grupo entre empresas, sem perder centavo. |
+
+### Contas a pagar e a receber
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/erp/titulos` | `?natureza=pagar\|receber&instancia=&status=&ate=`. Traz `atraso` e `faixa`. |
+| `POST` | `/api/erp/titulos` | Abre o título **e o seu lançamento**, na mesma transação. |
+| `POST` | `/api/erp/titulos/:id/baixar` | Recusa `acima_do_saldo` **dizendo o saldo**. Gera lançamento. |
+| `POST` | `/api/erp/titulos/:id/cancelar` | Só antes da primeira baixa. Estorna, não apaga. |
+| `GET` | `/api/erp/posicao` | Quanto o grupo deve e tem a receber, por empresa e somado. |
+
+### Fatos das instâncias
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `POST` | `/api/erp/sincronizar` | Colhe as instâncias e contabiliza. **Idempotente.** Traz `completo`. |
+| `GET` | `/api/erp/fatos` | O que não virou lançamento, e o que mudou na origem depois. |
+| `POST` | `/api/erp/fatos/:id/reconhecer` | Aceita a correção: estorna, relê a origem, devolve à fila. |
+| `GET` | `/api/erp/painel` | Resultado por empresa, doze meses, carteira e alertas — numa chamada. |
+
+### Parceiros e pessoas
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET`/`POST` | `/api/erp/parceiros` | Fornecedores e clientes do grupo. |
+| `GET`/`POST` | `/api/erp/colaboradores` | Cadastro e centro de custo. **Não há folha.** |
+
+### O contrato do valor
+
+`valor` e `total` **não aceitam número cru** — é ambíguo, e a ambiguidade já
+custou caro aqui: o diálogo do sistema converte campo decimal para reais em
+número, a rota tratava número como centavos, e uma baixa de R$ 1.850,00 entrou
+como R$ 18,50. Nenhum erro apareceu, porque `1850` é inteiro válido nas duas
+leituras.
+
+| Como mandar | Significado |
+|---|---|
+| `{"valor_centavos": 185000}` | Inteiro em centavos. O nome carrega a unidade. |
+| `{"valor": "1.850,00"}` | Texto no formato brasileiro. |
+| `{"valor": 1850}` | **Recusado** com `unidade_ambigua`. |
+
+### Completude
+
+`sincronizar` e as consultas federadas devolvem `completo: true\|false`. Uma
+consolidação que não alcançou uma instância **não é um consolidado completo**,
+por mais que o resto tenha ido bem — em dinheiro, resposta parcial é resposta
+errada, e duas de três empresas parece certo e está errado.
 
 ## Porta pública de captação
 
 | Método | Rota | O que faz |
 |---|---|---|
 | `POST` | `/api/entrada/:chave` | exposta a tráfego externo, e nada entra direto na base de produção. |
+
+## Campos personalizados
+
+Três rotas que faltavam nesta referência — achadas conferindo a lista de rotas
+contra este arquivo, e não por leitura. Ver
+[Campos personalizados](CAMPOS-PERSONALIZADOS.md).
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/propriedades` | Registro de campos: os do sistema e os que a empresa criou. |
+| `POST` | `/api/propriedades` | Cria um campo. Gestor. |
+| `DELETE` | `/api/propriedades/:id` | Remove. Gestor. O valor já gravado nos clientes fica. |
 
 ## Régua de contato
 

@@ -165,7 +165,7 @@ export function telaVistorias(ui) {
     : `<div class="vazio">
          <h3>Nenhuma vistoria ainda</h3>
          <p>A vistoria é feita com o veículo na entrada, antes de abrir a ordem de serviço.
-            São 63 itens, guiados, com foto — leva de dez a quinze minutos.</p>
+            São até 86 itens, guiados, com foto — leva de vinte a quarenta minutos.</p>
        </div>`}`;
 
     el.querySelectorAll('[data-abrir]').forEach((b) => {

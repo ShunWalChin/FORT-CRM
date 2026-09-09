@@ -301,7 +301,7 @@ madrugada. A mídia fica em `/dados/midia/<empresa>/<vistoria>/`, irmã do
 diretório dos bancos, com política de retenção própria.
 
 **Reduzida no navegador, antes de subir.** Um celular atual produz 4 a 8 MB por
-foto; 63 itens seriam 300 MB por vistoria, no 4G do telefone do técnico. A 1600
+foto; 86 itens seriam 400 MB por vistoria, no 4G do telefone do técnico. A 1600
 px de lado maior e qualidade 0,82 a mesma foto fica em 200–400 KB e continua
 mostrando trinca em disco e sulco de pneu — que é para o que ela serve. Subir 8
 MB para reduzir no servidor gastaria exatamente a parte cara, que é a rede.
@@ -321,7 +321,7 @@ vídeo de 30 MB viraria 40 MB de string para o `JSON.parse` engolir de uma vez.
 ## 5. O que a operação real revelou
 
 **O limitador bloqueava o técnico no meio da vistoria.** Descoberto rodando o
-fluxo inteiro: parou no item 54 com `limite_excedido`. São 63 marcações em
+fluxo inteiro: parou no item 54 com `limite_excedido`. São 86 marcações em
 poucos minutos, mais as fotos, contra um teto de escrita de 60/min — e é o pior
 momento possível para o sistema recusar: o carro no elevador, o cliente
 esperando, metade da vistoria feita. As rotas de vistoria ganharam balde
@@ -368,6 +368,6 @@ um halo suave — a seleção continua visível, e a cor do tipo sobrevive.
 | `POST` | `/api/vistorias/:id/aceite` | Aceite ou recusa do cliente. Confere o hash. |
 | `POST` | `/api/ordens/:id/iniciar` | **A trava.** |
 
-Criar a vistoria abre os 63 itens de uma vez, e não conforme se marca: é o que
+Criar a vistoria abre os itens do nível de uma vez, e não conforme se marca: é o que
 permite perguntar *"quanto falta"*, e o que garante que a lista não mude no meio
 do preenchimento se o catálogo for editado.
