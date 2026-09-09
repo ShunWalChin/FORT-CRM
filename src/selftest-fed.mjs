@@ -2396,6 +2396,31 @@ teste('a tabela de papeis cobre toda rota de governanca', () => {
   }
 });
 
+teste('nenhuma rota do ERP fica aberta ao balcao', () => {
+  /*
+   * O padrao do despachante e `operador`. Uma rota de ERP esquecida na tabela
+   * de papeis ficaria aberta a quem atende no balcao — e o erro seria
+   * silencioso, porque nada quebra: a rota simplesmente responde.
+   *
+   * Este teste varre as rotas de verdade, e nao uma lista escrita a mao: lista
+   * a mao envelhece na primeira rota nova que alguem acrescentar.
+   */
+  const doErp = Object.keys(ROTAS).filter((r) => r.includes('/api/erp/'));
+  verdadeiro(doErp.length >= 20, `esperava as rotas do ERP, achei ${doErp.length}`);
+
+  for (const r of doErp) {
+    verdadeiro(negarPorPapel(r, 'operador'), `operador NAO pode chamar ${r}`);
+    verdadeiro(negarPorPapel(r, 'leitura'), `leitura NAO pode chamar ${r}`);
+    igual(negarPorPapel(r, 'soberano'), null, `soberano pode chamar ${r}`);
+  }
+
+  // E escrever no razao e do soberano: gestor le, nao lanca.
+  for (const r of ['POST /api/erp/lancamentos', 'POST /api/erp/rateio',
+    'POST /api/erp/periodos/:competencia/fechar']) {
+    verdadeiro(negarPorPapel(r, 'gestor'), `gestor NAO escreve no razao (${r})`);
+  }
+});
+
 teste('rota de operacao continua aberta a quem atende', () => {
   for (const r of ['GET /api/regua', 'GET /api/clientes', 'PATCH /api/clientes/:id',
     'GET /api/pipeline', 'POST /api/regua/disparar', 'GET /api/canais']) {

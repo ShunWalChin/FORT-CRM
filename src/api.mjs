@@ -6,6 +6,19 @@
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { agora, novoId } from './db.mjs';
+import { formatar as formatarDinheiro, paraCentavos } from './dinheiro.mjs';
+import {
+  balancete, conferir, estornar, fechar as fecharPeriodo, lancar,
+  ratearEntreEmpresas, reabrir as reabrirPeriodo, semearPlano as semearPlanoContas,
+} from './razao.mjs';
+import {
+  abrir as abrirTitulo, baixar as baixarTitulo, cancelar as cancelarTitulo,
+  carteira, posicao,
+} from './titulos.mjs';
+import {
+  MODULOS as MODULOS_ERP, conceder, exigir as exigirModulo, mapaDeAcesso,
+  permissoesDe, revogar, semearAcesso,
+} from './permissoes.mjs';
 import { avaliarCompliance, comRodape, POLITICAS_CANAL, EXPLICACAO_MOTIVO } from './compliance.mjs';
 import {
   GATILHOS, projetarRevisao, renderizar, saudacao, diagnosticarFilaVazia,
@@ -396,6 +409,47 @@ const PAPEL_MINIMO = {
    */
   'DELETE /api/vistorias/:id': 'gestor',
 
+  /*
+   * ERP do grupo.
+   *
+   * Duas camadas, de proposito. Esta tabela barra pelo PAPEL, no despachante,
+   * antes de qualquer trabalho de banco — e `contextoErp` barra pelo MODULO,
+   * dentro da rota. A primeira e grossa e barata; a segunda e fina e cara.
+   *
+   * Escrever e administrar sao de soberano: um gestor le o razao do grupo, e
+   * nao lanca nele. O eixo do modulo refina isso por pessoa.
+   */
+  'GET /api/erp/acesso': 'gestor',
+  'GET /api/erp/acesso/todos': 'soberano',
+  'PUT /api/erp/acesso/:email/:modulo': 'soberano',
+  'DELETE /api/erp/acesso/:email/:modulo': 'soberano',
+
+  'GET /api/erp/contas': 'gestor',
+  'POST /api/erp/contas/semear': 'soberano',
+
+  'GET /api/erp/lancamentos': 'gestor',
+  'GET /api/erp/lancamentos/:id': 'gestor',
+  'POST /api/erp/lancamentos': 'soberano',
+  'POST /api/erp/lancamentos/:id/estornar': 'soberano',
+
+  'GET /api/erp/balancete': 'gestor',
+  'GET /api/erp/conferir': 'gestor',
+  'GET /api/erp/periodos': 'gestor',
+  'POST /api/erp/periodos/:competencia/fechar': 'soberano',
+  'POST /api/erp/periodos/:competencia/reabrir': 'soberano',
+
+  'GET /api/erp/titulos': 'gestor',
+  'POST /api/erp/titulos': 'gestor',
+  'POST /api/erp/titulos/:id/baixar': 'gestor',
+  'POST /api/erp/titulos/:id/cancelar': 'soberano',
+  'GET /api/erp/posicao': 'gestor',
+  'POST /api/erp/rateio': 'soberano',
+
+  'GET /api/erp/parceiros': 'gestor',
+  'POST /api/erp/parceiros': 'gestor',
+  'GET /api/erp/colaboradores': 'gestor',
+  'POST /api/erp/colaboradores': 'gestor',
+
   'GET /api/credenciais': 'gestor',
   'PUT /api/credenciais/:chave': 'soberano',
   'DELETE /api/credenciais/:chave': 'soberano',
@@ -503,6 +557,64 @@ function extrasDaVistoria(escopo, vistoriaId) {
     servicos: escopo.todas(
       'select * from vistoria_servicos where {ESCOPO} and vistoria_id = ?', vistoriaId),
   };
+}
+
+/**
+ * Contexto do ERP: a central, e a checagem dos dois eixos de permissão.
+ *
+ * Toda rota do ERP passa por aqui. A escala linear (gestor/soberano) e a
+ * concessão do módulo são checadas juntas — ver `permissoes.mjs` para por que
+ * são dois eixos e não um.
+ *
+ * O `ErroContabil` e o `ErroDePermissao` viram `ErroHttp` num lugar só: sem
+ * isto, cada rota repetiria o mesmo try/catch e uma delas um dia esqueceria,
+ * devolvendo 500 com o texto do erro contábil dentro.
+ */
+function contextoErp(fed, req, { modulo, nivel = 'ler' } = {}) {
+  const { usuario, empresa, banco } = contexto(fed, req, { exigeEmpresa: false });
+  const central = fed.abrirCentral();
+  const sql = central.sistema();
+
+  // A primeira subida destrava quem pode destravar. Depois disso, nunca mais.
+  semearAcesso(sql, usuario.papel === 'soberano' ? usuario.email : '');
+
+  /*
+   * A recusa de modulo tem de sair como 403, e nao como 500.
+   *
+   * `exigirModulo` levanta `ErroDePermissao`, que o despachante nao conhece —
+   * e o que o operador via era "Falha ao processar a requisicao", com o motivo
+   * real so no log do servidor. Traduzir aqui, e nao em cada rota, e o que
+   * garante que nenhuma esqueca.
+   */
+  if (modulo) {
+    comoHttp(() => exigirModulo(sql, {
+      email: usuario.email, papel: usuario.papel, modulo, nivel,
+    }));
+  }
+  return { central, sql, usuario, empresa, banco };
+}
+
+/** Traduz a recusa do domínio em resposta HTTP, preservando código e detalhe. */
+function comoHttp(fn) {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof ErroHttp) throw e;
+    if (e.codigo) {
+      const status = e.codigo === 'sem_permissao' ? 403
+        : e.codigo === 'nao_encontrado' ? 404 : 422;
+      throw new ErroHttp(status, e.codigo, e.message, e.detalhe ?? undefined);
+    }
+    throw e;
+  }
+}
+
+/** Valor que chega da tela: aceita centavos inteiros ou "1.650,00". */
+function valorDoCorpo(v, campo = 'valor') {
+  if (typeof v === 'number') return v;
+  const c = paraCentavos(v, campo);
+  if (c == null) throw new ErroHttp(422, 'valor_obrigatorio', `Informe o ${campo}.`);
+  return c;
 }
 
 export const ROTAS = {
@@ -2673,6 +2785,343 @@ export const ROTAS = {
       entidade: 'vistorias', entidadeId: p.id, dados: { numero: v.numero, ...dados },
     });
     return ok(escopo.uma('select * from vistorias where {ESCOPO} and id = ?', p.id));
+  },
+
+  /* ══ ERP DO GRUPO ══════════════════════════════════════════════════════
+   *
+   * Tudo aqui roda contra a CENTRAL, que para o ERP deixa de ser projeção de
+   * leitura e passa a ser fonte de verdade do grupo. Ver `erp-schema.mjs`
+   * para a decisão de arquitetura e as seis invariantes.
+   */
+
+  /** O que ESTE usuário pode ver — a tela desenha o menu a partir daqui. */
+  'GET /api/erp/acesso': (fed, req) => {
+    const { sql, usuario } = contextoErp(fed, req);
+    return ok({
+      email: usuario.email,
+      papel: usuario.papel,
+      modulos: MODULOS_ERP,
+      meus: permissoesDe(sql, usuario.email),
+    });
+  },
+
+  'GET /api/erp/acesso/todos': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'admin', nivel: 'administrar' });
+    return ok(mapaDeAcesso(sql));
+  },
+
+  'PUT /api/erp/acesso/:email/:modulo': (fed, req, p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'admin', nivel: 'administrar' });
+    const r = comoHttp(() => conceder(sql, {
+      email: p.email, modulo: p.modulo, nivel: corpo?.nivel ?? 'ler', por: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.conceder',
+      entidade: 'erp_permissoes', entidadeId: `${p.email}:${p.modulo}`, dados: r,
+    });
+    return ok(r);
+  },
+
+  'DELETE /api/erp/acesso/:email/:modulo': (fed, req, p) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'admin', nivel: 'administrar' });
+    const r = comoHttp(() => revogar(sql, { email: p.email, modulo: p.modulo }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.revogar',
+      entidade: 'erp_permissoes', entidadeId: `${p.email}:${p.modulo}`, dados: r,
+    });
+    return ok(r);
+  },
+
+  /* ── Plano de contas ─────────────────────────────────────────────────── */
+
+  'GET /api/erp/contas': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    return ok({
+      contas: sql.prepare('select * from erp_contas order by codigo').all(),
+      centros: sql.prepare('select * from erp_centros_custo where ativo = 1 order by codigo').all(),
+    });
+  },
+
+  'POST /api/erp/contas/semear': (fed, req) => {
+    const { sql, usuario } = contextoErp(fed, req, { modulo: 'razao', nivel: 'administrar' });
+    return ok(comoHttp(() => semearPlanoContas(sql, { ator: usuario.email })));
+  },
+
+  /* ── Razão ───────────────────────────────────────────────────────────── */
+
+  'POST /api/erp/lancamentos': (fed, req, _p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
+    const r = comoHttp(() => lancar(sql, {
+      instancia: corpo?.instancia,
+      data: corpo?.data,
+      historico: corpo?.historico,
+      origem: 'manual',
+      ator: usuario.email,
+      partidas: (corpo?.partidas ?? []).map((x) => ({
+        conta: x.conta,
+        centro_custo: x.centro_custo ?? null,
+        tipo: x.tipo,
+        valor_centavos: valorDoCorpo(x.valor_centavos ?? x.valor, 'valor da partida'),
+      })),
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.lancar',
+      entidade: 'erp_lancamentos', entidadeId: r.id,
+      dados: { instancia: corpo?.instancia, total: r.total, competencia: r.competencia },
+    });
+    return ok(r);
+  },
+
+  'GET /api/erp/lancamentos': (fed, req, _p, _c, url) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    const cond = ['1=1'];
+    const params = [];
+    for (const [q, col] of [['competencia', 'l.competencia'], ['instancia', 'l.instancia'], ['origem', 'l.origem']]) {
+      const v = url?.searchParams.get(q);
+      if (v) { cond.push(`${col} = ?`); params.push(v); }
+    }
+    const linhas = sql.prepare(
+      `select l.*, (select sum(valor_centavos) from erp_partidas p
+                     where p.lancamento_id = l.id and p.tipo = 'D') as total
+         from erp_lancamentos l
+        where ${cond.join(' and ')}
+        order by l.data desc, l.criado_em desc limit 200`,
+    ).all(...params);
+    return ok(linhas);
+  },
+
+  'GET /api/erp/lancamentos/:id': (fed, req, p) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    const l = sql.prepare('select * from erp_lancamentos where id = ?').get(p.id);
+    if (!l) throw new ErroHttp(404, 'nao_encontrado', 'Lançamento não encontrado.');
+    return ok({
+      lancamento: l,
+      partidas: sql.prepare(
+        `select p.*, c.nome as conta_nome from erp_partidas p
+           join erp_contas c on c.codigo = p.conta
+          where p.lancamento_id = ? order by p.ordem`).all(p.id),
+    });
+  },
+
+  'POST /api/erp/lancamentos/:id/estornar': (fed, req, p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
+    // O estorno mora no razão e não aqui: "não se edita, estorna-se" é regra
+    // contábil, e uma cópia dela na rota seria a segunda versão da regra.
+    const r = comoHttp(() => estornar(sql, {
+      lancamentoId: p.id, data: corpo?.data, motivo: corpo?.motivo, ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.estornar',
+      entidade: 'erp_lancamentos', entidadeId: p.id, dados: { estornoId: r.id, motivo: corpo?.motivo },
+    });
+    return ok(r);
+  },
+
+  /* ── Balancete, períodos e a prova de que o livro fecha ──────────────── */
+
+  'GET /api/erp/balancete': (fed, req, _p, _c, url) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    const b = balancete(sql, {
+      competencia: url?.searchParams.get('competencia') ?? null,
+      ate: url?.searchParams.get('ate') ?? null,
+      instancia: url?.searchParams.get('instancia') ?? null,
+      centroCusto: url?.searchParams.get('centro') ?? null,
+    });
+    return ok({ ...b, legivel: { debito: formatarDinheiro(b.debito), credito: formatarDinheiro(b.credito), resultado: formatarDinheiro(b.resultado) } });
+  },
+
+  'GET /api/erp/periodos': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    return ok(sql.prepare('select * from erp_periodos order by competencia desc').all());
+  },
+
+  'POST /api/erp/periodos/:competencia/fechar': (fed, req, p) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'administrar' });
+    const r = comoHttp(() => fecharPeriodo(sql, { competencia: p.competencia, ator: usuario.email }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.fechar_periodo',
+      entidade: 'erp_periodos', entidadeId: p.competencia,
+      dados: { resultado: r.resultado, receita: r.receita, despesa: r.despesa },
+    });
+    return ok(r);
+  },
+
+  'POST /api/erp/periodos/:competencia/reabrir': (fed, req, p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'administrar' });
+    const r = comoHttp(() => reabrirPeriodo(sql, {
+      competencia: p.competencia, ator: usuario.email, motivo: corpo?.motivo,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.reabrir_periodo',
+      entidade: 'erp_periodos', entidadeId: p.competencia, dados: { motivo: corpo?.motivo },
+    });
+    return ok(r);
+  },
+
+  /**
+   * A conferência do livro.
+   *
+   * É a rota que se olha primeiro quando um número parece estranho. Se
+   * `saudavel` vier falso, nenhum outro número do ERP vale — e é melhor a tela
+   * dizer isso do que desenhar um painel bonito sobre um livro quebrado.
+   */
+  'GET /api/erp/conferir': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    const c = conferir(sql);
+    const b = balancete(sql);
+    return ok({ ...c, balancete: { confere: b.confere, diferenca: b.diferenca } });
+  },
+
+  /* ── Contas a pagar e a receber ──────────────────────────────────────── */
+
+  'GET /api/erp/titulos': (fed, req, _p, _c, url) => {
+    const natureza = url?.searchParams.get('natureza');
+    const modulo = natureza === 'receber' ? 'contas_receber' : 'contas_pagar';
+    const { sql } = contextoErp(fed, req, { modulo });
+    return ok(carteira(sql, {
+      natureza,
+      instancia: url?.searchParams.get('instancia') ?? null,
+      status: url?.searchParams.get('status') ?? null,
+      ate: url?.searchParams.get('ate') ?? null,
+    }));
+  },
+
+  'POST /api/erp/titulos': (fed, req, _p, corpo) => {
+    const modulo = corpo?.natureza === 'receber' ? 'contas_receber' : 'contas_pagar';
+    const { central, usuario, banco, empresa } = contextoErp(fed, req, { modulo, nivel: 'escrever' });
+    const r = comoHttp(() => abrirTitulo(central, {
+      instancia: corpo?.instancia,
+      natureza: corpo?.natureza,
+      parceiroId: corpo?.parceiro_id ?? null,
+      numero: texto(corpo?.numero, 40),
+      descricao: corpo?.descricao,
+      emissao: corpo?.emissao,
+      vencimento: corpo?.vencimento,
+      valor: valorDoCorpo(corpo?.valor_centavos ?? corpo?.valor),
+      conta: corpo?.conta,
+      centroCusto: corpo?.centro_custo ?? null,
+      ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.titulo_abrir',
+      entidade: 'erp_titulos', entidadeId: r.id,
+      dados: { natureza: corpo?.natureza, instancia: corpo?.instancia, valor: r.saldo },
+    });
+    return ok(r);
+  },
+
+  'POST /api/erp/titulos/:id/baixar': (fed, req, p, corpo) => {
+    const { central, sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'contas_pagar', nivel: 'escrever' });
+    const t = sql.prepare('select natureza from erp_titulos where id = ?').get(p.id);
+    if (!t) throw new ErroHttp(404, 'nao_encontrado', 'Título não encontrado.');
+    // A permissão segue a NATUREZA do título, e não a rota: quem só pode
+    // receber não pode pagar, ainda que o caminho da URL seja o mesmo.
+    if (t.natureza === 'receber') {
+      contextoErp(fed, req, { modulo: 'contas_receber', nivel: 'escrever' });
+    }
+    const r = comoHttp(() => baixarTitulo(central, {
+      tituloId: p.id,
+      data: corpo?.data ?? agora().slice(0, 10),
+      valor: valorDoCorpo(corpo?.valor_centavos ?? corpo?.valor),
+      meio: corpo?.meio ?? 'pix',
+      contaCaixa: corpo?.conta_caixa ?? null,
+      ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.titulo_baixar',
+      entidade: 'erp_titulos', entidadeId: p.id,
+      dados: { valor: corpo?.valor_centavos ?? corpo?.valor, saldo: r.saldo, status: r.status },
+    });
+    return ok(r);
+  },
+
+  'POST /api/erp/titulos/:id/cancelar': (fed, req, p, corpo) => {
+    const { central, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'contas_pagar', nivel: 'administrar' });
+    const r = comoHttp(() => cancelarTitulo(central, {
+      tituloId: p.id, motivo: corpo?.motivo, ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.titulo_cancelar',
+      entidade: 'erp_titulos', entidadeId: p.id, dados: { motivo: corpo?.motivo, estornoId: r.estornoId },
+    });
+    return ok(r);
+  },
+
+  /** A posição do grupo: quanto se deve, quanto se tem a receber, e o vencido. */
+  'GET /api/erp/posicao': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'financeiro' });
+    return ok(posicao(sql));
+  },
+
+  /* ── Rateio entre empresas ───────────────────────────────────────────── */
+
+  'POST /api/erp/rateio': (fed, req, _p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
+    const r = comoHttp(() => ratearEntreEmpresas(sql, {
+      data: corpo?.data,
+      historico: corpo?.historico,
+      contaDespesa: corpo?.conta_despesa,
+      contaContrapartida: corpo?.conta_contrapartida,
+      total: valorDoCorpo(corpo?.total_centavos ?? corpo?.total, 'total'),
+      pesos: corpo?.pesos ?? {},
+      ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.rateio',
+      entidade: 'erp_lancamentos', entidadeId: r.lancamentos.map((l) => l.id).join(','),
+      dados: { total: r.total, partes: r.partes, pesos: corpo?.pesos },
+    });
+    return ok(r);
+  },
+
+  /* ── Parceiros e pessoas ─────────────────────────────────────────────── */
+
+  'GET /api/erp/parceiros': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'contas_pagar' });
+    return ok(sql.prepare('select * from erp_parceiros where ativo = 1 order by nome').all());
+  },
+
+  'POST /api/erp/parceiros': (fed, req, _p, corpo) => {
+    const { sql, usuario } = contextoErp(fed, req, { modulo: 'contas_pagar', nivel: 'escrever' });
+    const nome = texto(corpo?.nome, 160);
+    if (!nome) throw new ErroHttp(422, 'nome_obrigatorio', 'Informe o nome do parceiro.');
+    const id = novoId();
+    sql.prepare(
+      `insert into erp_parceiros (id, tipo, nome, documento, instancia, email, telefone, ativo, criado_em)
+       values (?,?,?,?,?,?,?,1,?)`,
+    ).run(id, corpo?.tipo ?? 'fornecedor', nome,
+      String(corpo?.documento ?? '').replace(/\D/g, '') || null,
+      corpo?.instancia ?? null, texto(corpo?.email, 160), texto(corpo?.telefone, 40), agora());
+    void usuario;
+    return ok(sql.prepare('select * from erp_parceiros where id = ?').get(id));
+  },
+
+  'GET /api/erp/colaboradores': (fed, req, _p, _c, url) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'rh' });
+    const inst = url?.searchParams.get('instancia');
+    return ok(inst
+      ? sql.prepare('select * from erp_colaboradores where instancia = ? and ativo = 1 order by nome').all(inst)
+      : sql.prepare('select * from erp_colaboradores where ativo = 1 order by instancia, nome').all());
+  },
+
+  'POST /api/erp/colaboradores': (fed, req, _p, corpo) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'rh', nivel: 'escrever' });
+    const nome = texto(corpo?.nome, 160);
+    if (!nome) throw new ErroHttp(422, 'nome_obrigatorio', 'Informe o nome.');
+    if (!corpo?.instancia) throw new ErroHttp(422, 'instancia_obrigatoria', 'Informe a empresa.');
+    const id = novoId();
+    sql.prepare(
+      `insert into erp_colaboradores
+         (id, instancia, nome, documento, cargo, setor, centro_custo, admissao,
+          salario_centavos, usuario_email, ativo, criado_em)
+       values (?,?,?,?,?,?,?,?,?,?,1,?)`,
+    ).run(id, corpo.instancia, nome,
+      String(corpo?.documento ?? '').replace(/\D/g, '') || null,
+      texto(corpo?.cargo, 80), corpo?.setor ?? null, corpo?.centro_custo ?? null,
+      corpo?.admissao ?? null,
+      corpo?.salario_centavos != null ? valorDoCorpo(corpo.salario_centavos, 'salário') : null,
+      texto(corpo?.usuario_email, 160), agora());
+    return ok(sql.prepare('select * from erp_colaboradores where id = ?').get(id));
   },
 
   // ── Campos personalizados ────────────────────────────────────────────────

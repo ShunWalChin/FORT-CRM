@@ -15,6 +15,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { SCHEMA_SQL } from './schema.mjs';
 import { SCHEMA_EXTRA_SQL, SCHEMA_CENTRAL_SQL } from './schema-extra.mjs';
+import { SCHEMA_ERP_SQL } from './erp-schema.mjs';
 import { migrarColunas } from './migracoes.mjs';
 
 export function agora() {
@@ -49,6 +50,12 @@ export class Banco {
     }
     if (central) {
       this.#sql.exec(SCHEMA_CENTRAL_SQL);
+      /*
+       * O ERP mora so na central, e a razao e a mesma que fez o razao morar
+       * la: partida dobrada exige transacao, e nao ha transacao que atravesse
+       * tres arquivos SQLite. Ver `erp-schema.mjs`.
+       */
+      this.#sql.exec(SCHEMA_ERP_SQL);
     } else {
       this.#sql.exec(SCHEMA_SQL);
       this.#sql.exec(SCHEMA_EXTRA_SQL);

@@ -12,7 +12,7 @@
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
     "seed": "node src/seed.mjs --reset",
-    "check": "node --check server.mjs && node src/selftest.mjs && node src/selftest-fed.mjs",
+    "check": "node --check server.mjs && node src/selftest.mjs && node src/selftest-fed.mjs && node src/selftest-erp.mjs",
     "export": "node src/exportar.mjs"
   }
 }
