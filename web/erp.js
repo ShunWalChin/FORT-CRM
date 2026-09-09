@@ -162,8 +162,8 @@ export function telaErp(ui) {
       </div>
 
       <div class="erp-portas">
-        ${meus.contas_pagar ? '<a class="btn quiet" href="#/erp-titulos?natureza=pagar">Contas a pagar</a>' : ''}
-        ${meus.contas_receber ? '<a class="btn quiet" href="#/erp-titulos?natureza=receber">Contas a receber</a>' : ''}
+        ${meus.contas_pagar ? '<a class="btn quiet" href="#/erp-pagar">Contas a pagar</a>' : ''}
+        ${meus.contas_receber ? '<a class="btn quiet" href="#/erp-receber">Contas a receber</a>' : ''}
         ${meus.razao ? '<a class="btn quiet" href="#/erp-balancete">Balancete</a>' : ''}
       </div>`;
 
@@ -216,11 +216,20 @@ export function telaErp(ui) {
 
 /* ══ Contas a pagar e a receber ═══════════════════════════════════════════ */
 
-export function telaTitulos(ui) {
+/**
+ * Contas a pagar e a receber: a mesma tela, com a natureza trocada.
+ *
+ * A natureza vem do registro da rota quando existe, e da query quando não —
+ * `#/erp-pagar` e `#/erp-titulos?natureza=pagar` levam ao mesmo lugar. O
+ * primeiro existe porque item de menu com query fica marcado como ativo nos
+ * dois, e a pessoa perde a noção de onde está.
+ */
+export function telaTitulos(ui, fixa = null) {
   return async (el) => {
     const { esc } = ui;
     const q = new URLSearchParams(location.hash.split('?')[1] ?? '');
-    const natureza = q.get('natureza') === 'receber' ? 'receber' : 'pagar';
+    const pedida = fixa ?? q.get('natureza');
+    const natureza = pedida === 'receber' ? 'receber' : 'pagar';
     const ehPagar = natureza === 'pagar';
 
     const lista = await ui.api(`/erp/titulos?natureza=${natureza}`);

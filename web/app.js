@@ -238,6 +238,25 @@ const MENU = [
   { id: 'disparos', nome: 'Histórico de disparos', ic: 'disparos' },
   { id: 'auditoria', nome: 'Auditoria', ic: 'auditoria', papeis: ['soberano', 'gestor'] },
   { id: 'importar', nome: 'Importar base', ic: 'importar', papeis: ['soberano', 'gestor'] },
+
+  /*
+   * ERP do grupo — seção própria, e não uma linha dentro de "governança".
+   *
+   * Estas telas subiram funcionando e sem caminho até elas: as rotas existiam,
+   * os arquivos eram servidos, e o menu não as citava. Dava para chegar por um
+   * cartão do Início ou digitando o endereço — que é o mesmo que não existir,
+   * para quem não sabe que existe.
+   *
+   * O ERP é território de direção: `papeis` barra aqui do mesmo jeito que a
+   * tabela de papéis barra no servidor. O menu esconder não é segurança — a
+   * segurança está nas duas camadas do backend —, é não oferecer uma porta que
+   * o servidor vai fechar na cara.
+   */
+  { grupo: 'ERP DO GRUPO', papeis: ['soberano', 'gestor'], multiEmpresa: true },
+  { id: 'erp', nome: 'Comando do grupo', ic: 'grupo', papeis: ['soberano', 'gestor'], multiEmpresa: true },
+  { id: 'erp-pagar', nome: 'Contas a pagar', ic: 'conversoes', papeis: ['soberano', 'gestor'], multiEmpresa: true },
+  { id: 'erp-receber', nome: 'Contas a receber', ic: 'conversoes', papeis: ['soberano', 'gestor'], multiEmpresa: true },
+  { id: 'erp-balancete', nome: 'Balancete', ic: 'auditoria', papeis: ['soberano', 'gestor'], multiEmpresa: true },
 ];
 
 function visivelNoMenu(m) {
@@ -694,6 +713,8 @@ const SINONIMOS = {
   central: 'grupo consolidado leads triagem',
   erp: 'erp financeiro contabil razao balancete caixa grupo comando painel',
   'erp-titulos': 'contas pagar receber titulos fornecedor cobranca vencimento',
+  'erp-pagar': 'contas a pagar fornecedor boleto vencimento despesa titulo',
+  'erp-receber': 'contas a receber cobranca cliente inadimplencia titulo atraso',
   'erp-balancete': 'balancete razao contabil saldo conta plano',
   grupo: 'consolidado comparativo empresas visao geral',
   gatilhos: 'regra automacao quando dispara periodicidade',
@@ -2819,7 +2840,15 @@ const UI = {
 
 VISOES.central = telaCentral(UI);
 VISOES.erp = telaErp(UI);
+/*
+ * Contas a pagar e a receber sao a MESMA tela com a natureza trocada, e ganham
+ * rotas proprias mesmo assim: um item de menu que aponta para
+ * `#/erp-titulos?natureza=pagar` fica marcado como ativo tambem quando o outro
+ * esta aberto, porque a marcacao compara a rota e ignora a query.
+ */
 VISOES['erp-titulos'] = telaTitulos(UI);
+VISOES['erp-pagar'] = telaTitulos(UI, 'pagar');
+VISOES['erp-receber'] = telaTitulos(UI, 'receber');
 VISOES['erp-balancete'] = telaBalancete(UI);
 VISOES.conversoes = telaConversoes(UI);
 VISOES.atribuicao = telaAtribuicao(UI);
