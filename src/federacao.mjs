@@ -166,7 +166,21 @@ export class Federacao {
         linhas.push({ ...linha, _instancia: p.instancia, _empresa: p.meta?.nome ?? p.instancia });
       }
     }
-    return { linhas, falhas, instanciasConsultadas: partes.map((p) => p.instancia) };
+    /*
+     * `completo` e obrigatorio no contrato, e nao um extra.
+     *
+     * Sem ele, uma consulta que nao alcancou uma instancia devolve uma lista
+     * que PARECE completa: quem soma nao tem como saber que faltou empresa, e
+     * um consolidado com duas de tres parece certo e esta errado. `falhas` ja
+     * existia e podia ser ignorado sem esforco — um booleano na cara obriga a
+     * decidir o que fazer.
+     */
+    return {
+      linhas,
+      falhas,
+      completo: falhas.length === 0,
+      instanciasConsultadas: partes.map((p) => p.instancia),
+    };
   }
 
   fecharTudo() {

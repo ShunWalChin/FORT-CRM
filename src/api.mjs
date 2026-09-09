@@ -19,6 +19,9 @@ import {
   MODULOS as MODULOS_ERP, conceder, exigir as exigirModulo, mapaDeAcesso,
   permissoesDe, revogar, semearAcesso,
 } from './permissoes.mjs';
+import {
+  COLETORES, pendencias as pendenciasDeFato, reconhecerDivergencia, sincronizar,
+} from './fatos.mjs';
 import { avaliarCompliance, comRodape, POLITICAS_CANAL, EXPLICACAO_MOTIVO } from './compliance.mjs';
 import {
   GATILHOS, projetarRevisao, renderizar, saudacao, diagnosticarFilaVazia,
@@ -445,6 +448,11 @@ const PAPEL_MINIMO = {
   'GET /api/erp/posicao': 'gestor',
   'POST /api/erp/rateio': 'soberano',
 
+  'POST /api/erp/sincronizar': 'soberano',
+  'GET /api/erp/fatos': 'gestor',
+  'POST /api/erp/fatos/:id/reconhecer': 'soberano',
+  'GET /api/erp/painel': 'gestor',
+
   'GET /api/erp/parceiros': 'gestor',
   'POST /api/erp/parceiros': 'gestor',
   'GET /api/erp/colaboradores': 'gestor',
@@ -609,12 +617,46 @@ function comoHttp(fn) {
   }
 }
 
-/** Valor que chega da tela: aceita centavos inteiros ou "1.650,00". */
-function valorDoCorpo(v, campo = 'valor') {
-  if (typeof v === 'number') return v;
-  const c = paraCentavos(v, campo);
-  if (c == null) throw new ErroHttp(422, 'valor_obrigatorio', `Informe o ${campo}.`);
-  return c;
+/**
+ * Valor que chega da tela — e a recusa de adivinhar qual é a unidade.
+ *
+ * A primeira versao aceitava numero e tratava como centavos. O dialogo do
+ * sistema converte campo decimal para REAIS em numero ("1.850,00" vira 1850), e
+ * uma baixa de mil oitocentos e cinquenta reais entrou como dezoito e cinquenta
+ * — sem erro nenhum, porque as duas leituras sao inteiros validos.
+ *
+ * Agora a unidade e explicita ou nao passa:
+ *
+ *   `valor_centavos` — inteiro, em centavos. O nome carrega a unidade.
+ *   `valor`          — TEXTO no formato brasileiro. "1.850,00".
+ *
+ * Numero cru em `valor` e recusado de proposito. E ambiguo, e escolher uma das
+ * duas leituras em silencio e como o erro acima acontece.
+ */
+function valorDoCorpo(corpo, campo = 'valor') {
+  const emCentavos = corpo?.valor_centavos ?? corpo?.[`${campo}_centavos`];
+  if (emCentavos != null) {
+    if (!Number.isInteger(emCentavos)) {
+      throw new ErroHttp(422, 'valor_invalido',
+        `${campo}_centavos precisa ser inteiro — centavo nao se divide.`);
+    }
+    return emCentavos;
+  }
+
+  const bruto = corpo?.[campo] ?? corpo?.valor;
+  if (typeof bruto === 'number') {
+    throw new ErroHttp(422, 'unidade_ambigua',
+      `Numero cru nao diz a unidade. Use "${campo}_centavos" para inteiro em `
+      + `centavos, ou "${campo}" como texto ("1.850,00").`);
+  }
+  try {
+    const c = paraCentavos(bruto, campo);
+    if (c == null) throw new ErroHttp(422, 'valor_obrigatorio', `Informe o ${campo}.`);
+    return c;
+  } catch (e) {
+    if (e instanceof ErroHttp) throw e;
+    throw new ErroHttp(422, 'valor_invalido', e.message);
+  }
 }
 
 export const ROTAS = {
@@ -1741,13 +1783,16 @@ export const ROTAS = {
       ? c.permitidas.filter((e) => e.instancia === pedida).map((e) => e.instancia)
       : c.permitidas.map((e) => e.instancia);
 
-    const { linhas, falhas } = fed.consultar(codigos, (banco) => banco.sistema()
+    const { linhas, falhas, completo } = fed.consultar(codigos, (banco) => banco.sistema()
       .prepare(`select seq, empresa_id, ator, acao, entidade, entidade_id, dados, hash, criado_em
                 from audit_log order by seq desc limit 120`)
       .all());
 
     linhas.sort((a, b) => Date.parse(b.criado_em) - Date.parse(a.criado_em));
-    return ok(linhas.slice(0, 250), { indisponiveis: falhas });
+    // A auditoria incompleta e dita, e nao inferida de uma lista de falhas que
+    // a tela pode nao olhar: "nao ha registro" e "nao consegui ler" sao coisas
+    // diferentes, e a segunda nao pode passar por primeira.
+    return ok(linhas.slice(0, 250), { indisponiveis: falhas, completo });
   },
 
   'GET /api/auditoria/verificar': (fed, req) => {
@@ -2861,7 +2906,7 @@ export const ROTAS = {
         conta: x.conta,
         centro_custo: x.centro_custo ?? null,
         tipo: x.tipo,
-        valor_centavos: valorDoCorpo(x.valor_centavos ?? x.valor, 'valor da partida'),
+        valor_centavos: valorDoCorpo(x, 'valor'),
       })),
     }));
     banco.auditar({
@@ -2997,7 +3042,7 @@ export const ROTAS = {
       descricao: corpo?.descricao,
       emissao: corpo?.emissao,
       vencimento: corpo?.vencimento,
-      valor: valorDoCorpo(corpo?.valor_centavos ?? corpo?.valor),
+      valor: valorDoCorpo(corpo),
       conta: corpo?.conta,
       centroCusto: corpo?.centro_custo ?? null,
       ator: usuario.email,
@@ -3022,7 +3067,7 @@ export const ROTAS = {
     const r = comoHttp(() => baixarTitulo(central, {
       tituloId: p.id,
       data: corpo?.data ?? agora().slice(0, 10),
-      valor: valorDoCorpo(corpo?.valor_centavos ?? corpo?.valor),
+      valor: valorDoCorpo(corpo),
       meio: corpo?.meio ?? 'pix',
       contaCaixa: corpo?.conta_caixa ?? null,
       ator: usuario.email,
@@ -3062,7 +3107,7 @@ export const ROTAS = {
       historico: corpo?.historico,
       contaDespesa: corpo?.conta_despesa,
       contaContrapartida: corpo?.conta_contrapartida,
-      total: valorDoCorpo(corpo?.total_centavos ?? corpo?.total, 'total'),
+      total: valorDoCorpo({ valor_centavos: corpo?.total_centavos, total: corpo?.total }, 'total'),
       pesos: corpo?.pesos ?? {},
       ator: usuario.email,
     }));
@@ -3072,6 +3117,151 @@ export const ROTAS = {
       dados: { total: r.total, partes: r.partes, pesos: corpo?.pesos },
     });
     return ok(r);
+  },
+
+  /* ── Fatos das instâncias ────────────────────────────────────────────── */
+
+  /**
+   * Colhe as instâncias e contabiliza o que ainda não foi.
+   *
+   * É o que faz o ERP conhecer o que aconteceu na operação, e não apenas o que
+   * alguém digitou nele. Idempotente: rodar duas vezes não duplica receita —
+   * a chave é a origem do fato, e não o instante da leitura.
+   */
+  'POST /api/erp/sincronizar': (fed, req, _p, corpo) => {
+    const { usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
+    const r = comoHttp(() => sincronizar(fed, {
+      ator: usuario.email,
+      codigos: Array.isArray(corpo?.instancias) && corpo.instancias.length ? corpo.instancias : null,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.sincronizar',
+      entidade: 'erp_fatos', entidadeId: null,
+      dados: {
+        novos: r.colheita.novos, postados: r.postagem.postados,
+        divergentes: r.colheita.divergentes, completo: r.completo,
+      },
+    });
+    return ok(r);
+  },
+
+  /**
+   * A fila que alguém precisa olhar: o que não virou lançamento, e o que
+   * mudou na origem depois de já ter virado.
+   */
+  'GET /api/erp/fatos': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    return ok({ ...pendenciasDeFato(sql), coletores: COLETORES });
+  },
+
+  /**
+   * Aceita a correção da origem: estorna o lançamento antigo, relê o valor e
+   * devolve o fato à fila. É a única porta para resolver divergência, e ela
+   * passa pelo estorno — nada aqui altera lançamento já feito.
+   */
+  'POST /api/erp/fatos/:id/reconhecer': (fed, req, p, corpo) => {
+    const { usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'administrar' });
+    const r = comoHttp(() => reconhecerDivergencia(fed, {
+      fatoId: p.id, ator: usuario.email, data: corpo?.data ?? null,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.reconhecer_divergencia',
+      entidade: 'erp_fatos', entidadeId: p.id, dados: { estornoId: r.estornoId },
+    });
+    return ok(r);
+  },
+
+  /**
+   * O painel do grupo: uma resposta com o que a direção pergunta.
+   *
+   * Resultado por empresa, posição de contas a pagar e receber, a fila de
+   * fatos e a saúde do livro. Numa chamada só, e não em seis — a tela abre uma
+   * vez, e seis chamadas seriais num processo síncrono é o que trava o
+   * atendimento enquanto o dono olha o painel.
+   *
+   * `completo` e `saudavel` vêm no topo de propósito: se o livro não fecha ou
+   * faltou empresa, nenhum outro número desta resposta vale.
+   */
+  'GET /api/erp/painel': (fed, req, _p, _c, url) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'bi' });
+    const competencia = url?.searchParams.get('competencia') ?? agora().slice(0, 7);
+
+    const geral = balancete(sql, { competencia });
+    const saude = conferir(sql);
+    const fila = pendenciasDeFato(sql);
+    const carteiras = posicao(sql);
+
+    const empresas = {};
+    for (const cod of [...fed.codigosDeEmpresa(), 'GRUPO']) {
+      const b = balancete(sql, { competencia, instancia: cod });
+      if (!b.contas.length) continue;
+      empresas[cod] = {
+        receita: b.receita,
+        despesa: b.despesa,
+        resultado: b.resultado,
+        confere: b.confere,
+        pagar: carteiras.porEmpresa[cod]?.pagar ?? 0,
+        receber: carteiras.porEmpresa[cod]?.receber ?? 0,
+        vencido: (carteiras.porEmpresa[cod]?.pagarVencido ?? 0)
+          + (carteiras.porEmpresa[cod]?.receberVencido ?? 0),
+      };
+    }
+
+    const meses = sql.prepare(
+      `select l.competencia,
+              sum(case when c.tipo = 'receita' and p.tipo = 'C' then p.valor_centavos
+                       when c.tipo = 'receita' and p.tipo = 'D' then -p.valor_centavos
+                       else 0 end) as receita,
+              sum(case when c.tipo = 'despesa' and p.tipo = 'D' then p.valor_centavos
+                       when c.tipo = 'despesa' and p.tipo = 'C' then -p.valor_centavos
+                       else 0 end) as despesa
+         from erp_partidas p
+         join erp_lancamentos l on l.id = p.lancamento_id
+         join erp_contas c on c.codigo = p.conta
+        group by l.competencia order by l.competencia desc limit 13`,
+    ).all().reverse().map((m) => ({ ...m, resultado: m.receita - m.despesa }));
+
+    return ok({
+      competencia,
+      saudavel: saude.saudavel && geral.confere,
+      confere: geral.confere,
+      diferenca: geral.diferenca,
+      grupo: {
+        receita: geral.receita,
+        despesa: geral.despesa,
+        resultado: geral.resultado,
+        pagar: carteiras.grupo.pagar,
+        receber: carteiras.grupo.receber,
+        pagarVencido: carteiras.grupo.pagarVencido,
+        receberVencido: carteiras.grupo.receberVencido,
+      },
+      empresas,
+      meses,
+      fatos: {
+        pendentes: fila.naoContabilizados,
+        divergentes: fila.divergentes.length,
+        ultimaLeitura: fila.ultimaLeitura,
+      },
+      alertas: [
+        ...(saude.saudavel ? [] : [{ nivel: 'critico', texto: 'O razão tem inconsistência — confira antes de usar qualquer número.' }]),
+        ...(geral.confere ? [] : [{ nivel: 'critico', texto: `O balancete não fecha: diferença de ${formatarDinheiro(Math.abs(geral.diferenca))}.` }]),
+        ...(fila.divergentes.length ? [{ nivel: 'atencao', texto: `${fila.divergentes.length} fato(s) mudaram na origem depois de contabilizados.` }] : []),
+        ...(fila.naoContabilizados.length ? [{ nivel: 'atencao', texto: `${fila.naoContabilizados.reduce((a, x) => a + x.n, 0)} fato(s) aguardando contabilização.` }] : []),
+        ...(carteiras.grupo.pagarVencido ? [{ nivel: 'atencao', texto: `${formatarDinheiro(carteiras.grupo.pagarVencido)} vencidos a pagar.` }] : []),
+        /*
+         * O vencido a RECEBER e o alerta mais acionavel deste painel, e faltava.
+         *
+         * Enquanto ninguem registrar baixa, tudo que a operacao entregou nasce
+         * vencido — o vencimento e a data da entrega, porque inventar trinta
+         * dias esconderia atraso que ja existe. O numero grande e o sinal certo:
+         * ele diz que o lado do pagamento ainda nao chegou ao sistema.
+         */
+        ...(carteiras.grupo.receberVencido ? [{
+          nivel: 'atencao',
+          texto: `${formatarDinheiro(carteiras.grupo.receberVencido)} a receber sem baixa registrada.`,
+        }] : []),
+      ],
+    });
   },
 
   /* ── Parceiros e pessoas ─────────────────────────────────────────────── */
@@ -3119,7 +3309,9 @@ export const ROTAS = {
       String(corpo?.documento ?? '').replace(/\D/g, '') || null,
       texto(corpo?.cargo, 80), corpo?.setor ?? null, corpo?.centro_custo ?? null,
       corpo?.admissao ?? null,
-      corpo?.salario_centavos != null ? valorDoCorpo(corpo.salario_centavos, 'salário') : null,
+      corpo?.salario_centavos != null || corpo?.salario != null
+        ? valorDoCorpo({ valor_centavos: corpo?.salario_centavos, salario: corpo?.salario }, 'salario')
+        : null,
       texto(corpo?.usuario_email, 160), agora());
     return ok(sql.prepare('select * from erp_colaboradores where id = ?').get(id));
   },

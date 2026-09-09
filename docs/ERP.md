@@ -63,6 +63,10 @@ Cada item traz o que custa **não** resolver.
 | 5 | **Sem imutabilidade** | `update` no valor | Não se edita: estorna-se, e os dois lançamentos ficam amarrados |
 | 6 | **Permissão só linear** | `leitura < operador < gestor < soberano` | Segundo eixo ortogonal por módulo. "Vê RH e não vê Financeiro" passou a ser expressável |
 | 7 | **Erro de domínio virava 500** | `ErroDePermissao` escapava do despachante | `comoHttp` traduz em 403/404/422 num lugar só |
+| 8 | **Fatos não subiam** | `erp_fatos` existia e ninguém alimentava. 18 OS concluídas, balancete zerado | `fatos.mjs`: colher e postar, idempotente. 48 fatos, R$ 49.376 |
+| 9 | **`emCada` engolia falha parcial** | Lista que *parecia* completa | `completo` no contrato de `consultar`, `colher` e `sincronizar` |
+| 11 | **Sem versão de esquema na Central** | Só `create table if not exists` | `COLUNAS_ESPERADAS_CENTRAL`, provado contra base antiga simulada |
+| 16 | **Unidade ambígua na fronteira** | Número cru virava centavos; o diálogo mandava reais. R$ 1.850 entrou como R$ 18,50 | A rota **recusa** número cru: ou `valor_centavos` inteiro, ou `valor` em texto |
 
 **Sobre o item 6** — era o mais insidioso. Sem o segundo eixo, dar acesso ao RH
 obrigaria a promover a pessoa a `gestor`, e junto com a folha ela levaria o
@@ -74,10 +78,7 @@ são poderes diferentes.
 
 | # | Débito | Consequência de não resolver | Esforço |
 |---|---|---|---|
-| 8 | **Fatos não sobem sozinhos** | A tabela `erp_fatos` existe e ninguém a alimenta. Uma venda fechada na MP **não** vira lançamento — hoje só há lançamento manual e por título | Médio |
-| 9 | **`emCada` engole falha parcial** | Uma consolidação com uma instância fora do ar devolve resposta que *parece* completa. Em dinheiro, resposta parcial é resposta errada | Baixo |
-| 10 | **BI ao vivo bloqueia o processo** | SQLite é síncrono e o processo é único. Um painel que varre três bancos a cada carregamento trava o atendimento | Médio |
-| 11 | **Sem versão de esquema na Central** | `migracoes.mjs` cobre colunas das instâncias. A Central só tem `create table if not exists` — coluna nova em tabela existente não entra | Baixo |
+| 10 | **BI ao vivo recalcula tudo** | O painel varre o razão inteiro a cada carregamento. Com 48 fatos é instantâneo; com dois anos de operação, não | Médio |
 | 12 | **Teto de escala** | ~15 mil clientes por empresa. O razão cresce mais rápido que o CRM: um ano de operação são dezenas de milhares de partidas | Médio |
 | 13 | **Sem conciliação bancária** | A baixa diz que pagou; nada confere contra o extrato. É onde fraude e erro de digitação se escondem | Alto |
 | 14 | **Folha de pagamento** | `erp_colaboradores` guarda o salário e nada calcula encargo, férias, 13º ou rescisão | Muito alto |
@@ -92,15 +93,16 @@ razão o **resultado** (a folha fechada, o imposto apurado) como fato.
 
 ## 3. O que existe e roda
 
-**1.933 linhas, 25 rotas, 62 testes.**
+**Backend + telas, 29 rotas, 48 testes de ERP (249 no total).**
 
 ```
-src/dinheiro.mjs     155   centavos, teclado brasileiro, rateio sem perda
-src/erp-schema.mjs   269   12 tabelas na Central + a decisão de arquitetura
-src/razao.mjs        459   partida dobrada, período, estorno, balancete, rateio
-src/titulos.mjs      304   contas a pagar e a receber, baixas, carteira, posição
-src/permissoes.mjs   176   o segundo eixo: permissão por módulo
-src/selftest-erp.mjs 570   35 testes; +1 na suíte federada; 20 de ponta a ponta
+src/dinheiro.mjs      centavos, teclado brasileiro, rateio sem perda
+src/erp-schema.mjs    12 tabelas na Central + a decisão de arquitetura
+src/razao.mjs         partida dobrada, período, estorno, balancete, rateio
+src/titulos.mjs       contas a pagar e a receber, baixas, carteira, posição
+src/permissoes.mjs    o segundo eixo: permissão por módulo
+src/fatos.mjs         colher das instâncias e postar no razão
+web/erp.js            painel do grupo, contas a pagar/receber, balancete
 ```
 
 ### As seis invariantes, cada uma com teste
@@ -144,16 +146,16 @@ do razão seria construir sete relatórios que um dia discordam entre si.
 
 | Pedido | Estado |
 |---|---|
-| Contas a pagar / receber | **Backend pronto**, sem tela |
-| Financeiro (posição, caixa) | **Backend pronto**, sem tela |
-| Razão, balancete, fechamento | **Backend pronto**, sem tela |
-| Permissão root/admin por setor | **Pronto**, sem tela |
+| Contas a pagar / receber | **Pronto**, com tela: carteira por faixa de atraso e baixa |
+| Financeiro (posição, caixa) | **Pronto**, no painel |
+| Razão, balancete, fechamento | **Pronto**, com tela de balancete |
+| Permissão root/admin por setor | **Pronto**, sem tela de administração |
+| BI | **Painel do grupo**: resultado por empresa, doze meses, alertas |
+| Integração com as instâncias | **Pronto**: colheita idempotente, 48 fatos das três |
 | RH | Cadastro de colaborador e centro de custo. **Sem folha** |
 | TI | Nada. As rotas de saúde e credenciais já existem fora do ERP |
 | Comercial / Marketing | Nada no ERP. O CRM já cobre a operação |
-| BI | Nada. O balancete é a fonte, o painel não existe |
 | Gerência visual do banco | Nada — e é a que eu mais questionaria |
-| Fatos subindo das instâncias | Tabela criada, **nada alimenta** |
 
 ### Sobre a "gerência visual do banco de dados"
 
@@ -165,15 +167,33 @@ telas de leitura e pela conferência, sem abrir a porta de escrita.
 
 ---
 
-## 5. Ordem recomendada daqui
+## 5. O que a implementação revelou
 
-1. **Fatos subindo** (débito 8) — sem isso o ERP só conhece o que foi digitado
-   nele, e a integração com as instâncias é promessa. É o que destrava o BI.
-2. **Contrato de resposta completa** (débito 9) — `completo: true/false` que a
-   tela é obrigada a honrar. Barato, e evita a pior classe de erro: o número
-   errado com cara de certo.
-3. **Telas** de contas a pagar, posição e balancete, sobre o backend que já roda.
-4. **Agregados pré-calculados** (débito 10) antes do painel de BI.
-5. **Conciliação bancária** (débito 13) quando o volume justificar.
+Duas coisas só apareceram porque a tela foi construída, e nenhuma teria
+aparecido em revisão de código.
+
+**O painel denunciou dois números para o mesmo conceito.** A primeira versão da
+postagem lançava direto contra "clientes a receber". O razão ficava certo e a
+carteira ficava vazia — o painel mostrava receita reconhecida e R$ 0 a receber
+ao mesmo tempo. A correção foi na raiz: o fato passou a **abrir um título**, e
+os dois viraram o mesmo número. De quebra, o valor virou cobrável — aparece no
+que vence, aceita baixa, sai da carteira quando for pago.
+
+**Uma baixa de R$ 1.850,00 entrou como R$ 18,50.** O diálogo do sistema converte
+campo decimal para reais em número; a rota tratava número como centavos. Ninguém
+digitou errado, e nenhum erro apareceu: `1850` é inteiro válido nas duas
+leituras. A rota passou a **recusar número cru** — ou `valor_centavos` inteiro,
+ou `valor` como texto. O teste que guarda isso diz, em uma linha, que as duas
+leituras são mil vezes diferentes.
+
+## 6. Ordem recomendada daqui
+
+1. **Agregados pré-calculados** (débito 10) antes que o razão cresça. O painel
+   hoje varre tudo a cada carregamento.
+2. **Tela de administração de acesso** — o backend concede por módulo e a
+   concessão ainda é feita por chamada de API.
+3. **Conciliação bancária** (débito 13) quando o volume justificar. É o que
+   fecha o ciclo: hoje a baixa é registrada por quem diz que pagou.
+4. **RH de verdade** — integrar folha, não calcular.
 
 Folha e fiscal: integrar, não construir.

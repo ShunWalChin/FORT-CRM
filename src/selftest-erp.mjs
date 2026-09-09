@@ -23,6 +23,12 @@ import {
 import {
   ErroDePermissao, MODULOS, conceder, exigir, mapaDeAcesso, permissoesDe, revogar, semearAcesso,
 } from './permissoes.mjs';
+import {
+  COLETORES, colher, pendencias as pendenciasDeFato, postar,
+  reconhecerDivergencia, sincronizar,
+} from './fatos.mjs';
+import { semear } from './seed.mjs';
+import { CATALOGO } from './federacao.mjs';
 
 let passou = 0;
 const falhas = [];
@@ -128,6 +134,23 @@ teste('rateio não perde nem inventa centavo', () => {
 
   // Reprodutível: duas chamadas iguais, saída idêntica.
   igual(ratear(10000, [1, 1, 1]).join(), ratear(10000, [1, 1, 1]).join());
+});
+
+teste('o mesmo número em duas unidades é o bug que custa mil vezes', () => {
+  /*
+   * Aconteceu de verdade nesta implementação: o diálogo do sistema converte
+   * campo decimal para REAIS em número ("1.850,00" vira 1850) e a rota tratava
+   * número como CENTAVOS. Uma baixa de mil oitocentos e cinquenta reais entrou
+   * como dezoito e cinquenta, sem erro nenhum — porque 1850 é inteiro válido
+   * nas duas leituras, e ninguém digitou errado.
+   *
+   * A lição que fica no teste: o valor só atravessa fronteira com a unidade
+   * declarada. Este teste guarda as duas conversões que a fronteira usa.
+   */
+  igual(paraCentavos('1.850,00'), 185000, 'texto brasileiro vira centavos');
+  igual(Math.round(1850 * 100), 185000, 'reais em número viram centavos');
+  verdadeiro(paraCentavos('1.850,00') !== 1850,
+    'e as duas leituras do mesmo número são MIL VEZES diferentes');
 });
 
 teste('percentual arredonda ao centavo', () => {
@@ -558,6 +581,227 @@ teste('módulo ou nível inventado é recusado, e não concedido em silêncio', 
     ErroDePermissao);
   igual(recusa(() => conceder(sql, { email: 'sem-arroba', modulo: 'rh', por: ATOR })).constructor,
     ErroDePermissao);
+});
+
+console.log('\n FATOS SUBINDO DAS INSTÂNCIAS\n');
+
+/*
+ * Daqui para baixo as instâncias existem de verdade: a semeadura carrega as
+ * três empresas com ordens de serviço, pedidos e oportunidades ganhas. Testar
+ * a coleta contra tabelas vazias provaria só que ela não quebra.
+ */
+for (const e of CATALOGO) semear(fed.abrir(e.codigo), { empresa: e.codigo });
+
+let colheitaInicial = null;
+
+teste('a coleta lê as três instâncias e não contabiliza nada ainda', () => {
+  colheitaInicial = colher(fed, { ator: ATOR });
+  igual(colheitaInicial.completo, true, 'as três instâncias responderam');
+  igual(colheitaInicial.falhas.length, 0);
+  verdadeiro(colheitaInicial.novos > 20, `esperava fatos da carga, vieram ${colheitaInicial.novos}`);
+
+  // Colher não é postar: nenhum lançamento saiu daqui.
+  const semLanc = sql.prepare('select count(*) as n from erp_fatos where lancamento_id is null').get().n;
+  igual(semLanc, colheitaInicial.novos, 'nada pode ter sido contabilizado na coleta');
+  igual(Object.keys(COLETORES).length, 3, 'três tipos de fato financeiro');
+});
+
+teste('colher duas vezes NÃO duplica — a chave é a origem, não o instante', () => {
+  /*
+   * Um cron que dispara duas vezes por engano dobraria o faturamento do mês, e
+   * ninguém perceberia até o fechamento. A chave (instância, tipo, ref) é o
+   * que impede.
+   */
+  const antes = sql.prepare('select count(*) as n from erp_fatos').get().n;
+  const outra = colher(fed, { ator: ATOR });
+  const depois = sql.prepare('select count(*) as n from erp_fatos').get().n;
+  igual(depois, antes, 'a segunda coleta não pode criar fato nenhum');
+  igual(outra.novos, 0);
+  igual(outra.jaConhecidos, antes, 'todos reconhecidos como já vistos');
+});
+
+teste('postar transforma fato em lançamento, um a um', () => {
+  const r = postar(fed, { ator: ATOR });
+  verdadeiro(r.postados > 20, `esperava postagens, vieram ${r.postados}`);
+  igual(r.recusados.length, 0, JSON.stringify(r.recusados.slice(0, 2)));
+  igual(r.pendentesRestantes, 0, 'não pode sobrar fato pendente');
+
+  // Um título POR FATO, e não um agregado por mês: é o que permite olhar uma
+  // linha do balancete e chegar na ordem de serviço que a gerou.
+  const titulos = sql.prepare(
+    "select count(*) as n from erp_titulos where origem in ('ordem_servico','pedido','venda')").get().n;
+  igual(titulos, r.postados, 'cada fato postado tem de ter virado um título');
+
+  const b = balancete(sql);
+  igual(b.confere, true, 'o livro tem de continuar fechando depois da carga');
+});
+
+teste('a carteira e o razão contam a MESMA história de contas a receber', () => {
+  /*
+   * A primeira versão lançava direto contra "clientes a receber", sem título.
+   * O razão ficava certo e a carteira vazia: o painel mostrava receita
+   * reconhecida e R$ 0 a receber ao mesmo tempo. Dois números para o mesmo
+   * conceito é exatamente a classe de problema que este ERP existe para não
+   * ter — e foi o painel que denunciou.
+   */
+  const noRazao = saldos(sql).find((x) => x.conta === '1.1.02.001')?.saldo ?? 0;
+  const naCarteira = posicao(sql).grupo.receber;
+  igual(naCarteira, noRazao,
+    `carteira ${naCarteira} e razão ${noRazao} têm de ser o mesmo número`);
+  verdadeiro(noRazao > 0, 'e tem de haver o que receber depois da carga');
+});
+
+teste('o que a instância entregou vira cobrável, com vencimento', () => {
+  // Sem título, o valor existiria no balancete e não apareceria em "o que
+  // vence" — que é a pergunta que o financeiro faz todo dia.
+  const t = carteira(sql, { natureza: 'receber' });
+  verdadeiro(t.length > 20, `esperava a carteira cheia, veio ${t.length}`);
+  const doServico = t.find((x) => x.origem === 'ordem_servico');
+  verdadeiro(doServico, 'a OS concluída tem de estar cobrável');
+  igual(doServico.status, 'aberto');
+  verdadeiro(doServico.vencimento >= '2025-01-01', 'com data de vencimento real');
+  igual(doServico.emissao, doServico.vencimento,
+    'vencimento na entrega: inventar trinta dias esconderia atraso que já existe');
+});
+
+teste('a receita de cada empresa cai na conta do NEGÓCIO dela', () => {
+  /*
+   * "Venda" não diz nada num grupo que conserta bico injetor, planta e vende
+   * tinta. Sem a separação, o consolidado não responde qual negócio puxa o
+   * outro — que é a pergunta que o dono faz.
+   */
+  const mp = saldos(sql, { instancia: 'MP' });
+  const af = saldos(sql, { instancia: 'AF' });
+  const ft = saldos(sql, { instancia: 'FT' });
+
+  verdadeiro(mp.find((x) => x.conta === '4.1.01.002')?.saldo > 0, 'MP em serviços de oficina');
+  verdadeiro(af.find((x) => x.conta === '4.1.01.004')?.saldo > 0, 'AF em produção agrícola');
+  verdadeiro(ft.find((x) => x.conta === '4.1.01.003')?.saldo > 0, 'FT em venda de tintas');
+
+  // E a contrapartida é a receber, e não caixa: a instância sabe que entregou,
+  // não sabe se recebeu.
+  verdadeiro(mp.find((x) => x.conta === '1.1.02.001')?.saldo > 0,
+    'a receita reconhecida vira contas a receber, não dinheiro em caixa');
+  /*
+   * A asserção é sobre os lançamentos DOS FATOS, e não sobre o saldo da conta:
+   * o caixa já tinha movimento de um lançamento manual feito acima, e somar as
+   * duas coisas testaria o teste anterior em vez deste.
+   */
+  const caixaPorFato = sql.prepare(
+    `select count(*) as n from erp_partidas p
+       join erp_lancamentos l on l.id = p.lancamento_id
+      where l.origem in ('venda','ordem_servico')
+        and p.conta like '1.1.01%'`).get().n;
+  igual(caixaPorFato, 0,
+    'nenhum fato pode ter entrado no caixa sem alguém confirmar o recebimento');
+});
+
+teste('postar de novo não faz nada — fato contabilizado nunca reprocessa', () => {
+  const antes = sql.prepare('select count(*) as n from erp_lancamentos').get().n;
+  const r = postar(fed, { ator: ATOR });
+  igual(r.postados, 0);
+  igual(sql.prepare('select count(*) as n from erp_lancamentos').get().n, antes,
+    'reprocessar dobraria o faturamento');
+});
+
+teste('origem que muda DEPOIS de contabilizada é marcada, e não reprocessada', () => {
+  /*
+   * A oficina corrige o valor de uma OS já lançada. Reprocessar duplicaria a
+   * receita; ignorar deixaria o razão discordando da origem para sempre. O
+   * terceiro caminho é marcar — porque estornar é ato contábil, e não efeito
+   * colateral de um cron que rodou de madrugada.
+   */
+  const mp = fed.abrir('MP');
+  const emp = mp.sistema().prepare('select id from empresas limit 1').get();
+  const esc = mp.para(emp.id);
+  const os = esc.uma("select * from ordens_servico where {ESCOPO} and status = 'concluida' limit 1");
+  esc.atualizar('ordens_servico', os.id, { valor_centavos: os.valor_centavos + 50000 });
+
+  const antesLanc = sql.prepare('select count(*) as n from erp_lancamentos').get().n;
+  const c = colher(fed, { ator: ATOR });
+  igual(c.divergentes, 1, 'a mudança tinha de ser vista');
+  igual(c.atualizados, 0, 'e NÃO pode ter sido sobrescrita em silêncio');
+
+  const p = postar(fed, { ator: ATOR });
+  igual(p.postados, 0, 'divergente não vira lançamento novo sozinho');
+  igual(sql.prepare('select count(*) as n from erp_lancamentos').get().n, antesLanc);
+
+  const fila = pendenciasDeFato(sql);
+  igual(fila.divergentes.length, 1);
+  const d = JSON.parse(fila.divergentes[0].divergencia);
+  igual(d.agora - d.antes, 50000, 'a divergência guarda o antes e o depois');
+});
+
+teste('reconhecer a divergência estorna e devolve o fato à fila', () => {
+  const fila = pendenciasDeFato(sql);
+  const fato = fila.divergentes[0];
+  const valorAntes = JSON.parse(fato.payload).valor_centavos;
+
+  const r = reconhecerDivergencia(fed, { fatoId: fato.id, ator: ATOR });
+  verdadeiro(r.estornoId, 'reconhecer tem de estornar');
+
+  // O fato voltou a ser pendente, com o valor NOVO.
+  const agora2 = sql.prepare('select * from erp_fatos where id = ?').get(fato.id);
+  igual(agora2.lancamento_id, null);
+  igual(agora2.divergente_em, null);
+  igual(JSON.parse(agora2.payload).valor_centavos, valorAntes + 50000);
+
+  // E a próxima postagem lança o valor corrigido.
+  const p = postar(fed, { ator: ATOR });
+  igual(p.postados, 1);
+  igual(p.valor, valorAntes + 50000);
+  igual(balancete(sql).confere, true);
+  igual(conferir(sql).saudavel, true);
+});
+
+teste('instância fora do ar NÃO produz coleta completa', () => {
+  /*
+   * Em dinheiro, resposta parcial é resposta errada. Quem soma precisa saber
+   * ANTES que faltou uma empresa — um consolidado com duas de três empresas
+   * parece certo e está errado, e nada na tela denuncia.
+   */
+  const r = colher(fed, { codigos: ['MP', 'XX'], ator: ATOR });
+  igual(r.completo, false, 'faltou instância: a coleta não é completa');
+  igual(r.falhas.length, 1);
+  igual(r.falhas[0].instancia, 'XX');
+  verdadeiro(r.porInstancia.find((x) => x.instancia === 'MP'), 'e a que respondeu ainda conta');
+});
+
+teste('sincronizar leva a completude adiante — não some no caminho', () => {
+  const bom = sincronizar(fed, { ator: ATOR });
+  igual(bom.completo, true);
+  const ruim = sincronizar(fed, { codigos: ['MP', 'XX'], ator: ATOR });
+  igual(ruim.completo, false, 'a postagem ir bem NÃO torna a sincronização completa');
+});
+
+teste('período fechado recusa a postagem, e diz qual fato ficou de fora', () => {
+  // Um fato novo em mês fechado: a recusa tem de ser por fato, e não derrubar
+  // a leva inteira.
+  const mp = fed.abrir('MP');
+  const emp = mp.sistema().prepare('select id from empresas limit 1').get();
+  const esc = mp.para(emp.id);
+  const cli = esc.uma('select id from clientes where {ESCOPO} limit 1');
+  esc.inserir('ordens_servico', {
+    id: 'os-mes-fechado', cliente_id: cli.id, numero: 'OS-FECHADO', componente: 'Bomba',
+    valor_centavos: 77000, status: 'concluida',
+    aberta_em: '2026-01-05T10:00:00.000Z', concluida_em: '2026-01-06T10:00:00.000Z',
+  });
+
+  /*
+   * O fechamento vai direto no SQL, e não por `fechar()`.
+   *
+   * A carga semeada tem história desde 2025, e fechar pela porta certa exigiria
+   * fechar dezoito meses antes — o que testaria a ordem do fechamento (que já
+   * tem teste próprio) em vez da reação da postagem, que é o alvo aqui.
+   */
+  garantirPeriodo(sql, '2026-01');
+  sql.prepare("update erp_periodos set status = 'fechado' where competencia = '2026-01'").run();
+  colher(fed, { codigos: ['MP'], ator: ATOR });
+  const r = postar(fed, { ator: ATOR });
+  const recusa1 = r.recusados.find((x) => x.ref === 'os-mes-fechado');
+  verdadeiro(recusa1, 'o fato do mês fechado tinha de ser recusado');
+  igual(recusa1.motivo, 'periodo_fechado');
+  igual(conferir(sql).saudavel, true, 'e a recusa não pode sujar o livro');
 });
 
 fed.fecharTudo();

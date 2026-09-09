@@ -263,6 +263,12 @@ create table if not exists erp_fatos (
   ocorrido_em   text not null,
   lido_em       text not null,
   lancamento_id text references erp_lancamentos(id),
+  -- Resumo do payload no momento em que o fato foi lido. Se a origem mudar
+  -- depois de contabilizada, o hash muda e a divergencia fica marcada em vez
+  -- de reprocessada em silencio.
+  payload_hash  text,
+  divergente_em text,
+  divergencia   text,
   unique (instancia, tipo, ref)
 );
 create index if not exists ix_fato_pendente on erp_fatos(lancamento_id, ocorrido_em);
