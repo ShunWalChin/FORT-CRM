@@ -499,12 +499,34 @@ teste('GRUPO é uma instância como as outras, para o que não é de ninguém', 
 
 console.log('\n PERMISSÃO POR MÓDULO\n');
 
-teste('a semeadura destrava o soberano — senão o ERP nasce trancado para todos', () => {
-  const r = semearAcesso(sql, ATOR);
-  igual(r.criadas.length, Object.keys(MODULOS).length);
-  igual(permissoesDe(sql, ATOR).rh, 'administrar');
-  // Roda de novo e não duplica nem rebaixa.
-  igual(semearAcesso(sql, 'outro@x.com').motivo, 'ja_existe_concessao');
+teste('a semeadura destrava TODOS os soberanos, e nao so o primeiro que entra', () => {
+  /*
+   * A primeira versao recebia um e-mail so, e semeava quem abrisse a tela
+   * primeiro. Em producao isso deu um sistema com dois soberanos onde apenas
+   * um enxergava o ERP — e o outro batia num "sem acesso ao modulo" que nao
+   * explicava nada, porque ele ERA o dono do sistema.
+   */
+  const outro = 'diretoria@fortgrupo.com.br'; // o segundo soberano do grupo
+  const r = semearAcesso(sql, [ATOR, outro]);
+  igual(r.criadas.length, Object.keys(MODULOS).length * 2, 'os dois, e nao um');
+
+  for (const email of [ATOR, outro]) {
+    const meus = permissoesDe(sql, email);
+    igual(Object.keys(meus).length, Object.keys(MODULOS).length, `${email} sem todos os modulos`);
+    igual(meus.rh, 'administrar');
+    igual(meus.financeiro, 'administrar');
+  }
+
+  // A guarda continua sendo a tabela VAZIA — e e o que separa semeadura de
+  // regra: revogar um modulo nao pode ser desfeito pelo proximo login.
+  igual(semearAcesso(sql, 'terceiro@x.com').motivo, 'ja_existe_concessao');
+  igual(permissoesDe(sql, 'terceiro@x.com').rh, undefined);
+
+  revogar(sql, { email: outro, modulo: 'rh' });
+  igual(semearAcesso(sql, [ATOR, outro]).motivo, 'ja_existe_concessao',
+    'semear de novo NAO pode desfazer uma revogacao');
+  igual(permissoesDe(sql, outro).rh, undefined);
+  conceder(sql, { email: outro, modulo: 'rh', nivel: 'administrar', por: ATOR });
 });
 
 teste('a checagem é conjunção: passa pela escala E tem o módulo', () => {

@@ -584,8 +584,20 @@ function contextoErp(fed, req, { modulo, nivel = 'ler' } = {}) {
   const central = fed.abrirCentral();
   const sql = central.sistema();
 
-  // A primeira subida destrava quem pode destravar. Depois disso, nunca mais.
-  semearAcesso(sql, usuario.papel === 'soberano' ? usuario.email : '');
+  /*
+   * A primeira subida destrava quem pode destravar. Depois disso, nunca mais.
+   *
+   * Sao TODOS os soberanos, e nao so quem abriu a tela primeiro: um sistema com
+   * dois donos onde so um enxerga o ERP nasce meio trancado, e o outro bate num
+   * "sem acesso ao modulo" que nao explica nada.
+   *
+   * A varredura das instancias so acontece quando a tabela esta vazia — depois
+   * disso `semearAcesso` sai na primeira linha, e nenhuma requisicao paga por
+   * uma consulta a tres bancos.
+   */
+  if (!sql.prepare('select count(*) as n from erp_permissoes').get().n) {
+    semearAcesso(sql, soberanosDaFederacao(fed));
+  }
 
   /*
    * A recusa de modulo tem de sair como 403, e nao como 500.
@@ -601,6 +613,28 @@ function contextoErp(fed, req, { modulo, nivel = 'ler' } = {}) {
     }));
   }
   return { central, sql, usuario, empresa, banco };
+}
+
+/**
+ * Os e-mails de papel `soberano`, em qualquer instancia.
+ *
+ * Identidade e federada pelo e-mail e autorizacao e por instancia, entao o
+ * mesmo endereco pode ser soberano numa e nao existir noutra. Para semear o
+ * ERP, basta ser soberano em ALGUMA — o ERP e do grupo, e nao de uma empresa.
+ *
+ * Instancia fora do ar nao impede semear com as outras: um banco indisponivel
+ * nao pode deixar o sistema inteiro trancado.
+ */
+function soberanosDaFederacao(fed) {
+  const emails = new Set();
+  for (const cod of fed.codigosDeEmpresa()) {
+    try {
+      const linhas = fed.abrir(cod).sistema()
+        .prepare("select email from usuarios where papel = 'soberano'").all();
+      for (const u of linhas) emails.add(String(u.email).toLowerCase());
+    } catch { /* instancia fora do ar nao tranca as outras */ }
+  }
+  return [...emails];
 }
 
 /** Traduz a recusa do domínio em resposta HTTP, preservando código e detalhe. */

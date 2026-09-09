@@ -141,24 +141,43 @@ export function revogar(sql, { email, modulo }) {
 }
 
 /**
- * Semeia o soberano com acesso a tudo, na primeira subida.
+ * Semeia TODOS os soberanos com acesso a tudo, na primeira subida.
  *
  * Sem isto o ERP nasce trancado para todos, inclusive para quem poderia
  * destrancá-lo — e a saída seria editar o banco à mão, que é exatamente o que
  * um sistema de permissão existe para tornar desnecessário.
+ *
+ * **Todos, e não o primeiro que entrar.** A primeira versão semeava só quem
+ * abrisse a tela primeiro, porque recebia um e-mail só. O efeito em produção
+ * foi um sistema com dois soberanos onde apenas um enxergava o ERP — e o outro
+ * batia num "sem acesso ao módulo" que não explicava nada, porque ele *era* o
+ * dono do sistema.
+ *
+ * A condição de guarda continua sendo a tabela VAZIA. É o que separa semeadura
+ * de regra: se alguém revogar um módulo de um soberano, o próximo login não
+ * desfaz a revogação. Semear é o que acontece uma vez, no começo; depois disso,
+ * quem concede é gente.
  */
-export function semearAcesso(sql, email) {
-  const alvo = String(email ?? '').toLowerCase();
-  if (!alvo.includes('@')) return { criadas: [] };
+export function semearAcesso(sql, emails) {
+  const alvos = [...new Set(
+    (Array.isArray(emails) ? emails : [emails])
+      .map((e) => String(e ?? '').toLowerCase())
+      .filter((e) => e.includes('@')),
+  )];
+  if (!alvos.length) return { criadas: [] };
+
   if (sql.prepare('select count(*) as n from erp_permissoes').get().n > 0) {
     return { criadas: [], motivo: 'ja_existe_concessao' };
   }
+
   const criadas = [];
-  for (const modulo of Object.keys(MODULOS)) {
-    conceder(sql, { email: alvo, modulo, nivel: 'administrar', por: 'sistema' });
-    criadas.push(modulo);
+  for (const alvo of alvos) {
+    for (const modulo of Object.keys(MODULOS)) {
+      conceder(sql, { email: alvo, modulo, nivel: 'administrar', por: 'sistema' });
+      criadas.push(`${alvo}:${modulo}`);
+    }
   }
-  return { criadas, email: alvo };
+  return { criadas, emails: alvos };
 }
 
 /** Quem tem o quê — a tela de administração de acesso. */
