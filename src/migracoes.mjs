@@ -61,6 +61,34 @@ export const COLUNAS_ESPERADAS = [
 
   // Profundidade da revisao na vistoria.
   { tabela: 'vistorias', coluna: 'nivel', definicao: "text not null default 'prata'" },
+  { tabela: 'vistorias', coluna: 'proximo_servico_km', definicao: 'integer' },
+  { tabela: 'vistorias', coluna: 'preferencia_pagamento', definicao: 'text' },
+  { tabela: 'vistorias', coluna: 'entrega_prevista', definicao: 'text' },
+];
+
+/**
+ * Colunas esperadas na CENTRAL.
+ *
+ * Lista separada, e nao a mesma: os dois esquemas nao tem as mesmas tabelas, e
+ * `migrarColunas` ignora tabela ausente em silencio — de proposito, porque
+ * exigir que toda tabela exista em toda base faria a migracao falhar por
+ * desenho. O efeito colateral e que uma entrada errada aqui nao daria erro
+ * nenhum: ela simplesmente nunca seria aplicada.
+ *
+ * Por isso as duas listas sao aplicadas contra o banco certo, e nao unidas.
+ */
+export const COLUNAS_ESPERADAS_CENTRAL = [
+  /*
+   * Divergencia do fato ja contabilizado.
+   *
+   * Um fato sobe, vira lancamento, e DEPOIS a instancia corrige o valor da
+   * venda. O lancamento ja existe: reprocessar duplicaria a receita, e ignorar
+   * deixaria o razao discordando da origem para sempre. O terceiro caminho e
+   * este — marcar, e deixar a pessoa decidir se estorna.
+   */
+  { tabela: 'erp_fatos', coluna: 'payload_hash', definicao: 'text' },
+  { tabela: 'erp_fatos', coluna: 'divergente_em', definicao: 'text' },
+  { tabela: 'erp_fatos', coluna: 'divergencia', definicao: 'text' },
 ];
 
 /**
@@ -70,10 +98,10 @@ export const COLUNAS_ESPERADAS = [
  * têm schemas diferentes, e exigir que toda tabela exista em toda base faria a
  * migração falhar por desenho, não por defeito.
  */
-export function migrarColunas(sql) {
+export function migrarColunas(sql, esperadas = COLUNAS_ESPERADAS) {
   const feitas = [];
 
-  for (const { tabela, coluna, definicao } of COLUNAS_ESPERADAS) {
+  for (const { tabela, coluna, definicao } of esperadas) {
     let colunas;
     try {
       colunas = sql.prepare(`pragma table_info(${tabela})`).all();

@@ -10,7 +10,7 @@ fontes.
 🔗 **Sistema no ar: [fortcrm.fattech.com.br](https://fortcrm.fattech.com.br)**
 
 ```
-Node ≥ 23.4 · zero dependências · 188 testes · nenhum passo de build
+Node ≥ 23.4 · zero dependências · 249 testes · nenhum passo de build
 ```
 
 ---
@@ -31,9 +31,26 @@ traz.
 
 | Empresa | Segmento | O que tem de próprio |
 |---|---|---|
-| **Minas Peças** | Injeção diesel — Bosch Car Service | frota, ordens de serviço, laudo de bancada |
+| **Minas Peças** | Injeção diesel — Bosch Car Service | frota, ordens de serviço, laudo de bancada, **vistoria de entrada** |
 | **Fazenda Agrofort** | Queijo artesanal | pedidos, recompra, clube de assinatura |
 | **Fort Tintas** | Tintas e vernizes | pedidos, pintor parceiro, obra |
+
+E, acima das três, a **Central** — que deixou de ser só projeção de leitura e
+passou a ser o ERP do grupo: razão contábil por partida dobrada, contas a pagar
+e a receber, e o resultado consolidado das três empresas.
+
+### Dois módulos que valem a leitura
+
+**[Vistoria de entrada](docs/OFICINA.md)** — 86 verificações na ordem em que se
+trabalha no carro, o desenho da lataria onde se marca avaria, e o aceite do dono
+antes de a ordem de serviço poder começar. Feito para o celular, em pé ao lado do
+elevador, com a rede caindo. Ver também a [otimização de UX](docs/UX-VISTORIA.md),
+medida no aparelho.
+
+**[ERP do grupo](docs/ERP.md)** — o razão que consolida as três empresas, com as
+seis invariantes que ele recusa violar. O documento abre com o conflito de
+arquitetura que um ERP cria num sistema de bancos isolados, e traz o débito
+técnico item a item — inclusive o que **não** foi construído.
 
 ---
 
@@ -52,8 +69,10 @@ subida — três instâncias, ~38 clientes, histórico de doze meses.
 flag a partir dessa versão. No Node 22 ele sobe e morre no primeiro `import`.
 
 ```bash
-node src/selftest.mjs       # 45 testes — CRM de uma empresa
-node src/selftest-fed.mjs   # 143 testes — federação, aquisição, cofre, oficina
+node src/selftest.mjs       # 45 testes  — CRM de uma empresa
+node src/selftest-fed.mjs   # 156 testes — federação, aquisição, cofre, oficina
+node src/selftest-erp.mjs   # 48 testes  — dinheiro, razão, títulos, permissão, fatos
+npm run check               # os três, em sequência
 ```
 
 ### Entrar
@@ -139,7 +158,9 @@ que o sistema ainda não faz. Cada seção tem um botão que abre a tela de verd
 | [Arquitetura](docs/ARQUITETURA.md) | Federação, instâncias, central, escopo e auditoria |
 | [Régua e compliance](docs/REGUA-E-COMPLIANCE.md) | Os 17 gatilhos, as 9 checagens, idempotência |
 | [Campanhas](docs/CAMPANHAS.md) | O nome por trás do `ad_id`, e por que o sistema nunca inventa um |
-| [Oficina](docs/OFICINA.md) | Vida do veículo, previsão de manutenção e a vistoria que trava a OS |
+| [Oficina](docs/OFICINA.md) | Vida do veículo, previsão de manutenção e a vistoria de 86 itens que trava a OS |
+| [UX da vistoria](docs/UX-VISTORIA.md) | O custo de responder, medido no aparelho: 1,64 → 2,54 itens por tela |
+| [ERP do grupo](docs/ERP.md) | Razão por partida dobrada, contas a pagar/receber, e o débito técnico item a item |
 | [Credenciais](docs/CREDENCIAIS.md) | Token da Meta por empresa, cifrado em repouso |
 | [Atribuição e conversões](docs/ATRIBUICAO-E-CONVERSOES.md) | Do clique no anúncio à conversão devolvida |
 | [Click-to-WhatsApp](docs/CTWA.md) | `ctwa_clid`, webhook assinado, Business Messaging |
@@ -222,10 +243,19 @@ src/
   campanhas.mjs         nome da campanha por trás do ad_id
   cofre.mjs             credencial cifrada por empresa (AES-256-GCM)
   veiculos.mjs          uso, média real de km e previsão de manutenção
-  vistoria.mjs          check-list de 63 itens, aceite e a trava da OS
-  api.mjs               67 rotas
+  vistoria.mjs          check-list de 86 itens, aceite e a trava da OS
+
+  ── ERP do grupo, na instância central ──
+  dinheiro.mjs          centavos inteiros, teclado brasileiro, rateio sem perda
+  erp-schema.mjs        12 tabelas contábeis + a decisão de arquitetura
+  razao.mjs             partida dobrada, período, estorno, balancete
+  titulos.mjs           contas a pagar e a receber, baixas, carteira
+  fatos.mjs             colher das instâncias e postar no razão
+  permissoes.mjs        permissão por módulo — o eixo ortogonal ao papel
+
+  api.mjs               102 rotas
   seed.mjs              carga de demonstração
-  selftest*.mjs         188 testes
+  selftest*.mjs         249 testes
 web/
   app.js                SPA, sem framework
   ui.js                 ícones SVG e temas
@@ -234,7 +264,9 @@ web/
   temas.css             cinco temas
   mobile.css            dois pontos de corte: 820 e 640
   oficina.js            app de vistoria e vida do veículo (só MP)
-  oficina.css           desenhado para o celular primeiro
+  carroceria.js         as cinco vistas do veículo, para marcar avaria
+  fila.js               envio que sobrevive à queda de rede da oficina
+  erp.js                painel do grupo, contas a pagar/receber, balancete
   manual.js             o manual dentro do sistema
 deploy/                 Dockerfile, compose, túnel, manutenção
 docs/                   esta documentação
@@ -258,6 +290,14 @@ Escrito aqui para que ninguém prometa ao cliente o que ele ainda não entrega.
   madrugada por timer.
 - **Não dá para cadastrar ordem de serviço ou item de catálogo pela interface.**
   Cliente, oportunidade e veículo já nascem por aqui; OS ainda não.
+- **O ERP não tem folha de pagamento nem módulo fiscal, e não vai ter.** São
+  legislação, e legislação mal implementada não é recurso — é passivo. O caminho
+  é integrar com quem já faz, e trazer o resultado ao razão como fato.
+- **A conciliação bancária não existe.** A baixa registra que alguém pagou;
+  nada confere contra o extrato.
+- **A previsão de manutenção não alimenta a régua de contato.** O sistema
+  projeta o próximo serviço de cada veículo, e a previsão não chega sozinha à
+  fila do dia.
 - A base é fictícia. Nenhum dado real de cliente está aqui.
 
 ---

@@ -13,6 +13,7 @@
 import { manualHtml, ligarManual } from './manual.js';
 import { telaCentral, telaConversoes, telaAtribuicao } from './telas-aquisicao.js';
 import { telaVistorias, telaVistoria, telaVeiculo } from './oficina.js';
+import { telaBalancete, telaErp, telaTitulos } from './erp.js';
 import { telaCanais } from './tela-canais.js';
 import { icone, aplicarTema, temaAtual, desenharSeletorDeTema } from './ui.js';
 import {
@@ -691,6 +692,9 @@ const SINONIMOS = {
   atribuicao: 'origem lead anuncio campanha utm gclid fbclid rastreio',
   conversoes: 'meta google ads capi offline feedback campanha retorno',
   central: 'grupo consolidado leads triagem',
+  erp: 'erp financeiro contabil razao balancete caixa grupo comando painel',
+  'erp-titulos': 'contas pagar receber titulos fornecedor cobranca vencimento',
+  'erp-balancete': 'balancete razao contabil saldo conta plano',
   grupo: 'consolidado comparativo empresas visao geral',
   gatilhos: 'regra automacao quando dispara periodicidade',
   disparos: 'historico enviado log mensagem comprovante',
@@ -1322,6 +1326,11 @@ VISOES.inicio = async (el) => {
     rota: 'auditoria', ic: 'auditoria', titulo: 'Auditoria',
     texto: 'Quem fez o quê, quando. Registro encadeado — alterar uma linha quebra a cadeia.',
     estadoTxt: 'ver registro', quieto: true,
+  })}
+        ${cartao({
+    rota: 'erp', ic: 'central', titulo: 'ERP do grupo',
+    texto: 'Razão, contas a pagar e a receber, e o resultado das três empresas — por partida dobrada.',
+    estadoTxt: 'abrir comando', quieto: true,
   })}
       </div>` : ''}
 
@@ -2809,6 +2818,9 @@ const UI = {
 };
 
 VISOES.central = telaCentral(UI);
+VISOES.erp = telaErp(UI);
+VISOES['erp-titulos'] = telaTitulos(UI);
+VISOES['erp-balancete'] = telaBalancete(UI);
 VISOES.conversoes = telaConversoes(UI);
 VISOES.atribuicao = telaAtribuicao(UI);
 VISOES.canais = telaCanais(UI);

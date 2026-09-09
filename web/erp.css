@@ -1,0 +1,155 @@
+/* =============================================================================
+   ERP do grupo.
+
+   A regra que organiza tudo aqui é a do backend: se o livro não fecha, nenhum
+   outro número vale. Por isso a saúde vem antes, e em vermelho — um painel
+   bonito sobre um razão quebrado é pior do que tela nenhuma, porque dá
+   confiança onde não há.
+   ============================================================================= */
+
+.erp-alerta {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; margin-bottom: 10px; border-radius: var(--radius);
+  border-left: 3px solid var(--warn); background: var(--surface);
+  font-size: 13.5px; color: var(--dim); line-height: 1.5;
+}
+.erp-alerta b {
+  font: 600 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--warn); flex: 0 0 auto;
+}
+.erp-alerta.critico { border-left-color: var(--crit); }
+.erp-alerta.critico b { color: var(--crit); }
+
+.erp-parado {
+  padding: 18px 20px; margin: 14px 0 22px; border-radius: var(--radius-lg);
+  border: 1px solid var(--crit); background: var(--surface);
+  color: var(--dim); font-size: 14px; line-height: 1.6;
+}
+.erp-parado b { display: block; color: var(--crit); margin-bottom: 6px; font-size: 15px; }
+.erp-parado .btn { margin-top: 12px; }
+
+/* A placa de números. `tabular-nums` porque dinheiro em coluna que não alinha
+   obriga a ler dígito a dígito. */
+.erp-placa {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); overflow: hidden; margin: 16px 0 4px;
+}
+.erp-placa > div { background: var(--surface); padding: 14px 16px; }
+.erp-placa dt {
+  font: 600 10.5px var(--mono); letter-spacing: .09em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 6px;
+}
+.erp-placa dd {
+  margin: 0; font: 600 21px var(--sans); color: var(--txt-hi);
+  font-variant-numeric: tabular-nums;
+}
+.erp-placa small { display: block; margin-top: 4px; font-size: 11.5px; }
+.pos { color: var(--ok); }
+.neg { color: var(--crit); }
+
+.erp-empresas {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.erp-empresa {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-lg); padding: 14px 16px;
+}
+.erp-empresa.ok { border-left-color: var(--ok); }
+.erp-empresa.ruim { border-left-color: var(--crit); }
+.erp-empresa-topo {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--line);
+}
+.erp-empresa-topo b { font: 600 15px var(--mono); letter-spacing: .05em; }
+.erp-empresa-topo span { font: 600 16px var(--sans); font-variant-numeric: tabular-nums; }
+.erp-empresa dl { margin: 0; display: grid; gap: 5px; }
+.erp-empresa dl div { display: flex; justify-content: space-between; font-size: 13px; }
+.erp-empresa dt { color: var(--faint); }
+.erp-empresa dd { margin: 0; color: var(--txt-hi); font-variant-numeric: tabular-nums; }
+
+/* Doze meses. Duas barras por mês, e não uma linha: a pergunta é se a receita
+   cobriu a despesa NAQUELE mês, e duas alturas lado a lado respondem de
+   relance — uma linha de saldo esconderia o tamanho dos dois lados. */
+.erp-serie {
+  display: flex; gap: 6px; align-items: flex-end; height: 150px;
+  padding: 12px 14px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+.erp-mes {
+  flex: 1 0 44px; display: flex; flex-direction: column;
+  align-items: center; gap: 6px; height: 100%;
+}
+.erp-barras { flex: 1; display: flex; gap: 3px; align-items: flex-end; width: 100%; }
+.erp-barras i { flex: 1; border-radius: 2px 2px 0 0; min-height: 2px; }
+.erp-barras .rec, .erp-legenda .rec { background: var(--ok); }
+.erp-barras .desp, .erp-legenda .desp { background: var(--crit); opacity: .8; }
+.erp-mes span { font: 500 10px var(--mono); color: var(--faint); white-space: nowrap; }
+.erp-legenda {
+  display: flex; gap: 18px; margin-top: 8px; font-size: 12px; color: var(--dim);
+}
+.erp-legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.erp-legenda i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.erp-fatos {
+  padding: 14px 16px; background: var(--surface-2); border-radius: var(--radius);
+  font-size: 13.5px; line-height: 1.55;
+}
+.erp-fatos p { margin: 0 0 6px; }
+.erp-fatos p:last-child { margin-bottom: 0; }
+
+.erp-portas { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 22px; }
+
+/* ── Contas a pagar e a receber ─────────────────────────────────────────── */
+.erp-faixas {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px; margin: 16px 0 20px;
+}
+.erp-faixa {
+  padding: 11px 14px; background: var(--surface);
+  border: 1px solid var(--line); border-top: 2px solid var(--ok);
+  border-radius: var(--radius);
+}
+.erp-faixa.vencida { border-top-color: var(--crit); }
+.erp-faixa dt {
+  font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 5px;
+}
+.erp-faixa dd {
+  margin: 0; font: 600 16px var(--sans); color: var(--txt-hi);
+  font-variant-numeric: tabular-nums;
+}
+.erp-faixa small { display: block; margin-top: 3px; font-size: 11px; color: var(--faint); }
+
+.tabela tr.vencida td:first-child { border-left: 2px solid var(--crit); }
+.tabela td small { display: block; font-size: 11px; color: var(--faint); }
+.tabela .num { text-align: right; }
+.tabela .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ── Balancete ──────────────────────────────────────────────────────────── */
+.erp-fecha {
+  display: flex; gap: 16px; flex-wrap: wrap; align-items: baseline;
+  padding: 13px 17px; margin: 14px 0 8px; border-radius: var(--radius);
+  border: 1px solid var(--ok); background: var(--surface); font-size: 13.5px;
+  color: var(--dim);
+}
+.erp-fecha b { color: var(--ok); font-size: 14.5px; }
+.erp-fecha.ruim { border-color: var(--crit); }
+.erp-fecha.ruim b { color: var(--crit); }
+
+.erp-resultado {
+  display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline;
+  margin-top: 24px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg); font-size: 14px; color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.erp-resultado b { margin-left: auto; font-size: 19px; }
+
+@media (max-width: 640px) {
+  .erp-placa { grid-template-columns: 1fr 1fr; }
+  .erp-resultado b { margin-left: 0; width: 100%; }
+}

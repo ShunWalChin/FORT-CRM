@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vistoria de Entrada FORT-CRM</title>
+  <meta name="description" content="Apresentação técnica do FORT-CRM e do módulo de oficina da Minas Peças, com foco na vistoria de entrada de veículos.">
+  <meta name="author" content="Fort Grupo — Minas Peças Januária">
+  <meta name="robots" content="noindex">
+
+  <!-- Cor da barra do navegador no celular, nos dois temas. -->
+  <meta name="theme-color" content="#e9ebe6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f120d" media="(prefers-color-scheme: dark)">
+
+  <!-- Ícone embutido: nenhum arquivo ao lado, o HTML viaja sozinho. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%A7%3C/text%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+  <style>
+    /* Reset minimo — o mesmo que a plataforma de artefatos fornecia. */
+    :root { color-scheme: light dark; }
+    body { margin: 0; }
+    img { max-width: 100%; }
+    [hidden] { display: none !important; }
+  </style>
+
+<style>
+  /* ── Paleta: folha de oficina. Papel técnico levemente esverdeado, tinta de
+     grafite, latão como acento, e o semáforo que a própria vistoria usa. ── */
+  :root {
+    --papel:      #e9ebe6;
+    --folha:      #f4f5f1;
+    --folha-2:    #dfe2db;
+    --linha:      #c5c9bd;
+    --linha-forte:#9ba192;
+    --tinta:      #171a13;
+    --tinta-2:    #3f453a;
+    --tinta-3:    #6b7263;
+    --latao:      #9a6c14;
+    --latao-forte:#7d5709;
+    --ok:         #2f7d55;
+    --atencao:    #9a6407;
+    --critico:    #b02f3c;
+    --risco:      #2f5fa0;
+    --grade:      #00000008;
+
+    --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    --cond: 'IBM Plex Sans Condensed', 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --papel:      #0f120d;
+      --folha:      #171b14;
+      --folha-2:    #1f241c;
+      --linha:      #2e3529;
+      --linha-forte:#4a5342;
+      --tinta:      #eef1ea;
+      --tinta-2:    #bcc3b5;
+      --tinta-3:    #8b937f;
+      --latao:      #d5a141;
+      --latao-forte:#e8b955;
+      --ok:         #4fbd85;
+      --atencao:    #e0a444;
+      --critico:    #e2606d;
+      --risco:      #6ca2e8;
+      --grade:      #ffffff07;
+    }
+  }
+  :root[data-theme="dark"] {
+    --papel:      #0f120d;
+    --folha:      #171b14;
+    --folha-2:    #1f241c;
+    --linha:      #2e3529;
+    --linha-forte:#4a5342;
+    --tinta:      #eef1ea;
+    --tinta-2:    #bcc3b5;
+    --tinta-3:    #8b937f;
+    --latao:      #d5a141;
+    --latao-forte:#e8b955;
+    --ok:         #4fbd85;
+    --atencao:    #e0a444;
+    --critico:    #e2606d;
+    --risco:      #6ca2e8;
+    --grade:      #ffffff07;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--papel);
+    background-image:
+      linear-gradient(var(--grade) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grade) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--tinta);
+    font: 400 16px/1.62 var(--sans);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .folha {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 20px 96px;
+  }
+
+  /* ── Cabeçalho ─────────────────────────────────────────────────────────── */
+  header {
+    padding: 44px 0 26px;
+    border-bottom: 2px solid var(--tinta);
+    margin-bottom: 8px;
+  }
+  .carimbo {
+    display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+    font: 600 11px var(--mono); letter-spacing: .13em; text-transform: uppercase;
+    color: var(--tinta-3); margin-bottom: 18px;
+  }
+  .carimbo .viva {
+    display: inline-flex; align-items: center; gap: 7px;
+    color: var(--ok);
+  }
+  .carimbo .viva::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ok);
+  }
+  h1 {
+    font: 700 clamp(34px, 6.6vw, 60px)/1.02 var(--cond);
+    letter-spacing: -.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  h1 .fino { display: block; color: var(--tinta-3); font-weight: 500; }
+  .linha-fina {
+    font-size: 17.5px; line-height: 1.55; color: var(--tinta-2);
+    max-width: 62ch; margin: 0;
+  }
+  .endereco {
+    display: inline-block; margin-top: 20px;
+    font: 500 15px var(--mono); color: var(--latao-forte);
+    text-decoration: none; border-bottom: 2px solid currentColor;
+    padding-bottom: 2px;
+  }
+  .endereco:hover { color: var(--tinta); }
+
+  /* ── Seções ────────────────────────────────────────────────────────────── */
+  section { padding-top: 52px; }
+  .rotulo {
+    font: 600 11px var(--mono); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--latao-forte); margin-bottom: 10px;
+  }
+  h2 {
+    font: 600 clamp(24px, 3.6vw, 32px)/1.15 var(--cond);
+    letter-spacing: -.01em; margin: 0 0 16px; text-wrap: balance;
+  }
+  h3 {
+    font: 600 18px/1.3 var(--cond); margin: 30px 0 8px;
+    letter-spacing: .005em;
+  }
+  p { margin: 0 0 15px; max-width: 68ch; }
+  p.solto { color: var(--tinta-2); }
+  strong { font-weight: 600; }
+  em { font-style: normal; color: var(--latao-forte); font-weight: 500; }
+  code {
+    font: 500 .88em var(--mono);
+    background: var(--folha-2); padding: 1px 5px; border-radius: 3px;
+  }
+
+  /* ── Placa de dados: números medidos ───────────────────────────────────── */
+  .placa {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 1px; background: var(--linha);
+    border: 1px solid var(--linha); margin: 26px 0;
+  }
+  .placa div { background: var(--folha); padding: 15px 16px; }
+  .placa dt {
+    font: 600 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase;
+    color: var(--tinta-3); margin-bottom: 6px;
+  }
+  .placa dd {
+    margin: 0; font: 600 27px/1 var(--cond); font-variant-numeric: tabular-nums;
+  }
+  .placa dd span { font-size: 14px; font-weight: 500; color: var(--tinta-3); }
+
+  /* ── Lista com marcador técnico ────────────────────────────────────────── */
+  ul.tec { list-style: none; padding: 0; margin: 0 0 16px; max-width: 68ch; }
+  ul.tec li {
+    position: relative; padding-left: 22px; margin-bottom: 9px; color: var(--tinta-2);
+  }
+  ul.tec li::before {
+    content: ''; position: absolute; left: 2px; top: .62em;
+    width: 8px; height: 1px; background: var(--linha-forte);
+  }
+  ul.tec li strong { color: var(--tinta); }
+
+  /* ── Sequência da vistoria ─────────────────────────────────────────────── */
+  .sequencia { border-top: 1px solid var(--linha); margin: 22px 0 8px; }
+  .passo {
+    display: grid; grid-template-columns: 42px 1fr auto;
+    gap: 0 14px; align-items: baseline;
+    padding: 13px 4px; border-bottom: 1px solid var(--linha);
+  }
+  .passo .n {
+    font: 600 13px var(--mono); color: var(--latao-forte);
+    font-variant-numeric: tabular-nums;
+  }
+  .passo .nome { font: 600 16px var(--cond); }
+  .passo .onde {
+    grid-column: 2; font-size: 13.5px; color: var(--tinta-3); line-height: 1.45;
+  }
+  .passo .qtd {
+    grid-row: 1; font: 500 13px var(--mono); color: var(--tinta-3);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+
+  /* ── Níveis concêntricos ───────────────────────────────────────────────── */
+  .niveis { display: grid; gap: 10px; margin: 22px 0; }
+  .nivel {
+    display: grid; grid-template-columns: 92px 1fr; gap: 14px; align-items: center;
+    padding: 13px 15px; border: 1px solid var(--linha); background: var(--folha);
+  }
+  .nivel .nome {
+    font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  }
+  .nivel .barra { position: relative; height: 26px; background: var(--folha-2); }
+  .nivel .barra i {
+    position: absolute; inset: 0 auto 0 0; display: block;
+  }
+  .nivel .barra b {
+    position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+    font: 600 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--tinta-2);
+  }
+  .n-bronze .nome { color: #8a5a20; }
+  .n-prata  .nome { color: var(--tinta-3); }
+  .n-ouro   .nome { color: var(--latao-forte); }
+  .n-bronze .barra i { background: #8a5a2033; }
+  .n-prata  .barra i { background: #7c837433; }
+  .n-ouro   .barra i { background: #9a6c1440; }
+
+  /* ── Prancha de desenho: a carroceria ──────────────────────────────────── */
+  figure { margin: 26px 0; }
+  .prancha {
+    position: relative; background: var(--folha);
+    border: 1px solid var(--linha-forte); padding: 22px 20px 16px;
+  }
+  .prancha::before, .prancha::after {
+    content: ''; position: absolute; width: 12px; height: 12px;
+    border: 1px solid var(--linha-forte);
+  }
+  .prancha::before { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+  .prancha::after { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+  .prancha svg { display: block; width: 100%; height: auto; max-width: 560px; margin: 0 auto; }
+  .prancha .titulo-vista {
+    font: 600 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase;
+    color: var(--tinta-3); text-align: center; margin-bottom: 6px;
+  }
+  figcaption {
+    font-size: 13.5px; line-height: 1.55; color: var(--tinta-3);
+    margin-top: 11px; max-width: 68ch;
+  }
+  figcaption b { color: var(--tinta-2); font-weight: 600; }
+
+  .cr-corpo   { fill: var(--folha-2); stroke: var(--linha-forte); stroke-width: 2; }
+  .cr-vidro   { fill: var(--papel); stroke: var(--linha-forte); stroke-width: 1.4; }
+  .cr-detalhe { fill: var(--papel); stroke: var(--linha-forte); stroke-width: 1.2; }
+  .cr-traco   { stroke: var(--linha-forte); stroke-width: 1.4; fill: none; }
+  .cr-chao    { stroke: var(--linha); stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+  .cr-roda    { fill: var(--linha-forte); }
+  .cr-aro     { fill: var(--papel); }
+  .cr-bola    { stroke: var(--folha); stroke-width: 2; }
+  .cr-pino text {
+    fill: #fff; font: 600 9px var(--mono); text-anchor: middle;
+  }
+  .p-risco    .cr-bola { fill: var(--risco); }
+  .p-amassado .cr-bola { fill: var(--atencao); }
+
+  .legenda {
+    display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: center;
+    margin-top: 12px; font: 500 12px var(--mono); color: var(--tinta-3);
+  }
+  .legenda span { display: inline-flex; align-items: center; gap: 7px; }
+  .legenda i {
+    width: 15px; height: 15px; border-radius: 50%; display: inline-block;
+  }
+
+  /* ── Duas colunas: as listas de serviço ────────────────────────────────── */
+  .duas { display: grid; gap: 14px; margin: 22px 0; }
+  .coluna {
+    border: 1px solid var(--linha); background: var(--folha); padding: 16px 17px;
+  }
+  .coluna h4 {
+    font: 600 11px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    margin: 0 0 12px; color: var(--tinta-3);
+  }
+  .coluna.pedido h4 { color: var(--tinta-2); }
+  .coluna.achado h4 { color: var(--latao-forte); }
+  .servico {
+    display: grid; grid-template-columns: 22px 1fr; gap: 10px;
+    padding: 9px 0; border-top: 1px solid var(--linha); font-size: 14.5px;
+  }
+  .servico:first-of-type { border-top: 0; }
+  .servico .num {
+    font: 600 11px var(--mono); color: var(--tinta-3);
+    background: var(--folha-2); border-radius: 50%;
+    width: 22px; height: 22px; display: grid; place-content: center;
+  }
+  .servico .val {
+    display: block; font: 500 12.5px var(--mono); color: var(--tinta-3); margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Fluxo do aceite ───────────────────────────────────────────────────── */
+  .fluxo {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
+    margin: 22px 0 8px; font: 600 12.5px var(--mono);
+  }
+  .fluxo .caixa {
+    border: 1px solid var(--linha-forte); padding: 9px 13px; background: var(--folha);
+    white-space: nowrap;
+  }
+  .fluxo .caixa.fim { border-color: var(--ok); color: var(--ok); }
+  .fluxo .seta { color: var(--tinta-3); }
+
+  /* ── Tabela ────────────────────────────────────────────────────────────── */
+  .rolar { overflow-x: auto; margin: 22px 0; }
+  table {
+    border-collapse: collapse; width: 100%; min-width: 440px; font-size: 14.5px;
+  }
+  th, td {
+    text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--linha);
+    vertical-align: top;
+  }
+  th {
+    font: 600 10.5px var(--mono); letter-spacing: .11em; text-transform: uppercase;
+    color: var(--tinta-3); border-bottom-color: var(--linha-forte);
+  }
+  td.mono { font: 500 13.5px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.papel { color: var(--tinta-3); }
+
+  /* ── Aviso ─────────────────────────────────────────────────────────────── */
+  .aviso {
+    border-left: 3px solid var(--latao); background: var(--folha);
+    padding: 15px 18px; margin: 22px 0; max-width: 68ch;
+  }
+  .aviso p:last-child { margin-bottom: 0; }
+  .aviso .cabeca {
+    font: 600 11px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--latao-forte); margin-bottom: 8px;
+  }
+
+  footer {
+    margin-top: 62px; padding-top: 20px; border-top: 2px solid var(--tinta);
+    font-size: 13.5px; color: var(--tinta-3);
+  }
+  footer b { color: var(--tinta-2); font-weight: 600; }
+
+  @media (min-width: 700px) {
+    .duas { grid-template-columns: 1fr 1fr; }
+    .nivel { grid-template-columns: 108px 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="folha">
+
+  <header>
+    <div class="carimbo">
+      <span class="viva">no ar</span>
+      <span>Minas Peças Januária · MG</span>
+      <span>Injeção diesel · Bosch Car Service</span>
+      <span>08 · set · 2026</span>
+    </div>
+    <h1>Vistoria de entrada<span class="fino">o documento que separa o que já estava</span></h1>
+    <p class="linha-fina">
+      Apresentação técnica do FORT-CRM e, dentro dele, do módulo de oficina da
+      Minas Peças — onde 86 verificações, o desenho da lataria e a assinatura do
+      dono precisam existir antes de a ordem de serviço poder começar.
+    </p>
+    <a class="endereco" href="https://fortcrm.fattech.com.br">fortcrm.fattech.com.br</a>
+  </header>
+
+  <!-- ══ O SISTEMA ══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="rotulo">O sistema</div>
+    <h2>Três empresas, três bancos separados, um processo só</h2>
+
+    <p>
+      O FORT-CRM atende três negócios do mesmo grupo — a oficina de injeção
+      diesel, uma fazenda e uma loja de tintas. Cada um roda na
+      <strong>sua própria base de dados</strong>, num arquivo diferente. Não é
+      uma coluna <code>empresa_id</code> separando linhas na mesma tabela: é
+      isolamento físico. O cliente da oficina não existe no banco da loja, e
+      nenhuma consulta mal escrita pode fazê-lo aparecer.
+    </p>
+    <p>
+      A direção do grupo vê as três instâncias numa tela só quando quiser. O
+      atendente do balcão vê a dele, e a tentativa de olhar outra volta
+      <code>instancia_negada</code> — verificado em produção.
+    </p>
+
+    <dl class="placa">
+      <div><dt>Dependências</dt><dd>0</dd></div>
+      <div><dt>Linhas de código</dt><dd>22.6<span> mil</span></dd></div>
+      <div><dt>Rotas da API</dt><dd>73</dd></div>
+      <div><dt>Testes</dt><dd>155<span> · 0 falhas</span></dd></div>
+      <div><dt>Memória em uso</dt><dd>24<span> MB de 512</span></dd></div>
+      <div><dt>CPU em repouso</dt><dd>0,0<span> %</span></dd></div>
+    </dl>
+
+    <h3>Zero dependências não é estilo — é manutenção</h3>
+    <p class="solto">
+      Banco, servidor HTTP, criptografia e assinatura de sessão vêm do próprio
+      Node (<code>node:sqlite</code>, <code>node:http</code>,
+      <code>node:crypto</code>). Não há <code>node_modules</code>, não há
+      auditoria de dependência transitiva, e nada quebra porque um pacote de
+      terceiro mudou de dono. O sistema sobe com <code>node server.mjs</code>.
+    </p>
+
+    <h3>Contenção: o servidor é compartilhado</h3>
+    <ul class="tec">
+      <li><strong>Contêiner próprio</strong>, com o runtime dentro. O host roda Node 22 e a aplicação precisa de 23.4 — atualizar o Node do sistema quebraria os 74 contêineres vizinhos, e o sintoma apareceria noutro serviço.</li>
+      <li><strong>Porta só em <code>127.0.0.1</code></strong>. A superfície externa da máquina continua sendo 22, 80 e 443; o ingresso é um túnel Cloudflare dedicado, não uma regra a mais no túnel dos outros clientes.</li>
+      <li><strong>Sistema de arquivos somente leitura</strong>, todas as capacidades removidas, rede isolada, teto de 512 MB e 1 CPU.</li>
+      <li><strong>Backup por <code>VACUUM INTO</code></strong>, nunca cópia de arquivo — no momento desta medição a base da oficina tinha 452 KB no <code>.db</code> e 3,8 MB no <code>-wal</code>, e copiar só o primeiro gera um arquivo íntegro e incompleto. O script aborta se o backup sair pequeno demais.</li>
+    </ul>
+  </section>
+
+  <!-- ══ O MÓDULO ═══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="rotulo">Minas Peças · módulo de oficina</div>
+    <h2>Vida do veículo, e a vistoria que trava a ordem de serviço</h2>
+
+    <p>
+      O módulo existe <strong>apenas na instância da oficina</strong> — é a que
+      tem elevador. As telas são registradas condicionalmente, e o servidor
+      recusa as rotas para quem não tem o veículo no escopo.
+    </p>
+
+    <h3>A placa é o identificador</h3>
+    <p class="solto">
+      Cada cliente carrega seus veículos; cada veículo carrega chassi, renavam,
+      motorização, sistema de injeção e o histórico de hodômetro. A
+      <strong>média de km por mês é calculada</strong> a partir das leituras
+      reais — nunca digitada — e é ela que projeta o próximo serviço, por
+      quilometragem <em>ou</em> por tempo, o que vencer primeiro. Sem duas
+      leituras não há média, e a tela diz isso em vez de inventar um número.
+    </p>
+
+    <h3>A trava</h3>
+    <p>
+      Uma ordem de serviço não sai de <code>aberta</code> sem vistoria
+      <strong>aceita pelo dono</strong>. E a recusa diz o que fazer — que é
+      diferente em cada caso: fazer a vistoria, terminar o preenchimento, colher
+      o aceite, ou conversar com o cliente que recusou.
+    </p>
+    <div class="aviso">
+      <div class="cabeca">Por que isso importa</div>
+      <p>
+        Sem a trava, a vistoria vira papel que se preenche depois, para constar.
+        Com ela, o serviço só começa com o dono de acordo sobre o estado em que
+        o veículo entrou — e o arranhão encontrado na entrega deixa de ser
+        discussão sem árbitro.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ A VISTORIA ═════════════════════════════════════════════════════ -->
+  <section>
+    <div class="rotulo">O foco</div>
+    <h2>86 verificações, na ordem em que se trabalha</h2>
+
+    <p>
+      A lista foi reconstruída a partir de folhas reais da rede. A mudança mais
+      importante não foi o número de itens: foi <strong>como eles são
+      agrupados</strong>.
+    </p>
+    <p class="solto">
+      Agrupar por sistema — freios, suspensão, motor — é como se
+      <em>pensa</em> sobre um carro. Não é como se <em>trabalha</em> nele: o
+      técnico não pula do freio dianteiro para o motor e volta ao traseiro. Ele
+      recebe o carro no chão com o cliente do lado, abre o capô, sobe o elevador
+      até a meia altura, sobe até o fim, desce, e por último roda. A lista na
+      ordem do trabalho elimina o vai-e-vem.
+    </p>
+
+    <div class="sequencia">
+      <div class="passo"><span class="n">01</span><span class="nome">Recepção com o cliente</span><span class="qtd">16 itens</span><span class="onde">Veículo no chão, cliente presente</span></div>
+      <div class="passo"><span class="n">02</span><span class="nome">Exterior</span><span class="qtd">8 itens</span><span class="onde">Volta ao redor do veículo</span></div>
+      <div class="passo"><span class="n">03</span><span class="nome">Sob o capô</span><span class="qtd">23 itens</span><span class="onde">Capô aberto, motor frio</span></div>
+      <div class="passo"><span class="n">04</span><span class="nome">Meia altura</span><span class="qtd">16 itens</span><span class="onde">Elevador na altura da cintura, rodas removidas</span></div>
+      <div class="passo"><span class="n">05</span><span class="nome">Altura total</span><span class="qtd">8 itens</span><span class="onde">Elevador no alto</span></div>
+      <div class="passo"><span class="n">06</span><span class="nome">Veículo abaixado</span><span class="qtd">3 itens</span><span class="onde">De volta ao chão</span></div>
+      <div class="passo"><span class="n">07</span><span class="nome">Diagnóstico eletrônico</span><span class="qtd">5 itens</span><span class="onde">Scanner conectado</span></div>
+      <div class="passo"><span class="n">08</span><span class="nome">Após o serviço</span><span class="qtd">7 itens</span><span class="onde">Teste de rodagem e entrega</span></div>
+    </div>
+
+    <h3>Três profundidades, uma lista só</h3>
+    <p class="solto">
+      Cada item declara o nível mínimo em que entra. Os níveis são
+      <strong>concêntricos</strong>: todo item do Bronze está no Prata e no
+      Ouro. Não são três listas diferentes que um dia divergem — verificado por
+      teste.
+    </p>
+    <div class="niveis">
+      <div class="nivel n-bronze"><span class="nome">Bronze</span><span class="barra"><i style="width:74.4%"></i><b>64 itens · segurança e fluidos</b></span></div>
+      <div class="nivel n-prata"><span class="nome">Prata</span><span class="barra"><i style="width:93%"></i><b>80 itens · + filtros e suspensão</b></span></div>
+      <div class="nivel n-ouro"><span class="nome">Ouro</span><span class="barra"><i style="width:100%"></i><b>86 itens · + câmbio, chassi, eletrônica</b></span></div>
+    </div>
+
+    <h3>Três propriedades que fazem dela um instrumento, e não um formulário</h3>
+    <ul class="tec">
+      <li><strong>É guiada.</strong> Cada um dos 86 itens diz o que olhar. Um check-list que só lista nomes é preenchido no automático, e um preenchido no automático não vale como prova — nem para o cliente, nem para a oficina.</li>
+      <li><strong>Crítico exige evidência.</strong> Não se marca vermelho sem foto. É o que impede o laudo de virar opinião, e o que sustenta o orçamento: o dono vê o pneu careca antes de ouvir o preço. Dez itens pedem foto mesmo estando tudo certo; dezesseis pedem número, com unidade e faixa.</li>
+      <li><strong>Os quatro pneus são medidos um a um.</strong> "Dianteiro" e "traseiro" escondia o pneu único que está gasto — e é sempre um só.</li>
+    </ul>
+  </section>
+
+  <!-- ══ A CARROCERIA ═══════════════════════════════════════════════════ -->
+  <section>
+    <div class="rotulo">Vistoria · carroceria</div>
+    <h2>O check-list não responde à pergunta da devolução</h2>
+
+    <p>
+      O check-list responde <em>"está funcionando?"</em>. A pergunta da entrega é
+      outra: <em>"esse risco já estava aí?"</em>. São cinco vistas do veículo, e
+      o técnico toca onde há marca — com o cliente ao lado, na chegada.
+    </p>
+
+    <figure>
+      <div class="prancha">
+        <div class="titulo-vista">Lado esquerdo — 2 marcas</div>
+        <svg viewBox="0 0 200 120" role="img" aria-label="Silhueta lateral de um veículo com duas avarias marcadas: um amassado na porta traseira e um risco na porta dianteira">
+          <path class="cr-corpo" d="M10 92 L10 70 Q10 62 20 60 L56 56 L80 32 Q84 27 94 26 L136 26
+                                    Q147 26 152 32 L172 57 Q190 60 190 70 L190 92 Z"/>
+          <path class="cr-vidro" d="M84 36 L108 36 L108 55 L72 55 Z"/>
+          <path class="cr-vidro" d="M114 36 L134 36 L146 55 L114 55 Z"/>
+          <path class="cr-traco" d="M110 57 L110 88"/>
+          <rect class="cr-detalhe" x="96" y="62" width="12" height="3.5" rx="1.7"/>
+          <path class="cr-detalhe" d="M10 64 L22 63 L22 70 L10 70 Z"/>
+          <circle class="cr-roda" cx="54" cy="92" r="16"/>
+          <circle class="cr-aro" cx="54" cy="92" r="7"/>
+          <circle class="cr-roda" cx="150" cy="92" r="16"/>
+          <circle class="cr-aro" cx="150" cy="92" r="7"/>
+          <path class="cr-chao" d="M6 108 L194 108"/>
+          <g class="cr-pino p-amassado" transform="translate(124 54)">
+            <circle class="cr-bola" r="8.5"/><text y="3.2">1</text>
+          </g>
+          <g class="cr-pino p-risco" transform="translate(92 70)">
+            <circle class="cr-bola" r="8.5"/><text y="3.2">2</text>
+          </g>
+        </svg>
+        <div class="legenda">
+          <span><i style="background:var(--atencao)"></i>1 · amassado — porta traseira, 12 cm</span>
+          <span><i style="background:var(--risco)"></i>2 · risco — porta dianteira</span>
+        </div>
+      </div>
+      <figcaption>
+        <b>A coordenada é gravada em fração de 0 a 1, e nunca em pixel.</b>
+        O desenho tem 325 px no celular do técnico e 620 no monitor do balcão; um
+        pixel gravado numa tela apareceria no lugar errado na outra — e o desenho
+        que o cliente assinou tem de ser o mesmo em qualquer lugar. As cinco
+        vistas usam a mesma caixa, e a numeração é global e por ordem de
+        marcação, como na folha de papel.
+      </figcaption>
+    </figure>
+
+    <p class="solto">
+      O tipo de avaria fica <strong>escolhido</strong> num seletor fixo: marcar
+      "risco" três vezes seguidas não abre caixa nenhuma. Perguntar o tipo a
+      cada toque dobraria o número de gestos, numa volta ao redor do carro que já
+      é feita com o cliente esperando. O alvo do dedo tem 45 px — acima do
+      mínimo de 44 — e a bola colorida de 28 px é só o que se vê.
+    </p>
+  </section>
+
+  <!-- ══ OS SERVIÇOS ════════════════════════════════════════════════════ -->
+  <section>
+    <div class="rotulo">Vistoria · serviços</div>
+    <h2>Duas listas, e não uma</h2>
+
+    <p>
+      O que o <strong>cliente pediu</strong> e o que a <strong>oficina
+      encontrou</strong> ficam separados. É a separação que permite a conversa
+      honesta na entrega: <em>"você pediu isto, e nós encontramos aquilo"</em>.
+      Misturadas numa lista só, todo achado parece venda empurrada — e o cliente
+      que sai com a conta maior do que esperava não volta.
+    </p>
+
+    <div class="duas">
+      <div class="coluna pedido">
+        <h4>Pedido pelo cliente</h4>
+        <div class="servico"><span class="num">1</span><span>Barulho na frente quando freia</span></div>
+        <div class="servico"><span class="num">2</span><span>Revisão dos 80 mil<span class="val">120 min · R$ 890,00</span></span></div>
+      </div>
+      <div class="coluna achado">
+        <h4>Encontrado pela oficina</h4>
+        <div class="servico"><span class="num">3</span><span>Pastilha dianteira no limite (2 mm)<span class="val">45 min · R$ 340,00</span></span></div>
+        <div class="servico"><span class="num">4</span><span>Correia dentada vencida por tempo<span class="val">a orçar</span></span></div>
+      </div>
+    </div>
+
+    <p class="solto">
+      Descrição, tempo e valor <strong>travam no envio</strong> — são o que o
+      cliente aceitou, e mexer depois seria trocar o documento por baixo da
+      assinatura. O estado (pendente / O.K. / N.O.K.) <strong>não trava</strong>:
+      é por ele que a lista da recepção vira a lista da entrega.
+    </p>
+    <p class="solto">
+      Entrega prevista, forma de pagamento e próximo serviço em quilometragem
+      ficam <strong>na vistoria</strong>, e não num campo solto de observação.
+      São promessas feitas na entrada; ficam no documento que o dono aceita.
+    </p>
+  </section>
+
+  <!-- ══ O ACEITE ═══════════════════════════════════════════════════════ -->
+  <section>
+    <div class="rotulo">Vistoria · aceite</div>
+    <h2>A assinatura vale para <em>um</em> documento</h2>
+
+    <div class="fluxo">
+      <span class="caixa">rascunho</span>
+      <span class="seta">→</span>
+      <span class="caixa">aguardando aceite</span>
+      <span class="seta">→</span>
+      <span class="caixa fim">aceita</span>
+      <span class="seta">→</span>
+      <span class="caixa fim">OS pode iniciar</span>
+    </div>
+
+    <p>
+      Ao enviar, o sistema calcula um resumo criptográfico de tudo que o cliente
+      vê: <strong>os itens, as medidas, as fotos, o desenho da carroceria e a
+      lista de serviços</strong>. No momento do aceite ele é conferido de novo.
+      Se algo mudou nesse intervalo, a vistoria <strong>volta para
+      rascunho</strong> em vez de gravar um aceite que não corresponde ao
+      documento.
+    </p>
+    <p class="solto">
+      Um aceite que vale para qualquer versão do documento não vale nada. E a
+      recusa também é registrada, com o motivo — porque "o cliente não
+      concordou" é informação, não silêncio.
+    </p>
+    <p class="solto">
+      A vistoria não é enviável enquanto faltar item: a recusa diz
+      <strong>quantos</strong> e <strong>quais</strong>. Uma negativa sem a lista
+      obrigaria a caçar o pendente numa tela de oitenta e seis.
+    </p>
+  </section>
+
+  <!-- ══ A REDE ═════════════════════════════════════════════════════════ -->
+  <section>
+    <div class="rotulo">Vistoria · operação real</div>
+    <h2>O wi-fi da oficina cai. O trabalho não pode cair junto</h2>
+
+    <p>
+      São 86 toques feitos em pé ao lado do elevador, onde o sinal cai atrás da
+      coluna e volta na porta. Cada toque era uma chamada síncrona: o técnico
+      marcava, a rede falhava, aparecia um aviso — e meia hora depois o trabalho
+      dependia de ele lembrar <strong>em quais</strong> itens o aviso apareceu.
+    </p>
+
+    <ul class="tec">
+      <li><strong>A tela anda na frente.</strong> O toque pinta o item na hora; o envio vai para uma fila. Esperar a rede a cada item torna a vistoria lenta demais para ser feita de verdade — e o que é lento demais é preenchido depois, no computador, de memória, que é exatamente o que a vistoria existe para impedir.</li>
+      <li><strong>A fila sobrevive à aba.</strong> Fica gravada no aparelho: celular em oficina fica com a tela apagada no bolso, e o navegador mata a aba para liberar memória.</li>
+      <li><strong>Uma entrada por item.</strong> Marcar "atenção" e depois "crítico" no mesmo item não enfileira dois envios — o segundo substitui o primeiro, e o que chega ao servidor é o estado final.</li>
+      <li><strong>Nada é enviado com fila cheia.</strong> Concluir drena a fila primeiro: o resumo assinado é calculado sobre o que está no servidor, e concluir com itens ainda por subir gravaria a assinatura de um documento que ainda ia mudar.</li>
+    </ul>
+
+    <p class="solto">
+      A barra de estado só aparece quando há algo por salvar. Uma barra
+      permanente dizendo "tudo certo" vira ruído em quarenta minutos de vistoria,
+      e ninguém repara quando ela muda — que é justamente quando importa.
+    </p>
+
+    <h3>O que a operação real revelou</h3>
+    <div class="rolar">
+      <table>
+        <thead>
+          <tr><th>Sintoma</th><th>Causa</th><th>Correção</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>O técnico travava no item 54, com o carro no elevador</td>
+            <td class="papel">86 marcações em poucos minutos contra um teto de escrita de 60/min</td>
+            <td class="papel">Balde próprio de 240/min, que sustenta quatro técnicos atrás do mesmo IP</td>
+          </tr>
+          <tr>
+            <td>Cada toque custava duas viagens de rede</td>
+            <td class="papel">Marcar era um <code>PATCH</code> seguido do recarregamento da vistoria inteira</td>
+            <td class="papel">O <code>PATCH</code> passou a devolver o resumo e as pendências. Eram mais de 170 chamadas por vistoria</td>
+          </tr>
+          <tr>
+            <td>Item conforme aparecia como reprovado</td>
+            <td class="papel">Faltava só a foto obrigatória, e o cartão ficava vermelho</td>
+            <td class="papel">Pendência ganhou traço pontilhado e a frase que diz o que falta</td>
+          </tr>
+          <tr>
+            <td>Fotos quebradas em toda a vistoria</td>
+            <td class="papel">A tag de imagem não envia cabeçalho de autorização</td>
+            <td class="papel">Carregamento autenticado. O token continua fora do endereço — são até 60 imagens numa página só</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ ESTADO ═════════════════════════════════════════════════════════ -->
+  <section>
+    <div class="rotulo">Estado verificado</div>
+    <h2>O que está pronto, e o que não está</h2>
+
+    <p>
+      A entrega desta versão foi validada em três camadas:
+      <strong>155 testes automatizados</strong> (nenhuma falha),
+      <strong>33 verificações funcionais contra a instância de produção</strong>
+      — com o banco real e as migrações aplicadas — e o caminho público pelo
+      túnel, login inclusive.
+    </p>
+
+    <div class="aviso">
+      <div class="cabeca">O que ainda não está pronto</div>
+      <p>
+        A <strong>previsão de manutenção ainda não alimenta a régua de
+        contato</strong>: o sistema projeta o próximo serviço de cada veículo,
+        mas a previsão não chega sozinha à fila do dia. É o próximo passo para
+        fechar o pós-venda.
+      </p>
+      <p>
+        <strong>Avaria e serviço não passam pela fila offline</strong> — só as
+        marcações do check-list passam. São poucos e feitos no balcão, onde o
+        sinal é o do escritório; se isso mudar, o caminho é o identificador
+        nascer no aparelho.
+      </p>
+      <p>
+        O envio de mensagens continua em <strong>modo de demonstração</strong>:
+        a régua monta e recusa corretamente, e nada sai para fora.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    FORT-CRM · Fort Grupo — Minas Peças Januária, Fazenda Agrofort e Fort Tintas.<br>
+    <b>Node 24 · SQLite · zero dependências.</b> Contêiner isolado em host compartilhado,
+    túnel dedicado, backup e reancoragem diários às 04h10.
+  </footer>
+
+</div>
+
+</body>
+</html>

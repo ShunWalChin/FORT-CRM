@@ -1,6 +1,7 @@
 # Arquitetura
 
-> Federação de instâncias, isolamento físico e a central como projeção.
+> Federação de instâncias, isolamento físico, e a central que é projeção de um
+> lado e livro do outro.
 
 ## A federação, em uma página
 
@@ -10,19 +11,30 @@
    │  Minas Peças │   │  Agrofort    │   │  Fort Tintas │
    └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
           │                  │                  │
-          └──────────┬───────┴──────────┬───────┘
-                     │                  │
-          consulta federada       sincronização
-          (ao vivo, para o        (projeção de leitura)
-           painel do grupo)              │
-                     │                   ▼
-                     │           ┌───────────────┐
-                     └──────────►│  central.db   │
-                                 │  leads de     │
-                                 │  todas as     │
-                                 │  fontes       │
-                                 └───────────────┘
+          └──────────┬───────┴─────────┬────────┴────────┐
+                     │                 │                 │
+          consulta federada      sincronização      colheita de fatos
+          (ao vivo, para o       de leads           (venda fechou,
+           painel do grupo)      (projeção)          OS entregou)
+                     │                 │                 │
+                     │                 ▼                 ▼
+                     │        ┌────────────────────────────────┐
+                     └───────►│          central.db            │
+                              │                                │
+                              │  leads_consolidados  PROJEÇÃO  │
+                              │  (pode estar velha)            │
+                              │  ────────────────────────────  │
+                              │  erp_*               LIVRO     │
+                              │  (fonte de verdade do grupo)   │
+                              └────────────────────────────────┘
 ```
+
+**Um arquivo, duas regras opostas — e é proposital.** A fronteira é o prefixo da
+tabela. `leads_consolidados` é projeção: se discordar de uma instância, a
+instância está certa. As tabelas `erp_*` são o contrário — ali a central é fonte
+de verdade, porque partida dobrada exige transação e não existe transação que
+atravesse três arquivos SQLite. Ver [ERP do grupo](ERP.md) para a decisão
+completa e a direção do dado em cada sentido.
 
 **Um banco por empresa.** O isolamento deixou de ser lógico e passou a ser
 físico: não existe consulta mal escrita capaz de atravessar de uma empresa para
@@ -93,6 +105,14 @@ src/senha.mjs        scrypt, migração automática e política mínima
 src/limite.mjs       Limite de requisições por origem
 src/exportar.mjs     Exportação completa (código + dados + inventário)
 src/db.mjs           Acesso com escopo obrigatório e cadeia de auditoria
+
+── ERP do grupo, só na central ──
+src/dinheiro.mjs     Centavos inteiros, conversão e rateio sem perda (puro)
+src/erp-schema.mjs   DDL contábil + a decisão de arquitetura, escrita por extenso
+src/razao.mjs        Partida dobrada, período, estorno, balancete, rateio
+src/titulos.mjs      Contas a pagar e a receber, baixas e carteira
+src/fatos.mjs        Colhe das instâncias e posta no razão, de forma idempotente
+src/permissoes.mjs   Permissão por módulo — eixo ortogonal à escala de papel
 src/compliance.mjs   Motor puro de elegibilidade (porte do Palantyr)
 src/regua.mjs        Os 12 gatilhos e a projeção de revisão
 src/api.mjs          Rotas

@@ -178,6 +178,92 @@ ml/min, calibragem em psi, torque de roda em Nm, aditivo e teor de água em %.
 Número
 é o que transforma "pneu gasto" em "1,2 mm, abaixo do limite legal".
 
+### O desenho da carroceria
+
+O check-list responde *"está funcionando?"*. Ele **não** responde à pergunta da
+devolução, que é outra: *"esse risco já estava aí?"*.
+
+Cinco vistas — frente, lado direito, traseira, lado esquerdo e de cima — e o
+técnico toca onde há marca. O tipo fica **escolhido** num seletor fixo: marcar
+"risco" três vezes seguidas não abre caixa nenhuma. Perguntar o tipo a cada
+toque dobraria o número de gestos, numa volta ao redor do carro que já é feita
+com o cliente esperando.
+
+**A coordenada é gravada em fração de 0 a 1, e não em pixel.** O desenho tem 325
+px no celular e 620 no monitor do balcão; um pixel gravado numa tela apareceria
+no lugar errado na outra — e o desenho que o cliente assinou tem de ser o mesmo
+em qualquer tela. As cinco vistas usam a mesma caixa (200×120) justamente para
+isso.
+
+O alvo do dedo é um círculo transparente de raio 14 na caixa — 45 px na tela do
+celular, acima do mínimo de 44. A bola colorida de 8,5 é só o que se vê.
+
+A silhueta é deliberadamente genérica, um sedã de traços simples. Silhueta por
+modelo daria um sistema que precisa de desenhista toda vez que a oficina atende
+um utilitário — e o técnico não marca o risco "no para-lama do Gol", marca no
+lugar onde ele está.
+
+A numeração é **global e por ordem de marcação**, como na folha de papel: a
+avaria 3 é a mesma no desenho e na lista embaixo dele.
+
+### Duas listas de serviço, e não uma
+
+O que o **cliente pediu** e o que a **oficina encontrou** ficam separados, pela
+`origem`.
+
+É a separação que permite a conversa honesta na entrega: *"você pediu isto, e
+nós encontramos aquilo"*. Misturadas numa lista só, todo achado parece venda
+empurrada — e o cliente que sai com a conta maior do que esperava não volta.
+
+Cada linha tem estado (pendente / O.K. / N.O.K.), tempo de reparo e valor.
+**Descrição, tempo e valor travam no envio** — são o que o cliente aceitou, e
+mexer depois seria trocar o documento por baixo da assinatura. O **estado não
+trava**: é por ele que a lista da recepção vira a lista da entrega.
+
+### O combinado na recepção
+
+Entrega prevista, forma de pagamento e próximo serviço em km ficam **na
+vistoria**, e não num campo solto de observação. São promessas feitas ao cliente
+na entrada; ficam no documento que ele aceita.
+
+A forma de pagamento é lista fechada — "pix do João" viraria relatório sujo.
+
+### A rede da oficina cai, e o trabalho não pode cair junto
+
+São 86 toques feitos em pé ao lado do elevador, onde o sinal cai atrás da coluna
+e volta na porta. Antes, cada toque era uma chamada síncrona: o técnico marcava,
+a rede falhava, aparecia um aviso vermelho — e meia hora depois o trabalho
+dependia de ele lembrar em **quais** itens o aviso apareceu.
+
+As marcações passam por uma fila:
+
+- **A tela anda na frente.** O toque pinta o item na hora; o envio vai para a
+  fila. Esperar a rede a cada item torna a vistoria lenta demais para ser feita
+  de verdade — e o que é lento demais é preenchido depois, no computador, de
+  memória, que é exatamente o que a vistoria existe para impedir.
+- **A fila sobrevive à aba.** Fica no `localStorage`: celular em oficina fica
+  com a tela apagada no bolso e o navegador mata a aba para liberar memória.
+- **Uma chave por alvo.** Marcar "atenção" e depois "crítico" no mesmo item não
+  enfileira dois envios — o segundo substitui o primeiro.
+- **4xx não é falta de rede.** Um pedido que o servidor recusa sai da fila em
+  vez de travá-la para sempre, com todas as marcações seguintes atrás dele.
+- **Nada é enviado com fila cheia.** `Concluir` drena a fila primeiro: o hash do
+  aceite é calculado sobre o que está *no servidor*, e concluir com três itens
+  ainda por subir gravaria a assinatura de um documento que ainda ia mudar.
+
+Uma barra de estado aparece **só quando há algo por salvar**. Uma barra
+permanente dizendo "tudo certo" vira ruído em quarenta minutos de vistoria, e
+ninguém repara quando ela muda — que é justamente quando importa.
+
+Foto e vídeo ficam **fora** da fila: um vídeo de 30 MB não cabe no
+`localStorage` (o teto é ~5 MB por origem) e enfileirá-lo derrubaria a fila
+inteira. Mídia é enviada na hora, com o erro dito na cara de quem está com o
+telefone na mão.
+
+Avaria e serviço também ficam fora, por outro motivo: o id vem do servidor, e
+enfileirar exigiria id provisório e reconciliação depois. São poucos e feitos no
+balcão, onde o sinal é o do escritório — a troca não valeria a máquina.
+
 ### Fluxo
 
 ```
@@ -186,8 +272,15 @@ rascunho ──concluir──► aguardando_aceite ──aceite──► aceita 
    └──── conteúdo mudou ──────┘         └──recusa──► recusada
 ```
 
-Depois do envio **nenhum item muda**: alterar quebraria o aceite. Se precisa
+Depois do envio **nada do documento muda**: nem item, nem foto, nem o desenho da
+carroceria, nem o que foi orçado. Alterar quebraria o aceite. Se precisa
 corrigir, abre-se outra vistoria.
+
+O `hashConteudo` cobre os itens, as medidas, as fotos, **as avarias da lataria e
+a lista de serviços** — tudo o que o cliente vê antes de assinar. Avarias e
+serviços entram no resumo apenas quando existem: uma chave sempre presente,
+ainda que vazia, mudaria o hash de toda vistoria já enviada e aguardando aceite,
+e o cliente veria "o conteúdo mudou" numa vistoria em que ninguém tocou.
 
 ### A trava
 
@@ -208,7 +301,7 @@ madrugada. A mídia fica em `/dados/midia/<empresa>/<vistoria>/`, irmã do
 diretório dos bancos, com política de retenção própria.
 
 **Reduzida no navegador, antes de subir.** Um celular atual produz 4 a 8 MB por
-foto; 63 itens seriam 300 MB por vistoria, no 4G do telefone do técnico. A 1600
+foto; 86 itens seriam 400 MB por vistoria, no 4G do telefone do técnico. A 1600
 px de lado maior e qualidade 0,82 a mesma foto fica em 200–400 KB e continua
 mostrando trinca em disco e sulco de pneu — que é para o que ela serve. Subir 8
 MB para reduzir no servidor gastaria exatamente a parte cara, que é a rede.
@@ -228,7 +321,7 @@ vídeo de 30 MB viraria 40 MB de string para o `JSON.parse` engolir de uma vez.
 ## 5. O que a operação real revelou
 
 **O limitador bloqueava o técnico no meio da vistoria.** Descoberto rodando o
-fluxo inteiro: parou no item 54 com `limite_excedido`. São 63 marcações em
+fluxo inteiro: parou no item 54 com `limite_excedido`. São 86 marcações em
 poucos minutos, mais as fotos, contra um teto de escrita de 60/min — e é o pior
 momento possível para o sistema recusar: o carro no elevador, o cliente
 esperando, metade da vistoria feita. As rotas de vistoria ganharam balde
@@ -238,6 +331,17 @@ próprio, de 240/min, que sustenta quatro técnicos atrás do mesmo IP da oficin
 faltava a foto obrigatória aparecia com fundo vermelho — a tarja dizia verde e o
 fundo dizia vermelho. A tarja é o estado do item; a pendência ganhou tracejado e
 a frase que explica o que falta.
+
+**Cada toque custava duas viagens.** Marcar um item era um `PATCH` seguido de um
+`GET` da vistoria inteira — 86 itens e a lista de mídias — só para saber o que
+ainda faltava. Numa vistoria completa eram mais de cento e setenta chamadas no
+4G do telefone do técnico. O `PATCH` passou a devolver o resumo **e** as
+pendências, e a segunda viagem sumiu.
+
+**O anel do pino selecionado engolia a cor do tipo.** Um anel de 3 sobre uma
+bola de raio 8,5 cobre um terço do raio; no tamanho que ela tem na tela, o pino
+inteiro passava a ler como "acento" em vez de "amassado". O anel afinou e ganhou
+um halo suave — a seleção continua visível, e a cor do tipo sobrevive.
 
 ---
 
@@ -249,15 +353,21 @@ a frase que explica o que falta.
 | `POST` | `/api/veiculos` | Cadastra e **já cria o plano** — em dois passos, o segundo não acontece. |
 | `GET` | `/api/veiculos/:id` | Vida completa: dados, uso, plano projetado, linha do tempo. |
 | `POST` | `/api/veiculos/:id/km` | Leitura de hodômetro; recalcula média e previsões. |
-| `POST` | `/api/vistorias` | Abre com os 63 itens já criados. |
-| `GET` | `/api/vistorias/:id` | Vistoria, itens, mídias, resumo e **pendências**. |
-| `PATCH` | `/api/vistorias/:id/itens/:chave` | Marca um item. A operação mais repetida do app. |
+| `POST` | `/api/vistorias` | Abre com os itens do nível já criados. |
+| `GET` | `/api/vistorias/:id` | Vistoria, itens, mídias, avarias, serviços, resumo e **pendências**. |
+| `PATCH` | `/api/vistorias/:id/itens/:chave` | Marca um item — 86 vezes por vistoria. Devolve resumo **e** pendências. |
+| `PATCH` | `/api/vistorias/:id` | O combinado na recepção: entrega, pagamento, próximo serviço. |
+| `POST` | `/api/vistorias/:id/avarias` | Marca a lataria. `x`/`y` em **fração** 0–1, nunca em pixel. |
+| `DELETE` | `/api/vistorias/:id/avarias/:avariaId` | Só enquanto rascunho. |
+| `POST` | `/api/vistorias/:id/servicos` | Pedido do cliente (`origem: cliente`) ou achado da oficina (`vistoria`). |
+| `PATCH` | `/api/vistorias/:id/servicos/:servicoId` | Preço e descrição travam no envio; o estado, não. |
+| `DELETE` | `/api/vistorias/:id/servicos/:servicoId` | Só enquanto rascunho. |
 | `POST` | `/api/vistorias/:id/midia` | Binário cru. `?item=&tipo=foto\|video`. |
 | `GET` | `/api/midia/:id` | Serve o arquivo, atrás de sessão. |
 | `POST` | `/api/vistorias/:id/concluir` | Valida e envia. Recusa dizendo **quais** itens faltam. |
 | `POST` | `/api/vistorias/:id/aceite` | Aceite ou recusa do cliente. Confere o hash. |
 | `POST` | `/api/ordens/:id/iniciar` | **A trava.** |
 
-Criar a vistoria abre os 63 itens de uma vez, e não conforme se marca: é o que
+Criar a vistoria abre os itens do nível de uma vez, e não conforme se marca: é o que
 permite perguntar *"quanto falta"*, e o que garante que a lista não mude no meio
 do preenchimento se o catálogo for editado.

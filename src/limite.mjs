@@ -26,7 +26,7 @@ const TETOS = [
   // encher a triagem de lixo.
   { padrao: /^POST \/api\/entrada\//, max: 20 },
   /*
-   * Vistoria: 63 itens marcados em poucos minutos, mais as fotos.
+   * Vistoria: 86 itens marcados em poucos minutos, mais as fotos.
    *
    * O teto geral de escrita (60/min) bloqueava o tecnico NO MEIO do
    * check-list — descoberto rodando o fluxo inteiro, que parou no item 54 com

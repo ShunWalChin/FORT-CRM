@@ -6,6 +6,22 @@
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { agora, novoId } from './db.mjs';
+import { formatar as formatarDinheiro, paraCentavos } from './dinheiro.mjs';
+import {
+  balancete, conferir, estornar, fechar as fecharPeriodo, lancar,
+  ratearEntreEmpresas, reabrir as reabrirPeriodo, semearPlano as semearPlanoContas,
+} from './razao.mjs';
+import {
+  abrir as abrirTitulo, baixar as baixarTitulo, cancelar as cancelarTitulo,
+  carteira, posicao,
+} from './titulos.mjs';
+import {
+  MODULOS as MODULOS_ERP, conceder, exigir as exigirModulo, mapaDeAcesso,
+  permissoesDe, revogar, semearAcesso,
+} from './permissoes.mjs';
+import {
+  COLETORES, pendencias as pendenciasDeFato, reconhecerDivergencia, sincronizar,
+} from './fatos.mjs';
 import { avaliarCompliance, comRodape, POLITICAS_CANAL, EXPLICACAO_MOTIVO } from './compliance.mjs';
 import {
   GATILHOS, projetarRevisao, renderizar, saudacao, diagnosticarFilaVazia,
@@ -396,6 +412,52 @@ const PAPEL_MINIMO = {
    */
   'DELETE /api/vistorias/:id': 'gestor',
 
+  /*
+   * ERP do grupo.
+   *
+   * Duas camadas, de proposito. Esta tabela barra pelo PAPEL, no despachante,
+   * antes de qualquer trabalho de banco — e `contextoErp` barra pelo MODULO,
+   * dentro da rota. A primeira e grossa e barata; a segunda e fina e cara.
+   *
+   * Escrever e administrar sao de soberano: um gestor le o razao do grupo, e
+   * nao lanca nele. O eixo do modulo refina isso por pessoa.
+   */
+  'GET /api/erp/acesso': 'gestor',
+  'GET /api/erp/acesso/todos': 'soberano',
+  'PUT /api/erp/acesso/:email/:modulo': 'soberano',
+  'DELETE /api/erp/acesso/:email/:modulo': 'soberano',
+
+  'GET /api/erp/contas': 'gestor',
+  'POST /api/erp/contas/semear': 'soberano',
+
+  'GET /api/erp/lancamentos': 'gestor',
+  'GET /api/erp/lancamentos/:id': 'gestor',
+  'POST /api/erp/lancamentos': 'soberano',
+  'POST /api/erp/lancamentos/:id/estornar': 'soberano',
+
+  'GET /api/erp/balancete': 'gestor',
+  'GET /api/erp/conferir': 'gestor',
+  'GET /api/erp/periodos': 'gestor',
+  'POST /api/erp/periodos/:competencia/fechar': 'soberano',
+  'POST /api/erp/periodos/:competencia/reabrir': 'soberano',
+
+  'GET /api/erp/titulos': 'gestor',
+  'POST /api/erp/titulos': 'gestor',
+  'POST /api/erp/titulos/:id/baixar': 'gestor',
+  'POST /api/erp/titulos/:id/cancelar': 'soberano',
+  'GET /api/erp/posicao': 'gestor',
+  'POST /api/erp/rateio': 'soberano',
+
+  'POST /api/erp/sincronizar': 'soberano',
+  'GET /api/erp/fatos': 'gestor',
+  'POST /api/erp/fatos/:id/reconhecer': 'soberano',
+  'GET /api/erp/painel': 'gestor',
+
+  'GET /api/erp/parceiros': 'gestor',
+  'POST /api/erp/parceiros': 'gestor',
+  'GET /api/erp/colaboradores': 'gestor',
+  'POST /api/erp/colaboradores': 'gestor',
+
   'GET /api/credenciais': 'gestor',
   'PUT /api/credenciais/:chave': 'soberano',
   'DELETE /api/credenciais/:chave': 'soberano',
@@ -468,6 +530,133 @@ function texto(v, max) {
  */
 function diretorioDeMidia(fed) {
   return join(dirname(fed.diretorio), 'midia');
+}
+
+/**
+ * As cinco vistas do desenho da carroceria, na ordem em que se dá a volta no
+ * veículo — a mesma ordem do grupo "Exterior" do check-list.
+ */
+export const VISTAS_CARROCERIA = ['frente', 'lateral_dir', 'traseira', 'lateral_esq', 'teto'];
+
+/** Tipos de avaria, com a letra que vai dentro do pino no desenho. */
+export const TIPOS_AVARIA = {
+  risco: { nome: 'Risco', letra: 'R' },
+  amassado: { nome: 'Amassado', letra: 'A' },
+  trinca: { nome: 'Trinca', letra: 'T' },
+  ferrugem: { nome: 'Ferrugem', letra: 'F' },
+  faltando: { nome: 'Faltando', letra: 'X' },
+  outro: { nome: 'Outro', letra: 'O' },
+};
+
+/** Formas de pagamento combinadas na recepção. */
+export const PAGAMENTOS = ['dinheiro', 'pix', 'debito', 'credito', 'boleto', 'faturado'];
+
+/**
+ * O desenho da carroceria e a lista de serviços fazem parte do que se assina.
+ *
+ * Ficam fora do hash quando não existem, para não mudar a assinatura de toda
+ * vistoria já enviada — mas onde existem, mexer neles depois do envio derruba
+ * o aceite, igual a mexer num item.
+ */
+function extrasDaVistoria(escopo, vistoriaId) {
+  return {
+    avarias: escopo.todas(
+      'select * from vistoria_avarias where {ESCOPO} and vistoria_id = ?', vistoriaId),
+    servicos: escopo.todas(
+      'select * from vistoria_servicos where {ESCOPO} and vistoria_id = ?', vistoriaId),
+  };
+}
+
+/**
+ * Contexto do ERP: a central, e a checagem dos dois eixos de permissão.
+ *
+ * Toda rota do ERP passa por aqui. A escala linear (gestor/soberano) e a
+ * concessão do módulo são checadas juntas — ver `permissoes.mjs` para por que
+ * são dois eixos e não um.
+ *
+ * O `ErroContabil` e o `ErroDePermissao` viram `ErroHttp` num lugar só: sem
+ * isto, cada rota repetiria o mesmo try/catch e uma delas um dia esqueceria,
+ * devolvendo 500 com o texto do erro contábil dentro.
+ */
+function contextoErp(fed, req, { modulo, nivel = 'ler' } = {}) {
+  const { usuario, empresa, banco } = contexto(fed, req, { exigeEmpresa: false });
+  const central = fed.abrirCentral();
+  const sql = central.sistema();
+
+  // A primeira subida destrava quem pode destravar. Depois disso, nunca mais.
+  semearAcesso(sql, usuario.papel === 'soberano' ? usuario.email : '');
+
+  /*
+   * A recusa de modulo tem de sair como 403, e nao como 500.
+   *
+   * `exigirModulo` levanta `ErroDePermissao`, que o despachante nao conhece —
+   * e o que o operador via era "Falha ao processar a requisicao", com o motivo
+   * real so no log do servidor. Traduzir aqui, e nao em cada rota, e o que
+   * garante que nenhuma esqueca.
+   */
+  if (modulo) {
+    comoHttp(() => exigirModulo(sql, {
+      email: usuario.email, papel: usuario.papel, modulo, nivel,
+    }));
+  }
+  return { central, sql, usuario, empresa, banco };
+}
+
+/** Traduz a recusa do domínio em resposta HTTP, preservando código e detalhe. */
+function comoHttp(fn) {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof ErroHttp) throw e;
+    if (e.codigo) {
+      const status = e.codigo === 'sem_permissao' ? 403
+        : e.codigo === 'nao_encontrado' ? 404 : 422;
+      throw new ErroHttp(status, e.codigo, e.message, e.detalhe ?? undefined);
+    }
+    throw e;
+  }
+}
+
+/**
+ * Valor que chega da tela — e a recusa de adivinhar qual é a unidade.
+ *
+ * A primeira versao aceitava numero e tratava como centavos. O dialogo do
+ * sistema converte campo decimal para REAIS em numero ("1.850,00" vira 1850), e
+ * uma baixa de mil oitocentos e cinquenta reais entrou como dezoito e cinquenta
+ * — sem erro nenhum, porque as duas leituras sao inteiros validos.
+ *
+ * Agora a unidade e explicita ou nao passa:
+ *
+ *   `valor_centavos` — inteiro, em centavos. O nome carrega a unidade.
+ *   `valor`          — TEXTO no formato brasileiro. "1.850,00".
+ *
+ * Numero cru em `valor` e recusado de proposito. E ambiguo, e escolher uma das
+ * duas leituras em silencio e como o erro acima acontece.
+ */
+function valorDoCorpo(corpo, campo = 'valor') {
+  const emCentavos = corpo?.valor_centavos ?? corpo?.[`${campo}_centavos`];
+  if (emCentavos != null) {
+    if (!Number.isInteger(emCentavos)) {
+      throw new ErroHttp(422, 'valor_invalido',
+        `${campo}_centavos precisa ser inteiro — centavo nao se divide.`);
+    }
+    return emCentavos;
+  }
+
+  const bruto = corpo?.[campo] ?? corpo?.valor;
+  if (typeof bruto === 'number') {
+    throw new ErroHttp(422, 'unidade_ambigua',
+      `Numero cru nao diz a unidade. Use "${campo}_centavos" para inteiro em `
+      + `centavos, ou "${campo}" como texto ("1.850,00").`);
+  }
+  try {
+    const c = paraCentavos(bruto, campo);
+    if (c == null) throw new ErroHttp(422, 'valor_obrigatorio', `Informe o ${campo}.`);
+    return c;
+  } catch (e) {
+    if (e instanceof ErroHttp) throw e;
+    throw new ErroHttp(422, 'valor_invalido', e.message);
+  }
 }
 
 export const ROTAS = {
@@ -1594,13 +1783,16 @@ export const ROTAS = {
       ? c.permitidas.filter((e) => e.instancia === pedida).map((e) => e.instancia)
       : c.permitidas.map((e) => e.instancia);
 
-    const { linhas, falhas } = fed.consultar(codigos, (banco) => banco.sistema()
+    const { linhas, falhas, completo } = fed.consultar(codigos, (banco) => banco.sistema()
       .prepare(`select seq, empresa_id, ator, acao, entidade, entidade_id, dados, hash, criado_em
                 from audit_log order by seq desc limit 120`)
       .all());
 
     linhas.sort((a, b) => Date.parse(b.criado_em) - Date.parse(a.criado_em));
-    return ok(linhas.slice(0, 250), { indisponiveis: falhas });
+    // A auditoria incompleta e dita, e nao inferida de uma lista de falhas que
+    // a tela pode nao olhar: "nao ha registro" e "nao consegui ler" sao coisas
+    // diferentes, e a segunda nao pode passar por primeira.
+    return ok(linhas.slice(0, 250), { indisponiveis: falhas, completo });
   },
 
   'GET /api/auditoria/verificar': (fed, req) => {
@@ -2021,7 +2213,7 @@ export const ROTAS = {
   },
 
   /**
-   * Abre a vistoria com os 63 itens ja criados, todos sem estado.
+   * Abre a vistoria com os itens do nivel ja criados, todos sem estado.
    *
    * Criar os itens agora, e nao conforme se marca, e o que permite perguntar
    * "quanto falta" — e o que garante que a lista nao mude no meio do
@@ -2128,6 +2320,10 @@ export const ROTAS = {
       vistoria: v,
       itens,
       midias: porItem,
+      avarias: escopo.todas(
+        'select * from vistoria_avarias where {ESCOPO} and vistoria_id = ? order by criado_em', p.id),
+      servicos: escopo.todas(
+        'select * from vistoria_servicos where {ESCOPO} and vistoria_id = ? order by ordem', p.id),
       resumo: resumoVistoria(itens),
       pendencias: pendencias(itens, porItem, v.nivel ?? 'ouro'),
       catalogo: catalogoDoNivel(v.nivel ?? 'ouro'),
@@ -2138,7 +2334,7 @@ export const ROTAS = {
   /** Marca um item. E a operacao mais repetida do app — 63 vezes por vistoria. */
   'PATCH /api/vistorias/:id/itens/:chave': (fed, req, p, corpo) => {
     const { escopo, usuario } = contexto(fed, req);
-    const v = escopo.uma('select id, status from vistorias where {ESCOPO} and id = ?', p.id);
+    const v = escopo.uma('select id, status, nivel from vistorias where {ESCOPO} and id = ?', p.id);
     if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
     if (v.status !== 'rascunho') {
       throw new ErroHttp(409, 'vistoria_fechada',
@@ -2178,8 +2374,25 @@ export const ROTAS = {
       } catch { /* leitura recusada nao derruba a vistoria; o item fica marcado */ }
     }
 
+    /*
+     * A resposta traz o resumo E as pendencias.
+     *
+     * Antes a tela remarcava o item e recarregava a vistoria inteira para saber
+     * o que ainda faltava: duas viagens por toque, e a segunda pesada — 86
+     * itens com a lista de midias. Numa vistoria completa isso era mais de
+     * cento e setenta chamadas no 4G do celular do tecnico.
+     */
     const todos = escopo.todas('select * from vistoria_itens where {ESCOPO} and vistoria_id = ?', p.id);
-    return ok({ item: atual, resumo: resumoVistoria(todos) });
+    const porItem2 = {};
+    for (const m of escopo.todas(
+      'select id, item_id from vistoria_midias where {ESCOPO} and vistoria_id = ?', p.id)) {
+      (porItem2[m.item_id] ??= []).push(m);
+    }
+    return ok({
+      item: atual,
+      resumo: resumoVistoria(todos),
+      pendencias: pendencias(todos, porItem2, v.nivel ?? 'ouro'),
+    });
   },
 
   /**
@@ -2312,7 +2525,7 @@ export const ROTAS = {
       status: 'aguardando_aceite',
       concluida_em: agora(),
       observacao: texto(corpo?.observacao, 1000),
-      conteudo_hash: hashConteudo(v, itens, midias),
+      conteudo_hash: hashConteudo(v, itens, midias, extrasDaVistoria(escopo, p.id)),
     };
     escopo.atualizar('vistorias', p.id, dados);
 
@@ -2342,7 +2555,7 @@ export const ROTAS = {
 
     const itens = escopo.todas('select * from vistoria_itens where {ESCOPO} and vistoria_id = ?', p.id);
     const midias = escopo.todas('select * from vistoria_midias where {ESCOPO} and vistoria_id = ?', p.id);
-    const agoraHash = hashConteudo(v, itens, midias);
+    const agoraHash = hashConteudo(v, itens, midias, extrasDaVistoria(escopo, p.id));
     if (agoraHash !== v.conteudo_hash) {
       escopo.atualizar('vistorias', p.id, { status: 'rascunho', concluida_em: null });
       throw new ErroHttp(409, 'conteudo_mudou',
@@ -2416,6 +2629,691 @@ export const ROTAS = {
       dados: { numero: os.numero, vistoria: vistoria.numero },
     });
     return ok({ ...os, status: 'em_bancada', vistoria_id: vistoria.id });
+  },
+
+  /**
+   * Marca uma avaria na carroceria.
+   *
+   * O check-list responde "está funcionando?"; o diagrama responde "COMO
+   * estava?" — e é essa a pergunta da devolução, quando o dono aponta um risco
+   * e ninguém sabe se já estava lá.
+   *
+   * A coordenada chega em FRAÇÃO da vista (0 a 1), e não em pixel: o desenho
+   * muda de tamanho entre o celular e o computador, e pixel gravado numa tela
+   * de 375 apareceria no lugar errado numa de 1440.
+   */
+  'POST /api/vistorias/:id/avarias': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select id, status, numero from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada',
+        'Esta vistoria já foi enviada: o desenho da carroceria é prova e não muda mais.');
+    }
+
+    const x = Number(corpo?.x);
+    const y = Number(corpo?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
+      throw new ErroHttp(422, 'coordenada_invalida', 'A marca precisa cair dentro do desenho.');
+    }
+    if (!VISTAS_CARROCERIA.includes(corpo?.vista)) {
+      throw new ErroHttp(422, 'vista_invalida', 'Vista fora do desenho.');
+    }
+    if (!TIPOS_AVARIA[corpo?.tipo]) {
+      throw new ErroHttp(422, 'tipo_invalido', 'Tipo de avaria desconhecido.');
+    }
+
+    const id = novoId();
+    escopo.inserir('vistoria_avarias', {
+      id,
+      vistoria_id: p.id,
+      vista: corpo.vista,
+      x,
+      y,
+      tipo: corpo.tipo,
+      nota: texto(corpo?.nota, 200),
+      criado_por: usuario.email,
+      criado_em: agora(),
+    });
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.avaria',
+      entidade: 'vistoria_avarias', entidadeId: id,
+      dados: { numero: v.numero, vista: corpo.vista, tipo: corpo.tipo },
+    });
+    return ok(escopo.uma('select * from vistoria_avarias where {ESCOPO} and id = ?', id));
+  },
+
+  'DELETE /api/vistorias/:id/avarias/:avariaId': (fed, req, p) => {
+    const { escopo } = contexto(fed, req);
+    const v = escopo.uma('select status from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Esta vistoria já foi enviada.');
+    }
+    return ok({ apagou: escopo.remover('vistoria_avarias', p.avariaId) > 0 });
+  },
+
+  /**
+   * Serviços — o que o CLIENTE pediu, e o que a oficina encontrou.
+   *
+   * As duas listas ficam separadas de propósito, pela `origem`. É a separação
+   * que permite a conversa honesta na entrega: "você pediu isto, e nós
+   * encontramos aquilo". Misturadas, todo achado parece venda empurrada.
+   */
+  'POST /api/vistorias/:id/servicos': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select id, status, numero from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Esta vistoria já foi enviada.');
+    }
+
+    const descricao = texto(corpo?.descricao, 300);
+    if (!descricao) throw new ErroHttp(422, 'descricao_obrigatoria', 'Descreva o serviço pedido.');
+
+    const ultimo = escopo.uma(
+      'select max(ordem) as n from vistoria_servicos where {ESCOPO} and vistoria_id = ?', p.id);
+    const id = novoId();
+    escopo.inserir('vistoria_servicos', {
+      id,
+      vistoria_id: p.id,
+      ordem: (ultimo?.n ?? 0) + 1,
+      descricao,
+      origem: corpo?.origem === 'vistoria' ? 'vistoria' : 'cliente',
+      item_chave: texto(corpo?.item_chave, 60),
+      estado: 'pendente',
+      tempo_min: corpo?.tempo_min == null ? null : num(corpo.tempo_min, 0),
+      valor_centavos: corpo?.valor_centavos == null ? null : num(corpo.valor_centavos, 0),
+      aprovado: null,
+      criado_em: agora(),
+    });
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.servico',
+      entidade: 'vistoria_servicos', entidadeId: id,
+      dados: { numero: v.numero, descricao, origem: corpo?.origem ?? 'cliente' },
+    });
+    return ok(escopo.uma('select * from vistoria_servicos where {ESCOPO} and id = ?', id));
+  },
+
+  'PATCH /api/vistorias/:id/servicos/:servicoId': (fed, req, p, corpo) => {
+    const { escopo } = contexto(fed, req);
+    const v = escopo.uma('select status from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    const sv = escopo.uma('select * from vistoria_servicos where {ESCOPO} and id = ?', p.servicoId);
+    if (!sv) throw new ErroHttp(404, 'nao_encontrado', 'Serviço não encontrado.');
+
+    /*
+     * Descrição, tempo e valor são o que o cliente aceitou: travam no envio.
+     * O estado (feito ou não) é execução, e continua andando depois do aceite —
+     * é assim que a lista da recepção vira a lista da entrega.
+     */
+    const dados = {};
+    if (corpo?.estado !== undefined) {
+      if (corpo.estado !== null && !['pendente', 'ok', 'nok'].includes(corpo.estado)) {
+        throw new ErroHttp(422, 'estado_invalido', 'Use pendente, ok ou nok.');
+      }
+      dados.estado = corpo.estado;
+    }
+    if (corpo?.aprovado !== undefined) dados.aprovado = corpo.aprovado ? 1 : 0;
+
+    const mudaConteudo = ['descricao', 'tempo_min', 'valor_centavos']
+      .some((c) => corpo?.[c] !== undefined);
+    if (mudaConteudo) {
+      if (v.status !== 'rascunho') {
+        throw new ErroHttp(409, 'vistoria_fechada',
+          'Esta vistoria já foi enviada: descrição, tempo e valor não mudam mais.');
+      }
+      if (corpo?.descricao !== undefined) {
+        const d = texto(corpo.descricao, 300);
+        if (!d) throw new ErroHttp(422, 'descricao_obrigatoria', 'Descreva o serviço.');
+        dados.descricao = d;
+      }
+      if (corpo?.tempo_min !== undefined) {
+        dados.tempo_min = corpo.tempo_min === null ? null : num(corpo.tempo_min, 0);
+      }
+      if (corpo?.valor_centavos !== undefined) {
+        dados.valor_centavos = corpo.valor_centavos === null ? null : num(corpo.valor_centavos, 0);
+      }
+    }
+
+    if (!Object.keys(dados).length) return ok(sv);
+    escopo.atualizar('vistoria_servicos', p.servicoId, dados);
+    return ok(escopo.uma('select * from vistoria_servicos where {ESCOPO} and id = ?', p.servicoId));
+  },
+
+  'DELETE /api/vistorias/:id/servicos/:servicoId': (fed, req, p) => {
+    const { escopo } = contexto(fed, req);
+    const v = escopo.uma('select status from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Esta vistoria já foi enviada.');
+    }
+    return ok({ apagou: escopo.remover('vistoria_servicos', p.servicoId) > 0 });
+  },
+
+  /**
+   * O que foi combinado na recepção: entrega, pagamento, próximo serviço.
+   *
+   * São promessas feitas ao cliente na entrada, e por isso ficam na vistoria
+   * que ele aceita — e não num campo solto de observação.
+   */
+  'PATCH /api/vistorias/:id': (fed, req, p, corpo) => {
+    const { escopo, usuario, empresa, banco } = contexto(fed, req);
+    const v = escopo.uma('select * from vistorias where {ESCOPO} and id = ?', p.id);
+    if (!v) throw new ErroHttp(404, 'nao_encontrado', 'Vistoria não encontrada.');
+    if (v.status !== 'rascunho') {
+      throw new ErroHttp(409, 'vistoria_fechada', 'Esta vistoria já foi enviada.');
+    }
+
+    const dados = {};
+    if (corpo?.tecnico !== undefined) dados.tecnico = texto(corpo.tecnico, 120);
+    if (corpo?.observacao !== undefined) dados.observacao = texto(corpo.observacao, 1000);
+    if (corpo?.proximo_servico_km !== undefined) {
+      dados.proximo_servico_km = corpo.proximo_servico_km === null || corpo.proximo_servico_km === ''
+        ? null : num(corpo.proximo_servico_km, 0);
+    }
+    if (corpo?.preferencia_pagamento !== undefined) {
+      const forma = texto(corpo.preferencia_pagamento, 60);
+      if (forma && !PAGAMENTOS.includes(forma)) {
+        throw new ErroHttp(422, 'pagamento_invalido', 'Forma de pagamento desconhecida.');
+      }
+      dados.preferencia_pagamento = forma;
+    }
+    if (corpo?.entrega_prevista !== undefined) {
+      dados.entrega_prevista = texto(corpo.entrega_prevista, 40);
+    }
+
+    if (!Object.keys(dados).length) return ok(v);
+    escopo.atualizar('vistorias', p.id, dados);
+    banco.auditar({
+      empresaId: empresa.id, ator: usuario.email, acao: 'vistoria.recepcao',
+      entidade: 'vistorias', entidadeId: p.id, dados: { numero: v.numero, ...dados },
+    });
+    return ok(escopo.uma('select * from vistorias where {ESCOPO} and id = ?', p.id));
+  },
+
+  /* ══ ERP DO GRUPO ══════════════════════════════════════════════════════
+   *
+   * Tudo aqui roda contra a CENTRAL, que para o ERP deixa de ser projeção de
+   * leitura e passa a ser fonte de verdade do grupo. Ver `erp-schema.mjs`
+   * para a decisão de arquitetura e as seis invariantes.
+   */
+
+  /** O que ESTE usuário pode ver — a tela desenha o menu a partir daqui. */
+  'GET /api/erp/acesso': (fed, req) => {
+    const { sql, usuario } = contextoErp(fed, req);
+    return ok({
+      email: usuario.email,
+      papel: usuario.papel,
+      modulos: MODULOS_ERP,
+      meus: permissoesDe(sql, usuario.email),
+    });
+  },
+
+  'GET /api/erp/acesso/todos': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'admin', nivel: 'administrar' });
+    return ok(mapaDeAcesso(sql));
+  },
+
+  'PUT /api/erp/acesso/:email/:modulo': (fed, req, p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'admin', nivel: 'administrar' });
+    const r = comoHttp(() => conceder(sql, {
+      email: p.email, modulo: p.modulo, nivel: corpo?.nivel ?? 'ler', por: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.conceder',
+      entidade: 'erp_permissoes', entidadeId: `${p.email}:${p.modulo}`, dados: r,
+    });
+    return ok(r);
+  },
+
+  'DELETE /api/erp/acesso/:email/:modulo': (fed, req, p) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'admin', nivel: 'administrar' });
+    const r = comoHttp(() => revogar(sql, { email: p.email, modulo: p.modulo }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.revogar',
+      entidade: 'erp_permissoes', entidadeId: `${p.email}:${p.modulo}`, dados: r,
+    });
+    return ok(r);
+  },
+
+  /* ── Plano de contas ─────────────────────────────────────────────────── */
+
+  'GET /api/erp/contas': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    return ok({
+      contas: sql.prepare('select * from erp_contas order by codigo').all(),
+      centros: sql.prepare('select * from erp_centros_custo where ativo = 1 order by codigo').all(),
+    });
+  },
+
+  'POST /api/erp/contas/semear': (fed, req) => {
+    const { sql, usuario } = contextoErp(fed, req, { modulo: 'razao', nivel: 'administrar' });
+    return ok(comoHttp(() => semearPlanoContas(sql, { ator: usuario.email })));
+  },
+
+  /* ── Razão ───────────────────────────────────────────────────────────── */
+
+  'POST /api/erp/lancamentos': (fed, req, _p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
+    const r = comoHttp(() => lancar(sql, {
+      instancia: corpo?.instancia,
+      data: corpo?.data,
+      historico: corpo?.historico,
+      origem: 'manual',
+      ator: usuario.email,
+      partidas: (corpo?.partidas ?? []).map((x) => ({
+        conta: x.conta,
+        centro_custo: x.centro_custo ?? null,
+        tipo: x.tipo,
+        valor_centavos: valorDoCorpo(x, 'valor'),
+      })),
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.lancar',
+      entidade: 'erp_lancamentos', entidadeId: r.id,
+      dados: { instancia: corpo?.instancia, total: r.total, competencia: r.competencia },
+    });
+    return ok(r);
+  },
+
+  'GET /api/erp/lancamentos': (fed, req, _p, _c, url) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    const cond = ['1=1'];
+    const params = [];
+    for (const [q, col] of [['competencia', 'l.competencia'], ['instancia', 'l.instancia'], ['origem', 'l.origem']]) {
+      const v = url?.searchParams.get(q);
+      if (v) { cond.push(`${col} = ?`); params.push(v); }
+    }
+    const linhas = sql.prepare(
+      `select l.*, (select sum(valor_centavos) from erp_partidas p
+                     where p.lancamento_id = l.id and p.tipo = 'D') as total
+         from erp_lancamentos l
+        where ${cond.join(' and ')}
+        order by l.data desc, l.criado_em desc limit 200`,
+    ).all(...params);
+    return ok(linhas);
+  },
+
+  'GET /api/erp/lancamentos/:id': (fed, req, p) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    const l = sql.prepare('select * from erp_lancamentos where id = ?').get(p.id);
+    if (!l) throw new ErroHttp(404, 'nao_encontrado', 'Lançamento não encontrado.');
+    return ok({
+      lancamento: l,
+      partidas: sql.prepare(
+        `select p.*, c.nome as conta_nome from erp_partidas p
+           join erp_contas c on c.codigo = p.conta
+          where p.lancamento_id = ? order by p.ordem`).all(p.id),
+    });
+  },
+
+  'POST /api/erp/lancamentos/:id/estornar': (fed, req, p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
+    // O estorno mora no razão e não aqui: "não se edita, estorna-se" é regra
+    // contábil, e uma cópia dela na rota seria a segunda versão da regra.
+    const r = comoHttp(() => estornar(sql, {
+      lancamentoId: p.id, data: corpo?.data, motivo: corpo?.motivo, ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.estornar',
+      entidade: 'erp_lancamentos', entidadeId: p.id, dados: { estornoId: r.id, motivo: corpo?.motivo },
+    });
+    return ok(r);
+  },
+
+  /* ── Balancete, períodos e a prova de que o livro fecha ──────────────── */
+
+  'GET /api/erp/balancete': (fed, req, _p, _c, url) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    const b = balancete(sql, {
+      competencia: url?.searchParams.get('competencia') ?? null,
+      ate: url?.searchParams.get('ate') ?? null,
+      instancia: url?.searchParams.get('instancia') ?? null,
+      centroCusto: url?.searchParams.get('centro') ?? null,
+    });
+    return ok({ ...b, legivel: { debito: formatarDinheiro(b.debito), credito: formatarDinheiro(b.credito), resultado: formatarDinheiro(b.resultado) } });
+  },
+
+  'GET /api/erp/periodos': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    return ok(sql.prepare('select * from erp_periodos order by competencia desc').all());
+  },
+
+  'POST /api/erp/periodos/:competencia/fechar': (fed, req, p) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'administrar' });
+    const r = comoHttp(() => fecharPeriodo(sql, { competencia: p.competencia, ator: usuario.email }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.fechar_periodo',
+      entidade: 'erp_periodos', entidadeId: p.competencia,
+      dados: { resultado: r.resultado, receita: r.receita, despesa: r.despesa },
+    });
+    return ok(r);
+  },
+
+  'POST /api/erp/periodos/:competencia/reabrir': (fed, req, p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'administrar' });
+    const r = comoHttp(() => reabrirPeriodo(sql, {
+      competencia: p.competencia, ator: usuario.email, motivo: corpo?.motivo,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.reabrir_periodo',
+      entidade: 'erp_periodos', entidadeId: p.competencia, dados: { motivo: corpo?.motivo },
+    });
+    return ok(r);
+  },
+
+  /**
+   * A conferência do livro.
+   *
+   * É a rota que se olha primeiro quando um número parece estranho. Se
+   * `saudavel` vier falso, nenhum outro número do ERP vale — e é melhor a tela
+   * dizer isso do que desenhar um painel bonito sobre um livro quebrado.
+   */
+  'GET /api/erp/conferir': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    const c = conferir(sql);
+    const b = balancete(sql);
+    return ok({ ...c, balancete: { confere: b.confere, diferenca: b.diferenca } });
+  },
+
+  /* ── Contas a pagar e a receber ──────────────────────────────────────── */
+
+  'GET /api/erp/titulos': (fed, req, _p, _c, url) => {
+    const natureza = url?.searchParams.get('natureza');
+    const modulo = natureza === 'receber' ? 'contas_receber' : 'contas_pagar';
+    const { sql } = contextoErp(fed, req, { modulo });
+    return ok(carteira(sql, {
+      natureza,
+      instancia: url?.searchParams.get('instancia') ?? null,
+      status: url?.searchParams.get('status') ?? null,
+      ate: url?.searchParams.get('ate') ?? null,
+    }));
+  },
+
+  'POST /api/erp/titulos': (fed, req, _p, corpo) => {
+    const modulo = corpo?.natureza === 'receber' ? 'contas_receber' : 'contas_pagar';
+    const { central, usuario, banco, empresa } = contextoErp(fed, req, { modulo, nivel: 'escrever' });
+    const r = comoHttp(() => abrirTitulo(central, {
+      instancia: corpo?.instancia,
+      natureza: corpo?.natureza,
+      parceiroId: corpo?.parceiro_id ?? null,
+      numero: texto(corpo?.numero, 40),
+      descricao: corpo?.descricao,
+      emissao: corpo?.emissao,
+      vencimento: corpo?.vencimento,
+      valor: valorDoCorpo(corpo),
+      conta: corpo?.conta,
+      centroCusto: corpo?.centro_custo ?? null,
+      ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.titulo_abrir',
+      entidade: 'erp_titulos', entidadeId: r.id,
+      dados: { natureza: corpo?.natureza, instancia: corpo?.instancia, valor: r.saldo },
+    });
+    return ok(r);
+  },
+
+  'POST /api/erp/titulos/:id/baixar': (fed, req, p, corpo) => {
+    const { central, sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'contas_pagar', nivel: 'escrever' });
+    const t = sql.prepare('select natureza from erp_titulos where id = ?').get(p.id);
+    if (!t) throw new ErroHttp(404, 'nao_encontrado', 'Título não encontrado.');
+    // A permissão segue a NATUREZA do título, e não a rota: quem só pode
+    // receber não pode pagar, ainda que o caminho da URL seja o mesmo.
+    if (t.natureza === 'receber') {
+      contextoErp(fed, req, { modulo: 'contas_receber', nivel: 'escrever' });
+    }
+    const r = comoHttp(() => baixarTitulo(central, {
+      tituloId: p.id,
+      data: corpo?.data ?? agora().slice(0, 10),
+      valor: valorDoCorpo(corpo),
+      meio: corpo?.meio ?? 'pix',
+      contaCaixa: corpo?.conta_caixa ?? null,
+      ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.titulo_baixar',
+      entidade: 'erp_titulos', entidadeId: p.id,
+      dados: { valor: corpo?.valor_centavos ?? corpo?.valor, saldo: r.saldo, status: r.status },
+    });
+    return ok(r);
+  },
+
+  'POST /api/erp/titulos/:id/cancelar': (fed, req, p, corpo) => {
+    const { central, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'contas_pagar', nivel: 'administrar' });
+    const r = comoHttp(() => cancelarTitulo(central, {
+      tituloId: p.id, motivo: corpo?.motivo, ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.titulo_cancelar',
+      entidade: 'erp_titulos', entidadeId: p.id, dados: { motivo: corpo?.motivo, estornoId: r.estornoId },
+    });
+    return ok(r);
+  },
+
+  /** A posição do grupo: quanto se deve, quanto se tem a receber, e o vencido. */
+  'GET /api/erp/posicao': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'financeiro' });
+    return ok(posicao(sql));
+  },
+
+  /* ── Rateio entre empresas ───────────────────────────────────────────── */
+
+  'POST /api/erp/rateio': (fed, req, _p, corpo) => {
+    const { sql, usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
+    const r = comoHttp(() => ratearEntreEmpresas(sql, {
+      data: corpo?.data,
+      historico: corpo?.historico,
+      contaDespesa: corpo?.conta_despesa,
+      contaContrapartida: corpo?.conta_contrapartida,
+      total: valorDoCorpo({ valor_centavos: corpo?.total_centavos, total: corpo?.total }, 'total'),
+      pesos: corpo?.pesos ?? {},
+      ator: usuario.email,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.rateio',
+      entidade: 'erp_lancamentos', entidadeId: r.lancamentos.map((l) => l.id).join(','),
+      dados: { total: r.total, partes: r.partes, pesos: corpo?.pesos },
+    });
+    return ok(r);
+  },
+
+  /* ── Fatos das instâncias ────────────────────────────────────────────── */
+
+  /**
+   * Colhe as instâncias e contabiliza o que ainda não foi.
+   *
+   * É o que faz o ERP conhecer o que aconteceu na operação, e não apenas o que
+   * alguém digitou nele. Idempotente: rodar duas vezes não duplica receita —
+   * a chave é a origem do fato, e não o instante da leitura.
+   */
+  'POST /api/erp/sincronizar': (fed, req, _p, corpo) => {
+    const { usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
+    const r = comoHttp(() => sincronizar(fed, {
+      ator: usuario.email,
+      codigos: Array.isArray(corpo?.instancias) && corpo.instancias.length ? corpo.instancias : null,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.sincronizar',
+      entidade: 'erp_fatos', entidadeId: null,
+      dados: {
+        novos: r.colheita.novos, postados: r.postagem.postados,
+        divergentes: r.colheita.divergentes, completo: r.completo,
+      },
+    });
+    return ok(r);
+  },
+
+  /**
+   * A fila que alguém precisa olhar: o que não virou lançamento, e o que
+   * mudou na origem depois de já ter virado.
+   */
+  'GET /api/erp/fatos': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'razao' });
+    return ok({ ...pendenciasDeFato(sql), coletores: COLETORES });
+  },
+
+  /**
+   * Aceita a correção da origem: estorna o lançamento antigo, relê o valor e
+   * devolve o fato à fila. É a única porta para resolver divergência, e ela
+   * passa pelo estorno — nada aqui altera lançamento já feito.
+   */
+  'POST /api/erp/fatos/:id/reconhecer': (fed, req, p, corpo) => {
+    const { usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'administrar' });
+    const r = comoHttp(() => reconhecerDivergencia(fed, {
+      fatoId: p.id, ator: usuario.email, data: corpo?.data ?? null,
+    }));
+    banco.auditar({
+      empresaId: empresa?.id ?? null, ator: usuario.email, acao: 'erp.reconhecer_divergencia',
+      entidade: 'erp_fatos', entidadeId: p.id, dados: { estornoId: r.estornoId },
+    });
+    return ok(r);
+  },
+
+  /**
+   * O painel do grupo: uma resposta com o que a direção pergunta.
+   *
+   * Resultado por empresa, posição de contas a pagar e receber, a fila de
+   * fatos e a saúde do livro. Numa chamada só, e não em seis — a tela abre uma
+   * vez, e seis chamadas seriais num processo síncrono é o que trava o
+   * atendimento enquanto o dono olha o painel.
+   *
+   * `completo` e `saudavel` vêm no topo de propósito: se o livro não fecha ou
+   * faltou empresa, nenhum outro número desta resposta vale.
+   */
+  'GET /api/erp/painel': (fed, req, _p, _c, url) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'bi' });
+    const competencia = url?.searchParams.get('competencia') ?? agora().slice(0, 7);
+
+    const geral = balancete(sql, { competencia });
+    const saude = conferir(sql);
+    const fila = pendenciasDeFato(sql);
+    const carteiras = posicao(sql);
+
+    const empresas = {};
+    for (const cod of [...fed.codigosDeEmpresa(), 'GRUPO']) {
+      const b = balancete(sql, { competencia, instancia: cod });
+      if (!b.contas.length) continue;
+      empresas[cod] = {
+        receita: b.receita,
+        despesa: b.despesa,
+        resultado: b.resultado,
+        confere: b.confere,
+        pagar: carteiras.porEmpresa[cod]?.pagar ?? 0,
+        receber: carteiras.porEmpresa[cod]?.receber ?? 0,
+        vencido: (carteiras.porEmpresa[cod]?.pagarVencido ?? 0)
+          + (carteiras.porEmpresa[cod]?.receberVencido ?? 0),
+      };
+    }
+
+    const meses = sql.prepare(
+      `select l.competencia,
+              sum(case when c.tipo = 'receita' and p.tipo = 'C' then p.valor_centavos
+                       when c.tipo = 'receita' and p.tipo = 'D' then -p.valor_centavos
+                       else 0 end) as receita,
+              sum(case when c.tipo = 'despesa' and p.tipo = 'D' then p.valor_centavos
+                       when c.tipo = 'despesa' and p.tipo = 'C' then -p.valor_centavos
+                       else 0 end) as despesa
+         from erp_partidas p
+         join erp_lancamentos l on l.id = p.lancamento_id
+         join erp_contas c on c.codigo = p.conta
+        group by l.competencia order by l.competencia desc limit 13`,
+    ).all().reverse().map((m) => ({ ...m, resultado: m.receita - m.despesa }));
+
+    return ok({
+      competencia,
+      saudavel: saude.saudavel && geral.confere,
+      confere: geral.confere,
+      diferenca: geral.diferenca,
+      grupo: {
+        receita: geral.receita,
+        despesa: geral.despesa,
+        resultado: geral.resultado,
+        pagar: carteiras.grupo.pagar,
+        receber: carteiras.grupo.receber,
+        pagarVencido: carteiras.grupo.pagarVencido,
+        receberVencido: carteiras.grupo.receberVencido,
+      },
+      empresas,
+      meses,
+      fatos: {
+        pendentes: fila.naoContabilizados,
+        divergentes: fila.divergentes.length,
+        ultimaLeitura: fila.ultimaLeitura,
+      },
+      alertas: [
+        ...(saude.saudavel ? [] : [{ nivel: 'critico', texto: 'O razão tem inconsistência — confira antes de usar qualquer número.' }]),
+        ...(geral.confere ? [] : [{ nivel: 'critico', texto: `O balancete não fecha: diferença de ${formatarDinheiro(Math.abs(geral.diferenca))}.` }]),
+        ...(fila.divergentes.length ? [{ nivel: 'atencao', texto: `${fila.divergentes.length} fato(s) mudaram na origem depois de contabilizados.` }] : []),
+        ...(fila.naoContabilizados.length ? [{ nivel: 'atencao', texto: `${fila.naoContabilizados.reduce((a, x) => a + x.n, 0)} fato(s) aguardando contabilização.` }] : []),
+        ...(carteiras.grupo.pagarVencido ? [{ nivel: 'atencao', texto: `${formatarDinheiro(carteiras.grupo.pagarVencido)} vencidos a pagar.` }] : []),
+        /*
+         * O vencido a RECEBER e o alerta mais acionavel deste painel, e faltava.
+         *
+         * Enquanto ninguem registrar baixa, tudo que a operacao entregou nasce
+         * vencido — o vencimento e a data da entrega, porque inventar trinta
+         * dias esconderia atraso que ja existe. O numero grande e o sinal certo:
+         * ele diz que o lado do pagamento ainda nao chegou ao sistema.
+         */
+        ...(carteiras.grupo.receberVencido ? [{
+          nivel: 'atencao',
+          texto: `${formatarDinheiro(carteiras.grupo.receberVencido)} a receber sem baixa registrada.`,
+        }] : []),
+      ],
+    });
+  },
+
+  /* ── Parceiros e pessoas ─────────────────────────────────────────────── */
+
+  'GET /api/erp/parceiros': (fed, req) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'contas_pagar' });
+    return ok(sql.prepare('select * from erp_parceiros where ativo = 1 order by nome').all());
+  },
+
+  'POST /api/erp/parceiros': (fed, req, _p, corpo) => {
+    const { sql, usuario } = contextoErp(fed, req, { modulo: 'contas_pagar', nivel: 'escrever' });
+    const nome = texto(corpo?.nome, 160);
+    if (!nome) throw new ErroHttp(422, 'nome_obrigatorio', 'Informe o nome do parceiro.');
+    const id = novoId();
+    sql.prepare(
+      `insert into erp_parceiros (id, tipo, nome, documento, instancia, email, telefone, ativo, criado_em)
+       values (?,?,?,?,?,?,?,1,?)`,
+    ).run(id, corpo?.tipo ?? 'fornecedor', nome,
+      String(corpo?.documento ?? '').replace(/\D/g, '') || null,
+      corpo?.instancia ?? null, texto(corpo?.email, 160), texto(corpo?.telefone, 40), agora());
+    void usuario;
+    return ok(sql.prepare('select * from erp_parceiros where id = ?').get(id));
+  },
+
+  'GET /api/erp/colaboradores': (fed, req, _p, _c, url) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'rh' });
+    const inst = url?.searchParams.get('instancia');
+    return ok(inst
+      ? sql.prepare('select * from erp_colaboradores where instancia = ? and ativo = 1 order by nome').all(inst)
+      : sql.prepare('select * from erp_colaboradores where ativo = 1 order by instancia, nome').all());
+  },
+
+  'POST /api/erp/colaboradores': (fed, req, _p, corpo) => {
+    const { sql } = contextoErp(fed, req, { modulo: 'rh', nivel: 'escrever' });
+    const nome = texto(corpo?.nome, 160);
+    if (!nome) throw new ErroHttp(422, 'nome_obrigatorio', 'Informe o nome.');
+    if (!corpo?.instancia) throw new ErroHttp(422, 'instancia_obrigatoria', 'Informe a empresa.');
+    const id = novoId();
+    sql.prepare(
+      `insert into erp_colaboradores
+         (id, instancia, nome, documento, cargo, setor, centro_custo, admissao,
+          salario_centavos, usuario_email, ativo, criado_em)
+       values (?,?,?,?,?,?,?,?,?,?,1,?)`,
+    ).run(id, corpo.instancia, nome,
+      String(corpo?.documento ?? '').replace(/\D/g, '') || null,
+      texto(corpo?.cargo, 80), corpo?.setor ?? null, corpo?.centro_custo ?? null,
+      corpo?.admissao ?? null,
+      corpo?.salario_centavos != null || corpo?.salario != null
+        ? valorDoCorpo({ valor_centavos: corpo?.salario_centavos, salario: corpo?.salario }, 'salario')
+        : null,
+      texto(corpo?.usuario_email, 160), agora());
+    return ok(sql.prepare('select * from erp_colaboradores where id = ?').get(id));
   },
 
   // ── Campos personalizados ────────────────────────────────────────────────

@@ -6,7 +6,7 @@
  * acontece no funil precisa voltar para as plataformas de anúncio.
  */
 
-import { rmSync } from 'node:fs';
+import { rmSync, readFileSync } from 'node:fs';
 import { Federacao, CATALOGO } from './federacao.mjs';
 import { semear } from './seed.mjs';
 import {
@@ -2358,6 +2358,11 @@ teste('a fila vazia acusa a causa certa, na ordem em que se resolve', () => {
   const vazia = diagnosticarFilaVazia(e, { fila: [] });
   igual(vazia.causa, 'base_vazia');
   verdadeiro(vazia.segunda, 'importar base tem de ser oferecido como segunda saida');
+
+  // E devolve o que apagou. Os bancos de teste sao compartilhados pelo arquivo
+  // inteiro: deixar a base vazia derrubava todo teste escrito daqui para baixo
+  // com um erro que nao falava de cliente nenhum.
+  guardados.forEach((c) => e.inserir('clientes', c));
 });
 
 teste('todo diagnostico diz o que fazer, ou por que nao ha o que fazer', () => {
@@ -2391,6 +2396,50 @@ teste('a tabela de papeis cobre toda rota de governanca', () => {
   }
 });
 
+teste('a referencia da API cobre TODA rota — senao ela envelhece calada', () => {
+  /*
+   * docs/API.md e o contrato que outra pessoa le para integrar. Uma rota nova
+   * que nao chega la nao quebra nada — e por isso ninguem percebe, ate alguem
+   * precisar dela e concluir que nao existe.
+   *
+   * Tres rotas de campos personalizados estavam fora, e foram achadas por esta
+   * conferencia, nao por leitura.
+   */
+  const doc = readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8');
+  const fora = Object.keys(ROTAS).filter((r) => !doc.includes(r.split(' ')[1]));
+  igual(fora.length, 0, `rotas fora da referencia: ${fora.join(', ')}`);
+
+  // E o numero declarado no topo tem de ser o numero real.
+  const declarado = Number(/\*\*(\d+) rotas\.\*\*/.exec(doc)?.[1] ?? 0);
+  igual(declarado, Object.keys(ROTAS).length,
+    'o total no topo do API.md nao bate com as rotas de verdade');
+});
+
+teste('nenhuma rota do ERP fica aberta ao balcao', () => {
+  /*
+   * O padrao do despachante e `operador`. Uma rota de ERP esquecida na tabela
+   * de papeis ficaria aberta a quem atende no balcao — e o erro seria
+   * silencioso, porque nada quebra: a rota simplesmente responde.
+   *
+   * Este teste varre as rotas de verdade, e nao uma lista escrita a mao: lista
+   * a mao envelhece na primeira rota nova que alguem acrescentar.
+   */
+  const doErp = Object.keys(ROTAS).filter((r) => r.includes('/api/erp/'));
+  verdadeiro(doErp.length >= 20, `esperava as rotas do ERP, achei ${doErp.length}`);
+
+  for (const r of doErp) {
+    verdadeiro(negarPorPapel(r, 'operador'), `operador NAO pode chamar ${r}`);
+    verdadeiro(negarPorPapel(r, 'leitura'), `leitura NAO pode chamar ${r}`);
+    igual(negarPorPapel(r, 'soberano'), null, `soberano pode chamar ${r}`);
+  }
+
+  // E escrever no razao e do soberano: gestor le, nao lanca.
+  for (const r of ['POST /api/erp/lancamentos', 'POST /api/erp/rateio',
+    'POST /api/erp/periodos/:competencia/fechar']) {
+    verdadeiro(negarPorPapel(r, 'gestor'), `gestor NAO escreve no razao (${r})`);
+  }
+});
+
 teste('rota de operacao continua aberta a quem atende', () => {
   for (const r of ['GET /api/regua', 'GET /api/clientes', 'PATCH /api/clientes/:id',
     'GET /api/pipeline', 'POST /api/regua/disparar', 'GET /api/canais']) {
@@ -2415,6 +2464,235 @@ teste('a recusa diz o papel exigido e o que a pessoa tem', () => {
   const n = negarPorPapel('GET /api/auditoria', 'operador');
   igual(n.exigido, 'gestor');
   igual(n.papel, 'operador');
+});
+
+/* -- Carroceria, servicos e recepcao --------------------------------------- */
+
+/**
+ * Abre uma vistoria de verdade, pela rota, para os testes de avaria e servico.
+ *
+ * Um veiculo por chamada: a propria rota recusa abrir a segunda vistoria de um
+ * veiculo que ja tem uma em andamento — que e a regra certa, e atrapalharia
+ * este arranjo se todos os testes usassem o mesmo carro.
+ */
+let nVeiculo = 0;
+function abrirVistoria(nivel = 'bronze') {
+  const b = fed.abrir('MP');
+  const emp = b.sistema().prepare('select * from empresas limit 1').get();
+  const esc = b.para(emp.id);
+  const email = b.sistema()
+    .prepare("select email from usuarios where papel = 'soberano' limit 1").get().email;
+
+  /*
+   * Carro novo a cada teste, e nao um da semeadura.
+   *
+   * A propria rota recusa abrir a segunda vistoria de um veiculo que ja tem uma
+   * em andamento — que e a regra certa. Reaproveitar os carros semeados faria
+   * estes testes dependerem de quantas vistorias a demonstracao ja criou.
+   */
+  nVeiculo += 1;
+  const clienteId = `vt-cli-${nVeiculo}`;
+  esc.inserir('clientes', {
+    id: clienteId, nome: `Cliente de teste ${nVeiculo}`, telefone: '38999990000',
+    consentimento_lgpd: 1, criado_em: agora(),
+  });
+  const veiculoId = `vt-teste-${nVeiculo}`;
+  esc.inserir('veiculos', {
+    id: veiculoId, cliente_id: clienteId, placa: `TST${String(1000 + nVeiculo)}`,
+    marca: 'Ford', modelo: 'Ranger', ano: 2020, km_ultima: 80000, ativo: 1,
+    criado_em: agora(),
+  });
+
+  const sessao = sessaoDe('MP', email);
+  const r = ROTAS['POST /api/vistorias'](fed, sessao, {}, { veiculo_id: veiculoId, nivel });
+  return { id: r.dados.id, sessao, esc, email };
+}
+
+/** Roda e devolve o erro, para os testes de recusa. */
+function recusa(fn) {
+  try { fn(); } catch (e) { return e; }
+  throw new Error('esperava recusa, e a chamada passou');
+}
+
+teste('a avaria e gravada em FRACAO da vista, e fora do desenho e recusada', () => {
+  const { id, sessao } = abrirVistoria();
+  const marcar = (corpo) => ROTAS['POST /api/vistorias/:id/avarias'](fed, sessao, { id }, corpo);
+
+  const a = marcar({ vista: 'lateral_esq', x: 0.62, y: 0.45, tipo: 'amassado' }).dados;
+  igual(a.x, 0.62);
+  igual(a.vista, 'lateral_esq');
+
+  /*
+   * Pixel nao serve: o desenho tem 325 px no celular e 620 no monitor do
+   * balcao. Uma coordenada de 240 seria valida numa tela e cairia fora da
+   * lataria na outra — e o desenho que o cliente assinou tem de ser o mesmo.
+   */
+  igual(recusa(() => marcar({ vista: 'frente', x: 240, y: 60, tipo: 'risco' })).codigo,
+    'coordenada_invalida');
+  igual(recusa(() => marcar({ vista: 'frente', x: -0.1, y: 0.5, tipo: 'risco' })).codigo,
+    'coordenada_invalida');
+  igual(recusa(() => marcar({ vista: 'capo', x: 0.5, y: 0.5, tipo: 'risco' })).codigo,
+    'vista_invalida');
+  igual(recusa(() => marcar({ vista: 'frente', x: 0.5, y: 0.5, tipo: 'arranhadinho' })).codigo,
+    'tipo_invalido');
+});
+
+teste('o desenho da carroceria entra no que o cliente assina', () => {
+  const v = { veiculo_id: 'v1', km: 100000 };
+  const itens = [{ id: 'a', chave: 'freios', estado: 'ok', medida: null, nota: null }];
+  const semNada = hashConteudo(v, itens);
+
+  /*
+   * Lista vazia NAO muda o resumo. Se mudasse, toda vistoria ja enviada e
+   * aguardando aceite passaria a acusar "o conteudo mudou" no dia da entrega
+   * desta versao — numa vistoria em que ninguem tocou.
+   */
+  igual(hashConteudo(v, itens, [], { avarias: [], servicos: [] }), semNada,
+    'lista vazia nao pode mexer no resumo de quem ja assinou');
+
+  const comAvaria = hashConteudo(v, itens, [], {
+    avarias: [{ vista: 'frente', x: 0.4, y: 0.55, tipo: 'risco', nota: null }],
+  });
+  verdadeiro(comAvaria !== semNada, 'marcar uma avaria TEM de mudar o resumo');
+
+  // Mover a marca é mudar o documento: "risco na porta" e "risco no capo" nao
+  // sao a mesma coisa na hora da devolucao.
+  const movida = hashConteudo(v, itens, [], {
+    avarias: [{ vista: 'frente', x: 0.7, y: 0.55, tipo: 'risco', nota: null }],
+  });
+  verdadeiro(movida !== comAvaria, 'mover a marca muda o documento');
+
+  const comServico = hashConteudo(v, itens, [], {
+    servicos: [{ ordem: 1, descricao: 'trocar oleo', origem: 'cliente', valor_centavos: 18000 }],
+  });
+  verdadeiro(comServico !== semNada, 'o que foi orcado faz parte do aceite');
+});
+
+teste('depois do envio, a lataria nao muda mais', () => {
+  const { id, sessao, esc } = abrirVistoria();
+  ROTAS['POST /api/vistorias/:id/avarias'](fed, sessao, { id },
+    { vista: 'frente', x: 0.5, y: 0.5, tipo: 'risco' });
+
+  // Curto-circuito no status: concluir de verdade exigiria as 64 marcacoes.
+  esc.atualizar('vistorias', id, { status: 'aguardando_aceite' });
+
+  igual(recusa(() => ROTAS['POST /api/vistorias/:id/avarias'](fed, sessao, { id },
+    { vista: 'frente', x: 0.2, y: 0.2, tipo: 'risco' })).codigo, 'vistoria_fechada');
+  igual(recusa(() => ROTAS['PATCH /api/vistorias/:id'](fed, sessao, { id },
+    { preferencia_pagamento: 'pix' })).codigo, 'vistoria_fechada');
+});
+
+teste('o que o cliente pediu e o que a oficina achou ficam em listas separadas', () => {
+  const { id, sessao } = abrirVistoria();
+  const criar = (corpo) => ROTAS['POST /api/vistorias/:id/servicos'](fed, sessao, { id }, corpo).dados;
+
+  const pedido = criar({ descricao: 'barulho na frente quando freia' });
+  const achado = criar({ descricao: 'pastilha dianteira no limite', origem: 'vistoria' });
+
+  igual(pedido.origem, 'cliente', 'sem origem declarada, e pedido do cliente');
+  igual(achado.origem, 'vistoria');
+  igual(pedido.ordem, 1);
+  igual(achado.ordem, 2, 'a ordem e a da conversa, e nao a do banco');
+  igual(pedido.estado, 'pendente');
+
+  igual(recusa(() => criar({ descricao: '   ' })).codigo, 'descricao_obrigatoria');
+
+  const lista = ROTAS['GET /api/vistorias/:id'](fed, sessao, { id }).dados.servicos;
+  igual(lista.length, 2);
+  igual(lista.filter((x) => x.origem === 'cliente').length, 1);
+});
+
+teste('o que foi orcado trava no envio; o que foi FEITO continua andando', () => {
+  const { id, sessao, esc } = abrirVistoria();
+  const sv = ROTAS['POST /api/vistorias/:id/servicos'](fed, sessao, { id },
+    { descricao: 'trocar filtro de combustivel', valor_centavos: 18000, tempo_min: 40 }).dados;
+
+  esc.atualizar('vistorias', id, { status: 'aguardando_aceite' });
+  const alterar = (corpo) => ROTAS['PATCH /api/vistorias/:id/servicos/:servicoId'](
+    fed, sessao, { id, servicoId: sv.id }, corpo);
+
+  /*
+   * Preco e descricao sao o que o cliente aceitou: mexer depois seria trocar o
+   * documento por baixo da assinatura. O estado nao — e por ele que a lista da
+   * recepcao vira a lista da entrega.
+   */
+  igual(recusa(() => alterar({ valor_centavos: 99000 })).codigo, 'vistoria_fechada');
+  igual(recusa(() => alterar({ descricao: 'outra coisa' })).codigo, 'vistoria_fechada');
+  igual(alterar({ estado: 'ok' }).dados.estado, 'ok');
+  igual(recusa(() => alterar({ estado: 'quase' })).codigo, 'estado_invalido');
+});
+
+teste('o combinado na recepcao fica na vistoria que o cliente aceita', () => {
+  const { id, sessao } = abrirVistoria();
+  const r = ROTAS['PATCH /api/vistorias/:id'](fed, sessao, { id }, {
+    proximo_servico_km: 92000,
+    preferencia_pagamento: 'pix',
+    entrega_prevista: '2026-09-09T17:00',
+  }).dados;
+
+  igual(r.proximo_servico_km, 92000);
+  igual(r.preferencia_pagamento, 'pix');
+  igual(r.entrega_prevista, '2026-09-09T17:00');
+
+  // Forma de pagamento e lista fechada: "pix do joao" viraria relatorio sujo.
+  igual(recusa(() => ROTAS['PATCH /api/vistorias/:id'](fed, sessao, { id },
+    { preferencia_pagamento: 'fiado' })).codigo, 'pagamento_invalido');
+});
+
+teste('o aceite fecha em cima do desenho e do orcamento, e nao so dos itens', () => {
+  /*
+   * O caminho inteiro, de ponta a ponta: marcar, desenhar a lataria, orcar,
+   * enviar e aceitar. E o teste que segura a mudanca do hash — incluir avaria e
+   * servico no resumo assinado quebraria o aceite de um jeito que so aparece
+   * com o cliente na frente, na hora de assinar.
+   */
+  const { id, sessao, esc } = abrirVistoria('bronze');
+
+  ROTAS['POST /api/vistorias/:id/avarias'](fed, sessao, { id },
+    { vista: 'lateral_esq', x: 0.62, y: 0.45, tipo: 'amassado', nota: 'porta traseira' });
+  ROTAS['POST /api/vistorias/:id/servicos'](fed, sessao, { id },
+    { descricao: 'revisao de 80 mil', valor_centavos: 89000, tempo_min: 120 });
+  ROTAS['PATCH /api/vistorias/:id'](fed, sessao, { id },
+    { preferencia_pagamento: 'pix', entrega_prevista: '2026-09-09T17:00' });
+
+  // "Nao se aplica" nao pede foto: e o unico estado que fecha a vistoria sem
+  // camera, e aqui interessa o caminho, nao o preenchimento.
+  for (const item of itensDoChecklist('bronze')) {
+    ROTAS['PATCH /api/vistorias/:id/itens/:chave'](fed, sessao, { id, chave: item.chave }, { estado: 'na' });
+  }
+
+  const enviada = ROTAS['POST /api/vistorias/:id/concluir'](fed, sessao, { id }, {}).dados;
+  igual(enviada.status, 'aguardando_aceite');
+  verdadeiro(enviada.conteudo_hash?.length === 64, 'sem resumo nao ha o que assinar');
+
+  const aceita = ROTAS['POST /api/vistorias/:id/aceite'](fed, sessao, { id },
+    { nome: 'Divino Souza Lima', cpf: '123.456.789-00' }).dados;
+  igual(aceita.status, 'aceita');
+  igual(aceita.aceite_cpf, '12345678900', 'o CPF entra so com digito');
+
+  // E agora a trava: mexer no desenho depois do aceite e recusado.
+  igual(recusa(() => ROTAS['POST /api/vistorias/:id/avarias'](fed, sessao, { id },
+    { vista: 'frente', x: 0.3, y: 0.3, tipo: 'risco' })).codigo, 'vistoria_fechada');
+
+  // O que a vistoria destrava: a ordem de servico deste veiculo.
+  igual(podeIniciarOS(esc.uma('select * from vistorias where {ESCOPO} and id = ?', id)).pode, true);
+});
+
+teste('marcar um item ja devolve o que ainda falta', () => {
+  /*
+   * Antes a tela remarcava e recarregava a vistoria inteira para saber o que
+   * faltava: duas viagens por toque, a segunda com 86 itens e a lista de
+   * midias. Numa vistoria completa eram mais de cento e setenta chamadas.
+   */
+  const { id, sessao } = abrirVistoria();
+  const r = ROTAS['PATCH /api/vistorias/:id/itens/:chave'](
+    fed, sessao, { id, chave: 'cintos' }, { estado: 'ok' }).dados;
+
+  igual(r.item.estado, 'ok');
+  igual(r.resumo.ok, 1);
+  verdadeiro(Array.isArray(r.pendencias), 'a resposta precisa dizer o que ainda falta');
+  verdadeiro(!r.pendencias.some((p) => p.chave === 'cintos' && p.falta === 'nao_avaliado'),
+    'o item recem-marcado nao pode continuar como nao avaliado');
 });
 
 // Os assincronos rodam agora, com os bancos ainda abertos.

@@ -180,10 +180,16 @@
 .ficha-dl .par { background: var(--surface); padding: 10px 14px; }
 
 @media (max-width: 640px) {
-  /* Quatro colunas de estado a 375 px dão 82 px cada, e o rótulo quebra.
-     "N/A" desce para a linha de baixo e os três que importam ficam largos. */
-  .vt-estados { grid-template-columns: repeat(3, 1fr); }
-  .vt-estado.na { grid-column: 1 / -1; min-height: 44px; }
+  /*
+   * Os quatro estados voltaram para UMA linha.
+   *
+   * Em duas linhas eles custavam 98 px dos 394 do cartão, e o cartão a 394
+   * cabia 1,64 vez numa tela útil de 645. A 375 px de largura cada botão fica
+   * com 83 — o rótulo "Conforme" mede 62, e o alvo do dedo continua acima do
+   * mínimo em ambos os eixos.
+   */
+  .vt-estados { grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  .vt-estado { min-height: 46px; font-size: 12px; padding: 0 2px; }
   .vt-item { padding: 13px 13px; }
   .vt-foto, .vt-camera { width: 76px; height: 76px; }
   .assinatura-tela { height: 200px; }
@@ -229,3 +235,310 @@
   display: block; font: 600 13.5px var(--sans); color: var(--txt-hi); margin-bottom: 3px;
 }
 .vt-posicao span { font-size: 12.5px; color: var(--dim); line-height: 1.5; }
+
+/* ── A barra da fila de envio ──────────────────────────────────────────────
+ *
+ * Só aparece quando há algo por salvar. Uma barra permanente dizendo "tudo
+ * certo" vira ruído em quarenta minutos de vistoria, e ninguém repara quando
+ * ela muda — que é justamente quando importa.
+ */
+.vt-fila {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 9px; padding: 7px 11px; border-radius: var(--radius);
+  font-size: 12.5px; line-height: 1.4;
+  border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--dim);
+}
+.vt-fila b { color: var(--txt-hi); }
+.vt-fila.enviando { border-color: var(--acento); color: var(--txt-hi); }
+.vt-fila.espera { border-color: var(--warn); }
+.vt-fila.offline { border-color: var(--crit); color: var(--crit); }
+.vt-fila.offline b { color: var(--crit); }
+.vt-fila .btn { margin-left: auto; }
+
+/* As duas abas de balcão vêm antes do check-list e se distinguem dele. */
+.vt-aba.extra { border-style: dashed; }
+.vt-aba.extra.on { border-style: solid; }
+.vt-falta.conta { background: var(--line-strong); color: var(--txt-hi); }
+.vt-aba.on .vt-falta.conta { background: var(--sobre-acento); color: var(--acento); }
+
+/* ══ Carroceria: o desenho das avarias ════════════════════════════════════
+ *
+ * Uma vista por vez, ocupando a largura toda. Cinco silhuetas lado a lado num
+ * celular dariam desenhos de 70 px — impossíveis de tocar com precisão, que é
+ * a única coisa que este desenho precisa fazer bem.
+ */
+.cr-vistas {
+  display: flex; gap: 7px; overflow-x: auto; margin-bottom: 10px;
+  padding-bottom: 6px; scrollbar-width: none;
+}
+.cr-vistas::-webkit-scrollbar { display: none; }
+.cr-vista {
+  flex: 0 0 auto; min-height: 44px; padding: 0 13px;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  background: var(--surface); color: var(--dim);
+  border: 1px solid var(--line); border-radius: 20px;
+  font: 600 12.5px var(--sans); cursor: pointer;
+}
+.cr-vista.on { background: var(--surface-3); color: var(--txt-hi); border-color: var(--acento); }
+.cr-conta {
+  background: var(--acento); color: var(--sobre-acento);
+  font: 700 10px var(--mono); border-radius: 20px; padding: 2px 6px; min-width: 18px;
+}
+
+/* O tipo fica escolhido: o técnico marca "risco" três vezes seguidas sem abrir
+   caixa nenhuma. Perguntar o tipo a cada toque dobraria o número de gestos. */
+.cr-tipos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.cr-tipo {
+  min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--dim); font: 600 12px var(--sans); cursor: pointer;
+}
+.cr-tipo.on { border-color: var(--acento); background: var(--surface-3); color: var(--txt-hi); }
+.cr-letra {
+  display: grid; place-content: center; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--line-strong); color: var(--txt-hi); font: 700 10px var(--mono);
+}
+.cr-tipo.risco .cr-letra { background: #4a8fe7; color: #fff; }
+.cr-tipo.amassado .cr-letra { background: var(--warn); color: #1a1200; }
+.cr-tipo.trinca .cr-letra { background: #b06be0; color: #fff; }
+.cr-tipo.ferrugem .cr-letra { background: #c2703a; color: #fff; }
+.cr-tipo.faltando .cr-letra { background: var(--crit); color: var(--sobre-crit); }
+
+.cr-tela {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 10px; margin-bottom: 10px;
+}
+/* `touch-action: none` porque o toque na lataria não pode virar rolagem da
+   página — o dedo escorrega dois pixels e a marca não é gravada. */
+.cr-svg { display: block; width: 100%; height: auto; touch-action: none; }
+.cr-svg.travado { opacity: .92; }
+.cr-corpo { fill: var(--surface-3); stroke: var(--line-strong); stroke-width: 2; }
+.cr-vidro { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.4; }
+.cr-grade { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.2; }
+.cr-detalhe { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.2; }
+.cr-lanterna { fill: var(--crit); opacity: .5; stroke: var(--line-strong); stroke-width: 1.2; }
+.cr-placa { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.2; }
+.cr-roda { fill: var(--line-strong); }
+.cr-aro { fill: var(--surface-2); }
+.cr-traco { stroke: var(--line-strong); stroke-width: 1.4; fill: none; }
+.cr-chao { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+
+/* O círculo transparente de 14 é o alvo do dedo: a 375 px de tela o desenho
+   fica com 325, escala 1,625 — 14 vira 45 px de diâmetro, acima do mínimo de
+   44. A bola de 8,5 é o que se vê. Alvo do tamanho do desenho seria intocável. */
+.cr-pino { cursor: pointer; }
+.cr-toque { fill: transparent; }
+.cr-bola { fill: var(--line-strong); stroke: var(--surface); stroke-width: 2; }
+.cr-pino text {
+  fill: #fff; font: 700 9px var(--mono); text-anchor: middle; pointer-events: none;
+  user-select: none;
+}
+.cr-pino.risco .cr-bola { fill: #4a8fe7; }
+.cr-pino.amassado .cr-bola { fill: #e8a33d; }
+.cr-pino.trinca .cr-bola { fill: #b06be0; }
+.cr-pino.ferrugem .cr-bola { fill: #c2703a; }
+.cr-pino.faltando .cr-bola { fill: #ff2d78; }
+.cr-pino.outro .cr-bola { fill: #7c88a6; }
+/* O anel do selecionado nao pode engolir a cor do tipo: um anel de 3 sobre uma
+   bola de 8,5 cobre um terco do raio, e no tamanho que ela tem na tela o pino
+   inteiro passava a ler como "acento" em vez de "amassado". */
+.cr-pino.on .cr-bola { stroke: var(--acento); stroke-width: 2; }
+.cr-pino.on .cr-toque { fill: var(--acento); opacity: .2; }
+
+.cr-ajuda { margin-top: 8px; text-align: center; font-size: 12px; color: var(--faint); }
+.cr-ajuda b { color: var(--txt-hi); }
+
+.cr-aberta {
+  background: var(--surface); border: 1px solid var(--acento);
+  border-radius: var(--radius-lg); padding: 12px 13px; margin-bottom: 12px;
+}
+.cr-aberta-topo { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+.cr-aberta-topo .btn { margin-left: auto; }
+.cr-aberta .btn.perigo { margin-top: 9px; width: 100%; }
+.cr-selo {
+  display: grid; place-content: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--line-strong); color: var(--txt-hi); font: 700 11px var(--mono);
+  flex: 0 0 auto;
+}
+.cr-aberta.risco .cr-selo, .cr-linha.risco .cr-selo { background: #4a8fe7; color: #fff; }
+.cr-aberta.amassado .cr-selo, .cr-linha.amassado .cr-selo { background: #e8a33d; color: #1a1200; }
+.cr-aberta.trinca .cr-selo, .cr-linha.trinca .cr-selo { background: #b06be0; color: #fff; }
+.cr-aberta.ferrugem .cr-selo, .cr-linha.ferrugem .cr-selo { background: #c2703a; color: #fff; }
+.cr-aberta.faltando .cr-selo, .cr-linha.faltando .cr-selo { background: #ff2d78; color: #fff; }
+
+.cr-lista h3 { font: 600 13px var(--sans); color: var(--dim); margin: 0 0 8px; }
+.cr-linha {
+  width: 100%; min-height: 48px; display: flex; align-items: center; gap: 10px;
+  text-align: left; padding: 9px 12px; margin-bottom: 6px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); color: var(--txt-hi);
+}
+.cr-linha.on { border-color: var(--acento); }
+.cr-linha-txt { display: flex; flex-wrap: wrap; gap: 4px 9px; align-items: baseline; }
+.cr-linha-txt b { font: 600 13px var(--sans); }
+.cr-linha-txt .fraco { font-size: 11.5px; }
+.cr-nota-txt { flex-basis: 100%; font-size: 12px; color: var(--dim); }
+.cr-vazio {
+  padding: 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius);
+  color: var(--dim); font-size: 12.5px; line-height: 1.55;
+}
+.cr-vazio b { color: var(--txt-hi); }
+
+/* ══ Pedido do cliente, achados e o combinado ═════════════════════════════ */
+.sv-bloco { margin-bottom: 18px; }
+.sv-bloco h3 {
+  font: 600 13px var(--sans); color: var(--txt-hi); margin: 0 0 4px;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.sv-bloco > .fraco { display: block; margin-bottom: 9px; line-height: 1.5; }
+
+.sv-item {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-lg); padding: 12px 13px; margin-bottom: 8px;
+}
+.sv-item.nok { border-left-color: var(--crit); }
+.sv-topo { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 9px; }
+.sv-num {
+  display: grid; place-content: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--surface-3); color: var(--dim); font: 700 11px var(--mono); flex: 0 0 auto;
+}
+.sv-desc { font: 500 14px/1.4 var(--sans); color: var(--txt-hi); flex: 1; }
+.sv-x {
+  flex: 0 0 auto; width: 32px; height: 32px; margin: -5px -5px 0 0;
+  background: none; border: 0; color: var(--faint); font-size: 20px; cursor: pointer;
+}
+.sv-x:hover { color: var(--crit); }
+.sv-estados { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.sv-numeros { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.sv-numeros label, .sv-campos label { display: block; }
+.sv-numeros span, .sv-campos span {
+  display: block; font-size: 11px; color: var(--faint); margin-bottom: 3px;
+}
+.sv-numeros input, .sv-campos input, .sv-campos select {
+  width: 100%; min-height: 44px; padding: 0 11px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius); color: var(--txt-hi); font: 500 14px var(--sans);
+}
+.sv-campos { display: grid; gap: 10px; }
+
+/* O campo de adicionar fica ABAIXO da lista: o que já foi anotado sobe, e a
+   linha de digitar continua junto do teclado que acabou de abrir. */
+.sv-add { display: flex; gap: 7px; margin-top: 8px; }
+.sv-add input {
+  flex: 1; min-height: 46px; padding: 0 12px;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); color: var(--txt-hi); font: 500 14px var(--sans);
+}
+.sv-add .btn { min-height: 46px; flex: 0 0 auto; }
+
+.sv-soma {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline;
+  padding: 11px 13px; margin-bottom: 18px;
+  background: var(--surface-2); border-radius: var(--radius);
+  font-size: 12.5px; color: var(--dim);
+}
+.sv-soma b { margin-left: auto; font: 700 16px var(--mono); color: var(--txt-hi); }
+
+@media (min-width: 720px) {
+  .sv-campos { grid-template-columns: 1fr 1fr; }
+  .cr-tipos { grid-template-columns: repeat(6, 1fr); }
+  /* No monitor do balcão a lataria não precisa da largura toda para ser
+     tocada com precisão — o mouse já tem. */
+  .cr-tela { max-width: 620px; }
+}
+
+/* ══ Densidade e navegação do check-list ═════════════════════════════════
+ *
+ * Três medidas feitas num celular de 375 px, com 167 px de cabeçalho fixo e
+ * 645 úteis, guiaram tudo abaixo: o cartão tinha 394 px de mediana, a tira de
+ * abas escondia 1147 dos seus 1494 px, e cada toque rebuscava as fotos do
+ * grupo inteiro.
+ */
+
+/* A ficha guarda o que quase nunca é usado, sem escondê-lo de quem precisa. */
+.vt-fichas { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.vt-ficha {
+  min-height: 34px; padding: 0 12px;
+  background: none; border: 1px dashed var(--line-strong); border-radius: 20px;
+  color: var(--dim); font: 500 12.5px var(--sans); cursor: pointer;
+}
+.vt-ficha:hover { border-color: var(--acento); color: var(--txt-hi); }
+.vt-ficha:active { background: var(--surface-2); }
+
+/* Observação de vistoria fechada: texto, e não campo desabilitado. */
+.vt-nota-lida {
+  margin-top: 10px; padding: 9px 12px; border-left: 2px solid var(--line-strong);
+  color: var(--dim); font-size: 13px; line-height: 1.5;
+}
+
+/*
+ * O item para onde o avanço levou.
+ *
+ * Sem a piscada, a rolagem automática desorienta: o técnico olha para baixo e
+ * não sabe se a tela andou porque ele marcou ou porque o dedo escorregou.
+ */
+.vt-item.mirado { animation: mirar 900ms ease-out; }
+@keyframes mirar {
+  0%   { box-shadow: 0 0 0 3px var(--acento); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vt-item.mirado { animation: none; outline: 2px solid var(--acento); }
+}
+
+/* Fim de grupo: para onde ir, sem ir sozinho. */
+.vt-fim {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 14px 0 4px; padding: 14px 16px;
+  background: var(--surface); border: 1px solid var(--ok); border-radius: var(--radius-lg);
+  font-size: 13.5px; color: var(--dim);
+}
+.vt-fim b { color: var(--ok); }
+.vt-fim .btn { margin-left: auto; }
+
+@media (max-width: 400px) {
+  .vt-fim .btn { margin-left: 0; width: 100%; }
+}
+
+/* ══ Seletor de grupo ═════════════════════════════════════════════════════
+ *
+ * A tira horizontal media 1494 px dentro de 347 visíveis — 77% fora da tela,
+ * num gesto lateral que nada anuncia. No celular ela sai e entra este botão,
+ * que abre os dez grupos numa lista vertical. No monitor do balcão a tira
+ * cabe, e continua sendo mais rápida do que abrir uma folha.
+ */
+.vt-grupo-atual {
+  display: none; width: 100%; min-height: 52px; align-items: center; gap: 10px;
+  margin-bottom: 10px; padding: 0 14px; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg); color: var(--txt-hi);
+}
+.vt-grupo-atual b { font: 600 15px var(--sans); flex: 1; }
+.vt-grupo-onde {
+  font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--faint); white-space: nowrap;
+}
+.vt-grupo-seta { color: var(--dim); font-size: 12px; }
+
+.vt-lista-grupos { display: grid; gap: 7px; padding: 4px 0 20px; }
+.vt-lg {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 62px; padding: 10px 14px; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); color: var(--txt-hi);
+}
+.vt-lg.on { border-color: var(--acento); background: var(--surface-3); }
+.vt-lg-txt { flex: 1; display: grid; gap: 2px; }
+.vt-lg-txt b { font: 600 14.5px var(--sans); }
+.vt-lg-txt .fraco { font-size: 12px; line-height: 1.4; }
+.vt-lg-conta {
+  font: 500 12.5px var(--mono); color: var(--dim);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.vt-lg-conta.cheio { color: var(--ok); }
+
+@media (max-width: 719px) {
+  .vt-grupo-atual { display: flex; }
+  .vt-grupos { display: none; }
+}

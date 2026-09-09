@@ -359,7 +359,7 @@ tempo, o que chegar primeiro — e a projeção diz qual dos dois mandou, porque
 *"vence em 12 dias"* e *"vence porque completa um ano"* são conversas diferentes
 com o cliente.
 
-**A vistoria de entrada** tem 63 itens em 11 sistemas, e é o documento que
+**A vistoria de entrada** tem 86 itens em 8 grupos, e é o documento que
 separa o que já estava no veículo do que a oficina fez. Três propriedades a
 fazem instrumento e não formulário:
 

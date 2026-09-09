@@ -334,7 +334,7 @@ export function pendencias(itens, midiasPorItem = {}, nivel = 'ouro') {
  * ESTADO DO VEÍCULO, e a vistoria continuar a mesma depois de o técnico
  * corrigir a própria grafia numa nota é o comportamento certo.
  */
-export function hashConteudo(vistoria, itens, midias = []) {
+export function hashConteudo(vistoria, itens, midias = [], extras = {}) {
   const midiasPor = new Map();
   for (const m of midias) {
     const lista = midiasPor.get(m.item_id) ?? [];
@@ -356,6 +356,42 @@ export function hashConteudo(vistoria, itens, midias = []) {
         midias: (midiasPor.get(i.id) ?? []).sort(),
       })),
   };
+
+  /*
+   * Avarias e serviços só entram quando existem.
+   *
+   * Uma chave sempre presente, ainda que vazia, mudaria o hash de toda vistoria
+   * já enviada e aguardando aceite — e o cliente veria "o conteúdo mudou" numa
+   * vistoria em que ninguém tocou.
+   */
+  const avarias = extras.avarias ?? [];
+  if (avarias.length) {
+    corpo.avarias = [...avarias]
+      .map((a) => ({
+        vista: a.vista,
+        // Duas casas: a marca é do tamanho do dedo, e arredondar evita que o
+        // mesmo toque gere hashes diferentes por causa do ponto flutuante.
+        x: Number(a.x).toFixed(3),
+        y: Number(a.y).toFixed(3),
+        tipo: a.tipo,
+        nota: a.nota ?? null,
+      }))
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  }
+
+  const servicos = extras.servicos ?? [];
+  if (servicos.length) {
+    corpo.servicos = [...servicos]
+      .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
+      .map((s) => ({
+        descricao: s.descricao,
+        origem: s.origem,
+        estado: s.estado ?? null,
+        tempo_min: s.tempo_min ?? null,
+        valor_centavos: s.valor_centavos ?? null,
+      }));
+  }
+
   return createHash('sha256').update(JSON.stringify(corpo)).digest('hex');
 }
 

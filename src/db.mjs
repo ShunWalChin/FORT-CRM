@@ -15,7 +15,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { SCHEMA_SQL } from './schema.mjs';
 import { SCHEMA_EXTRA_SQL, SCHEMA_CENTRAL_SQL } from './schema-extra.mjs';
-import { migrarColunas } from './migracoes.mjs';
+import { SCHEMA_ERP_SQL } from './erp-schema.mjs';
+import { COLUNAS_ESPERADAS_CENTRAL, migrarColunas } from './migracoes.mjs';
 
 export function agora() {
   return new Date().toISOString();
@@ -49,6 +50,12 @@ export class Banco {
     }
     if (central) {
       this.#sql.exec(SCHEMA_CENTRAL_SQL);
+      /*
+       * O ERP mora so na central, e a razao e a mesma que fez o razao morar
+       * la: partida dobrada exige transacao, e nao ha transacao que atravesse
+       * tres arquivos SQLite. Ver `erp-schema.mjs`.
+       */
+      this.#sql.exec(SCHEMA_ERP_SQL);
     } else {
       this.#sql.exec(SCHEMA_SQL);
       this.#sql.exec(SCHEMA_EXTRA_SQL);
@@ -62,7 +69,10 @@ export class Banco {
      * Aconteceu em producao com `clientes.campos`. Local passava porque a base
      * era apagada e renascia; no servidor, o deploy subiu e a recarga quebrou.
      */
-    this.migracoes = migrarColunas(this.#sql);
+    // Cada esquema migra contra a sua lista. Unir as duas nao daria erro — a
+    // migracao ignora tabela ausente — e por isso mesmo esconderia a entrada
+    // que foi parar na lista errada: ela simplesmente nunca seria aplicada.
+    this.migracoes = migrarColunas(this.#sql, central ? COLUNAS_ESPERADAS_CENTRAL : undefined);
 
     /*
      * `sem_acento()` dentro do SQL, porque `like` do SQLite nao sabe portugues.
