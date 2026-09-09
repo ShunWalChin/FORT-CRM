@@ -416,6 +416,55 @@ export function conferir(sql) {
   };
 }
 
+/**
+ * Zera o MOVIMENTO do razão, preservando as definições.
+ *
+ * Existe por causa da recarga da demonstração, e a razão é a mesma que já está
+ * escrita na rota que recarrega: a carga gera IDs novos, e o que é derivado das
+ * instâncias passa a apontar para registros que deixaram de existir.
+ *
+ * No ERP isso é pior do que uma projeção velha. A chave de idempotência dos
+ * fatos é `(instância, tipo, ref)`, e `ref` é o id da linha na instância.
+ * Recriadas as instâncias, os ids mudam — e a próxima sincronização colhe tudo
+ * OUTRA VEZ como inédito. Dezoito ordens de serviço viram trinta e seis, e a
+ * receita do grupo dobra sem que nada acuse.
+ *
+ * O que sai: lançamentos, partidas, títulos, baixas e fatos — o movimento.
+ * O que fica: plano de contas, centros de custo, parceiros, colaboradores,
+ * períodos e permissões — as definições, que não vieram das instâncias e não
+ * têm por que morrer com elas.
+ *
+ * Chamado SÓ pela recarga de demonstração, que já apaga a base inteira. Nunca
+ * de outro lugar: apagar movimento contábil não é operação de sistema, é
+ * decisão de quem responde pelo livro, e para essa existe o estorno.
+ */
+export function limparMovimento(sql) {
+  const antes = {
+    lancamentos: sql.prepare('select count(*) as n from erp_lancamentos').get().n,
+    titulos: sql.prepare('select count(*) as n from erp_titulos').get().n,
+    fatos: sql.prepare('select count(*) as n from erp_fatos').get().n,
+  };
+
+  // A ordem respeita as referências: baixas apontam para títulos e lançamentos,
+  // títulos apontam para lançamentos, partidas apontam para lançamentos.
+  sql.exec(`
+    delete from erp_baixas;
+    delete from erp_titulos;
+    delete from erp_fatos;
+    delete from erp_partidas;
+    delete from erp_lancamentos;
+  `);
+
+  return {
+    ...antes,
+    preservado: {
+      contas: sql.prepare('select count(*) as n from erp_contas').get().n,
+      parceiros: sql.prepare('select count(*) as n from erp_parceiros').get().n,
+      permissoes: sql.prepare('select count(*) as n from erp_permissoes').get().n,
+    },
+  };
+}
+
 /* ══ Rateio entre empresas ═══════════════════════════════════════════════ */
 
 /**

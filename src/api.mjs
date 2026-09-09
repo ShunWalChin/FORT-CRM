@@ -8,7 +8,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 import { agora, novoId } from './db.mjs';
 import { formatar as formatarDinheiro, paraCentavos } from './dinheiro.mjs';
 import {
-  balancete, conferir, estornar, fechar as fecharPeriodo, lancar,
+  balancete, conferir, estornar, fechar as fecharPeriodo, lancar, limparMovimento,
   ratearEntreEmpresas, reabrir as reabrirPeriodo, semearPlano as semearPlanoContas,
 } from './razao.mjs';
 import {
@@ -20,7 +20,8 @@ import {
   permissoesDe, revogar, semearAcesso,
 } from './permissoes.mjs';
 import {
-  COLETORES, pendencias as pendenciasDeFato, reconhecerDivergencia, sincronizar,
+  COLETORES, pendencias as pendenciasDeFato, reconhecerDivergencia,
+  sincronizar as sincronizarFatos,
 } from './fatos.mjs';
 import { avaliarCompliance, comRodape, POLITICAS_CANAL, EXPLICACAO_MOTIVO } from './compliance.mjs';
 import {
@@ -1628,9 +1629,30 @@ export const ROTAS = {
     }
     const central = sincronizarCentral(fed);
 
+    /*
+     * O ERP tambem e derivado das instancias, e sofre PIOR do que a projecao.
+     *
+     * A chave de idempotencia dos fatos e `(instancia, tipo, ref)`, e `ref` e o
+     * id da linha na instancia. Recriadas as instancias, os ids mudam — e a
+     * proxima sincronizacao colhe tudo outra vez como inedito. Dezoito ordens
+     * de servico viram trinta e seis, e a receita do grupo dobra sem que nada
+     * acuse.
+     *
+     * Aconteceu de verdade: alguem recarregou a demonstracao dois minutos antes
+     * de um deploy, e producao ficou com 48 fatos apontando para registros
+     * mortos, esperando o proximo clique em "Sincronizar" para dobrar tudo.
+     *
+     * Limpa o movimento, preserva as definicoes, e ressincroniza no mesmo
+     * pedido — para a recarga terminar com o livro coerente, e nao com a
+     * armadilha armada.
+     */
+    const erpLimpo = limparMovimento(fed.abrirCentral().sistema());
+    const erp = sincronizarFatos(fed, { ator: c.usuario.email });
+
     return ok({
       instancias: porInstancia,
       central,
+      erp: { limpo: erpLimpo, resincronizado: erp.postagem?.postados ?? 0, completo: erp.completo },
       clientes: porInstancia.reduce((a, x) => a + (x.clientes ?? 0), 0),
       // Os identificadores são novos, então a sessão antiga aponta para um
       // usuário que deixou de existir. Melhor dizer isso do que deixar a tela
@@ -3130,7 +3152,7 @@ export const ROTAS = {
    */
   'POST /api/erp/sincronizar': (fed, req, _p, corpo) => {
     const { usuario, banco, empresa } = contextoErp(fed, req, { modulo: 'razao', nivel: 'escrever' });
-    const r = comoHttp(() => sincronizar(fed, {
+    const r = comoHttp(() => sincronizarFatos(fed, {
       ator: usuario.email,
       codigos: Array.isArray(corpo?.instancias) && corpo.instancias.length ? corpo.instancias : null,
     }));

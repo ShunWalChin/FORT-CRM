@@ -15,7 +15,8 @@ import {
 } from './dinheiro.mjs';
 import {
   ErroContabil, GRUPO, balancete, competenciaDe, conferir, estornar, fechar,
-  garantirPeriodo, lancar, ratearEntreEmpresas, reabrir, saldos, semearPlano,
+  garantirPeriodo, lancar, limparMovimento, ratearEntreEmpresas, reabrir, saldos,
+  semearPlano,
 } from './razao.mjs';
 import {
   abrir as abrirTitulo, baixar, cancelar, carteira, posicao,
@@ -802,6 +803,63 @@ teste('período fechado recusa a postagem, e diz qual fato ficou de fora', () =>
   verdadeiro(recusa1, 'o fato do mês fechado tinha de ser recusado');
   igual(recusa1.motivo, 'periodo_fechado');
   igual(conferir(sql).saudavel, true, 'e a recusa não pode sujar o livro');
+});
+
+teste('recarregar a demonstracao DOBRARIA a receita — e por isso limpa o movimento', () => {
+  /*
+   * Aconteceu em producao. Alguem clicou em "Recarregar demonstracao" dois
+   * minutos antes de um deploy, e a base ficou com 48 fatos apontando para
+   * registros que a recarga tinha destruido — esperando o proximo clique em
+   * "Sincronizar" para colher tudo de novo como inedito.
+   *
+   * A causa e a chave de idempotencia: `(instancia, tipo, ref)`, onde `ref` e o
+   * id da linha NA INSTANCIA. Recriadas as instancias, os ids mudam, e a
+   * idempotencia deixa de reconhecer o que ja conhecia.
+   *
+   * Este teste reproduz o cenario inteiro: colhe, recarrega uma instancia com
+   * ids novos, e prova que sem limpar a receita dobra — e que com limpar, nao.
+   */
+  const antes = balancete(sql).receita;
+  const fatosAntes = sql.prepare('select count(*) as n from erp_fatos').get().n;
+  verdadeiro(fatosAntes > 0, 'a carga tem de ter deixado fatos');
+
+  // A recarga: mesma OS, id novo. E o que `recarregarDemo` faz nas tres.
+  const mp = fed.abrir('MP');
+  const emp = mp.sistema().prepare('select id from empresas limit 1').get();
+  const esc = mp.para(emp.id);
+  const os = esc.uma("select * from ordens_servico where {ESCOPO} and status = 'concluida' limit 1");
+  esc.remover('ordens_servico', os.id);
+  esc.inserir('ordens_servico', { ...os, id: 'os-id-novo-apos-recarga' });
+
+  // Sem limpar, o fato velho continua e o novo entra: dois fatos, uma OS.
+  const semLimpar = colher(fed, { codigos: ['MP'], ator: ATOR });
+  igual(semLimpar.novos, 1, 'o id novo entra como fato inedito');
+  postar(fed, { ator: ATOR });
+  const dobrado = balancete(sql).receita;
+  igual(dobrado - antes, os.valor_centavos,
+    'a MESMA ordem de servico foi contabilizada duas vezes');
+
+  // Agora o caminho certo: limpar o movimento e ressincronizar.
+  const limpo = limparMovimento(sql);
+  verdadeiro(limpo.lancamentos > 0, 'tinha movimento para limpar');
+  igual(sql.prepare('select count(*) as n from erp_fatos').get().n, 0);
+  igual(sql.prepare('select count(*) as n from erp_titulos').get().n, 0);
+  igual(sql.prepare('select count(*) as n from erp_lancamentos').get().n, 0);
+
+  // E as definicoes ficam: apagar plano de contas junto seria jogar fora o que
+  // nao veio das instancias.
+  verdadeiro(limpo.preservado.contas > 30, 'o plano de contas tem de sobreviver');
+  verdadeiro(limpo.preservado.permissoes > 0, 'e as concessoes de acesso tambem');
+
+  const depois = sincronizar(fed, { ator: ATOR });
+  igual(depois.completo, true);
+  igual(balancete(sql).confere, true, 'e o livro fecha depois da recarga');
+  igual(conferir(sql).saudavel, true);
+
+  // Uma OS, um lancamento — e nao dois.
+  const daOs = sql.prepare(
+    "select count(*) as n from erp_fatos where ref = ?").get('os-id-novo-apos-recarga').n;
+  igual(daOs, 1, 'a ordem de servico recriada aparece UMA vez');
 });
 
 fed.fecharTudo();
