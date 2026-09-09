@@ -2433,10 +2433,30 @@ teste('nenhuma rota do ERP fica aberta ao balcao', () => {
     igual(negarPorPapel(r, 'soberano'), null, `soberano pode chamar ${r}`);
   }
 
-  // E escrever no razao e do soberano: gestor le, nao lanca.
+  /*
+   * A linha entre gestor e soberano no ERP, e o motivo dela.
+   *
+   * OPERAR O LIVRO e de gestor: lancar, estornar, fechar periodo, ratear e
+   * sincronizar sao o trabalho de quem responde pela contabilidade. O eixo do
+   * modulo ainda refina por pessoa — um gestor sem `razao` concedido nao lanca
+   * nada, mesmo passando por aqui.
+   *
+   * CONCEDER ACESSO fica em soberano, e essa e a linha que importa. Quem pode
+   * conceder pode promover qualquer pessoa a qualquer coisa, inclusive a si
+   * mesmo — e o nivel soberano deixaria de existir na pratica, sem que ninguem
+   * o tenha removido. Operar a contabilidade e um trabalho; distribuir poder e
+   * outro.
+   */
   for (const r of ['POST /api/erp/lancamentos', 'POST /api/erp/rateio',
-    'POST /api/erp/periodos/:competencia/fechar']) {
-    verdadeiro(negarPorPapel(r, 'gestor'), `gestor NAO escreve no razao (${r})`);
+    'POST /api/erp/periodos/:competencia/fechar', 'POST /api/erp/sincronizar',
+    'POST /api/erp/lancamentos/:id/estornar', 'POST /api/erp/titulos/:id/cancelar']) {
+    igual(negarPorPapel(r, 'gestor'), null, `gestor OPERA o livro (${r})`);
+  }
+
+  for (const r of ['GET /api/erp/acesso/todos', 'PUT /api/erp/acesso/:email/:modulo',
+    'DELETE /api/erp/acesso/:email/:modulo']) {
+    verdadeiro(negarPorPapel(r, 'gestor'),
+      `gestor NAO distribui poder (${r}) — senao o nivel soberano deixa de existir`);
   }
 });
 

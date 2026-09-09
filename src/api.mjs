@@ -420,8 +420,22 @@ const PAPEL_MINIMO = {
    * antes de qualquer trabalho de banco — e `contextoErp` barra pelo MODULO,
    * dentro da rota. A primeira e grossa e barata; a segunda e fina e cara.
    *
-   * Escrever e administrar sao de soberano: um gestor le o razao do grupo, e
-   * nao lanca nele. O eixo do modulo refina isso por pessoa.
+   * ═══ Onde a linha foi tracada, e por que ai ═══
+   *
+   * OPERAR O LIVRO e de gestor. Lancar, estornar, fechar periodo, ratear,
+   * sincronizar: e o trabalho de quem responde pela contabilidade, e nao ha
+   * razao para que so o dono do sistema possa faze-lo. O eixo do modulo
+   * continua refinando por pessoa — um gestor sem `razao` concedido nao lanca
+   * nada, mesmo passando por aqui.
+   *
+   * CONCEDER ACESSO continua em soberano, e essa e a linha que importa. Quem
+   * pode conceder pode promover qualquer pessoa a qualquer coisa, inclusive a
+   * si mesmo — e o nivel soberano deixaria de existir na pratica, sem que
+   * ninguem o tenha removido. Operar a contabilidade e um trabalho; distribuir
+   * poder e outro.
+   *
+   * A distincao vale para TODO gestor, presente e futuro: esta tabela e por
+   * rota, e nao por pessoa.
    */
   'GET /api/erp/acesso': 'gestor',
   'GET /api/erp/acesso/todos': 'soberano',
@@ -429,29 +443,29 @@ const PAPEL_MINIMO = {
   'DELETE /api/erp/acesso/:email/:modulo': 'soberano',
 
   'GET /api/erp/contas': 'gestor',
-  'POST /api/erp/contas/semear': 'soberano',
+  'POST /api/erp/contas/semear': 'gestor',
 
   'GET /api/erp/lancamentos': 'gestor',
   'GET /api/erp/lancamentos/:id': 'gestor',
-  'POST /api/erp/lancamentos': 'soberano',
-  'POST /api/erp/lancamentos/:id/estornar': 'soberano',
+  'POST /api/erp/lancamentos': 'gestor',
+  'POST /api/erp/lancamentos/:id/estornar': 'gestor',
 
   'GET /api/erp/balancete': 'gestor',
   'GET /api/erp/conferir': 'gestor',
   'GET /api/erp/periodos': 'gestor',
-  'POST /api/erp/periodos/:competencia/fechar': 'soberano',
-  'POST /api/erp/periodos/:competencia/reabrir': 'soberano',
+  'POST /api/erp/periodos/:competencia/fechar': 'gestor',
+  'POST /api/erp/periodos/:competencia/reabrir': 'gestor',
 
   'GET /api/erp/titulos': 'gestor',
   'POST /api/erp/titulos': 'gestor',
   'POST /api/erp/titulos/:id/baixar': 'gestor',
-  'POST /api/erp/titulos/:id/cancelar': 'soberano',
+  'POST /api/erp/titulos/:id/cancelar': 'gestor',
   'GET /api/erp/posicao': 'gestor',
-  'POST /api/erp/rateio': 'soberano',
+  'POST /api/erp/rateio': 'gestor',
 
-  'POST /api/erp/sincronizar': 'soberano',
+  'POST /api/erp/sincronizar': 'gestor',
   'GET /api/erp/fatos': 'gestor',
-  'POST /api/erp/fatos/:id/reconhecer': 'soberano',
+  'POST /api/erp/fatos/:id/reconhecer': 'gestor',
   'GET /api/erp/painel': 'gestor',
 
   'GET /api/erp/parceiros': 'gestor',

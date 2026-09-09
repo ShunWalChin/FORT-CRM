@@ -271,8 +271,17 @@ de arquitetura e as seis invariantes.
 
 **Duas camadas de permissão, e as duas são checadas.** A tabela de papéis barra
 no despachante, antes de qualquer trabalho de banco; a concessão por módulo
-barra dentro da rota. Escrever no razão é do soberano — um gestor lê e não
-lança.
+barra dentro da rota.
+
+**Onde a linha entre gestor e soberano foi traçada.** *Operar o livro* é de
+gestor: lançar, estornar, fechar período, ratear e sincronizar são o trabalho de
+quem responde pela contabilidade. *Conceder acesso* fica em soberano — quem pode
+conceder pode promover qualquer pessoa a qualquer coisa, inclusive a si mesmo, e
+o nível soberano deixaria de existir na prática sem que ninguém o removesse.
+Operar a contabilidade é um trabalho; distribuir poder é outro.
+
+O eixo do módulo continua refinando por pessoa: um gestor sem `razao` concedido
+não lança nada, mesmo passando pela tabela de papéis.
 
 ### Acesso por módulo
 
