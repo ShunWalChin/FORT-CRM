@@ -547,6 +547,34 @@
   --surface-hover: color-mix(in oklab, var(--surface) 92%, var(--txt) 8%);
 
   /*
+   * ESTADO DE INTERAÇÃO. A quarta ideia que veio do HeroUI, junto com o par de
+   * fundo/texto, o hover derivado e a mistura em oklab.
+   *
+   * Lá isso vive como `--focus`, `--disabled-opacity` e `--cursor-disabled`,
+   * aplicados por utilitários nomeados (`status-disabled`, `focus-ring`) em
+   * todo componente. O valor não está na nomenclatura: está em existir UM
+   * lugar que define o que "desabilitado" e "focado" parecem. Espalhado, cada
+   * tela responde diferente — e foi exatamente o que aconteceu com o anel de
+   * foco, que seis regras locais apagavam sem ninguém notar.
+   */
+  --foco: var(--acento);
+  --anel: 2px;
+  --anel-folga: 2px;
+
+  /*
+   * .55 e não .5: sobre as chapas claras (`papel`, `oficina`, `cerrado`) meio
+   * de opacidade leva o texto de corpo a ~2,6:1, abaixo do piso de 3:1 que um
+   * controle desabilitado ainda precisa ter para ser LIDO — desabilitado não é
+   * invisível, a pessoa precisa saber o que está indisponível.
+   */
+  --opacidade-desabilitado: .55;
+  --cursor-desabilitado: not-allowed;
+
+  /* Campo inválido. Vermelho de crítico: o sistema já usa esse vermelho para
+     dizer "isto está errado", e inventar um segundo diluiria os dois. */
+  --invalido: var(--crit);
+
+  /*
    * Cores de domínio da vistoria.
    *
    * Os cinco tipos de avaria viviam como hexadecimal repetido em três lugares
@@ -620,7 +648,7 @@ h1, h2, h3, .marca, .kpi .v, th, .btn, nav.menu a, .rot, .kicker {
   border: 1px solid var(--line-strong); padding: 0; position: relative;
   display: grid; place-items: center;
 }
-.tema-btn:hover { border-color: var(--acento); }
+@media (hover: hover) { .tema-btn:hover { border-color: var(--acento); } }
 .tema-btn[aria-pressed="true"] {
   border-color: var(--acento); box-shadow: 0 0 0 1px var(--acento);
 }

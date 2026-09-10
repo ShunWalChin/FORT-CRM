@@ -3,6 +3,104 @@
 > Cinco temas, versão mobile e as decisões de usabilidade — todas medidas.
 
 
+## Segunda passada do HeroUI: a camada de estado
+
+A primeira passada trouxe os tokens de cor. Esta traz o que o HeroUI faz com
+eles: **estado de interação**. Tudo abaixo foi encontrado medindo, não lendo.
+
+### O anel de foco não existia
+
+A regra global era `:where(a, button, input, …):focus-visible`. `:where()` zera
+a especificidade dos próprios argumentos, então a regra valia **(0,1,0)** — só o
+peso do `:focus-visible`. E seis campos declaravam `outline: none` em regras
+como `.campo input`, que valem **(0,1,1)**.
+
+(0,1,1) vence (0,1,0) em qualquer ordem de arquivo. Medido com Tab de verdade
+no navegador:
+
+| | anel antes | anel depois |
+|---|---|---|
+| `.campo input` (campo padrão) | nenhum | 2 px, folga 0 |
+| `.campo select` · `.campo textarea` | nenhum | 2 px, folga 0 |
+| `.barra-busca input` · `.acao-busca input` | nenhum | 2 px, folga 0 |
+| `textarea.mensagem.editavel` · `.mover-etapa` | nenhum | 2 px, folga 0 |
+| `.paleta-campo input` | nenhum | 2 px, folga 0 |
+| botão e link | 2 px ✓ | 2 px, folga 2 |
+
+**8 de 8 campos sem anel.** Botão e link tinham, porque nada os sobrescrevia. E
+o comentário que estava no código dizia que a regra existia justamente para
+consertar isso — ela foi escrita com `:where()` e perdeu para as próprias
+regras que vinha corrigir.
+
+Isso não era acabamento. `confirmarAgora()` sinalizava campo obrigatório vazio
+com `el.focus()` e mais nada: num diálogo de sete campos, a pessoa lia "Placa é
+obrigatório" e o foco ia para um campo que não mudava de aparência.
+
+A correção são **duas regras em vez de uma**, e a dupla é o ponto: `:focus`
+zera o anel do navegador (foco de mouse não desenha), `:focus-visible` desenha
+o nosso (foco de teclado sempre marca). Ambas em (0,1,1), a segunda depois. Os
+seis `outline: none` espalhados saíram — eram a armadilha.
+
+A distinção `focus-ring` / `focus-field-ring` do HeroUI veio junto: **campo
+encosta o anel na borda** (folga 0), **botão dá folga** (2 px). Com folga no
+campo aparecem duas linhas concêntricas onde a intenção é uma marca só.
+
+### Hover que grudava no toque
+
+22 regras `:hover`, **nenhuma** atrás de `@media (hover: hover)`. Medido no
+emulador: `hover: hover` é falso, `pointer: coarse` é verdadeiro, 5 pontos de
+toque — as 22 valiam no celular. Num aparelho de toque o navegador aplica
+`:hover` no elemento tocado e o mantém até se tocar noutro lugar: a última
+ficha de vistoria tocada fica destacada como se o cursor estivesse nela.
+
+Agora 22 de 22 estão na guarda, verificado contra a cascata viva (`CSSMediaRule`
+no `document.styleSheets`), e não por busca de texto. A regra que misturava
+`:hover` com `:focus` foi partida — embrulhar as duas juntas tiraria o sinal de
+foco do aparelho onde o teclado virtual mais precisa dele.
+
+### Desabilitado tinha três aparências
+
+`.45` no botão, `.38` no checkbox, `.55` na ficha de estado da vistoria. E dois
+cursores opostos para a mesma ideia: `not-allowed` no botão, `default` na
+ficha. Agora `--opacidade-desabilitado` e `--cursor-desabilitado`.
+
+**O `[aria-disabled]` do HeroUI não veio.** Lá ele existe porque o React Aria
+mantém o botão focável e desabilita por atributo ARIA. Os dezesseis pontos onde
+este sistema desabilita algo usam `disabled` nativo, em `button` ou `input`.
+Estilizar `[aria-disabled]` seria pintar um estado que nada aqui produz.
+
+### Campo inválido não existia
+
+Zero `aria-invalid` no CSS e no JS. Quatro pontos de recusa repetiam
+`erro(msg); el.focus(); return;`. Viraram um `recusar(el, msg)` que faz as três
+coisas juntas — dizer, **marcar** e focar. A marca sai quando a pessoa mexe no
+campo (vermelho que fica depois de corrigido ensina a ignorar vermelho) e a
+segunda tentativa começa limpa.
+
+A marca é a **borda**, e não um contorno extra como o `invalid-field-ring` do
+HeroUI: os campos daqui já têm borda visível, e somar 1 px por fora dá duas
+linhas onde a intenção é uma.
+
+### Alvo de toque
+
+258 elementos tocáveis medidos nas treze telas. Doze telas com **zero** abaixo
+de 44 px; o índice do manual com 25 itens a 33 px.
+
+Sendo exato: 33 px **passa** o piso AA da WCAG 2.5.8, que é 24. É o piso AAA
+(44) que falha — e é o piso que as outras doze cumprem. Igualado, ao custo de
+~275 px de rolagem num índice de consulta. Agora **0 de 258**.
+
+### Medido nos quatorze temas
+
+| | pior dos 14 | piso |
+|---|---|---|
+| anel de foco vs. campo | **4,48** | 3,0 |
+| anel de foco vs. chapa | **4,48** | 3,0 |
+| borda de inválido vs. campo | **3,38** | 3,0 |
+
+O anel usa `--foco`, que é `--acento`, que é a cor da empresa. Quem navega por
+teclado vê a mesma cor que diz em qual empresa está.
+
 ## Os nove temas de dupla
 
 Nove combinações de duas cores, trazidas como referência visual. Cada uma virou

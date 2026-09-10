@@ -131,8 +131,11 @@ input[type="checkbox"]:checked::before {
   border-color: var(--acento);
 }
 input[type="checkbox"]:checked::after { opacity: 1; }
-input[type="checkbox"]:disabled { cursor: not-allowed; }
-input[type="checkbox"]:disabled::before { opacity: .38; background: var(--surface-3); }
+input[type="checkbox"]:disabled { cursor: var(--cursor-desabilitado); }
+input[type="checkbox"]:disabled::before {
+  opacity: var(--opacidade-desabilitado);
+  background: var(--surface-3);
+}
 input[type="checkbox"]:focus-visible::before { outline: 2px solid var(--acento); outline-offset: 2px; }
 a { color: var(--acento); }
 
@@ -158,7 +161,7 @@ a { color: var(--acento); }
 }
 .campo input, .campo select, .campo textarea {
   width: 100%; background: var(--ground); border: 1px solid var(--line-strong);
-  border-radius: var(--radius); padding: 10px 12px; color: var(--txt-hi); outline: none;
+  border-radius: var(--radius); padding: 10px 12px; color: var(--txt-hi);
 }
 .campo input:focus, .campo select:focus, .campo textarea:focus { border-color: var(--acento); }
 .atalhos { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 14px; }
@@ -168,7 +171,7 @@ a { color: var(--acento); }
   border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 12px;
   margin-bottom: 6px; cursor: pointer; font-size: 13px; color: var(--dim);
 }
-.atalho:hover { border-color: var(--acento); color: var(--txt-hi); }
+@media (hover: hover) { .atalho:hover { border-color: var(--acento); color: var(--txt-hi); } }
 .atalho b { color: var(--txt); font-weight: 600; }
 
 /* ── Botões ───────────────────────────────────────────────────────────────── */
@@ -205,24 +208,45 @@ a { color: var(--acento); }
  *
  * O `filter` fica para a variante de perigo e para as que nao tem par proprio.
  */
-.btn:hover:not(:disabled) { background: var(--acento-hover); }
-.btn.perigo:hover:not(:disabled) { background: var(--crit-hover); }
+@media (hover: hover) { .btn:hover:not(:disabled) { background: var(--acento-hover); } }
+@media (hover: hover) { .btn.perigo:hover:not(:disabled) { background: var(--crit-hover); } }
 .btn:active:not(:disabled) { transform: translateY(1px); }
-.btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+/*
+ * DESABILITADO, num lugar só.
+ *
+ * Havia três respostas para "como é um controle indisponível": `.45` aqui,
+ * `.38` no checkbox e `.55` na ficha de estado da vistoria — e dois cursores
+ * opostos, `not-allowed` aqui e `default` lá. Mesma ideia, três aparências.
+ *
+ * O HeroUI resolve com `--disabled-opacity` e `--cursor-disabled` aplicados
+ * por um utilitário nomeado em todo componente. Aqui os tokens fazem o mesmo
+ * trabalho sem precisar do utilitário.
+ *
+ * O `[aria-disabled]` que o HeroUI carrega junto NÃO veio: lá ele existe
+ * porque o React Aria mantém o botão focável e desabilita por atributo ARIA.
+ * Os dezesseis pontos onde este sistema desabilita algo usam `disabled`
+ * nativo, em `button` ou `input`. Estilizar `[aria-disabled]` seria pintar um
+ * estado que nada aqui produz.
+ */
+.btn:disabled {
+  opacity: var(--opacidade-desabilitado);
+  cursor: var(--cursor-desabilitado);
+  filter: none;
+}
 
 .btn.quiet {
   background: var(--surface-2); color: var(--txt); border-color: var(--line-strong);
 }
-.btn.quiet:hover:not(:disabled) { border-color: var(--acento); color: var(--txt-hi); filter: none; }
+@media (hover: hover) { .btn.quiet:hover:not(:disabled) { border-color: var(--acento); color: var(--txt-hi); filter: none; } }
 
 .btn.ghost { background: transparent; color: var(--acento); border-color: var(--acento-borda); }
-.btn.ghost:hover:not(:disabled) { background: var(--acento-dim); border-color: var(--acento); filter: none; }
+@media (hover: hover) { .btn.ghost:hover:not(:disabled) { background: var(--acento-dim); border-color: var(--acento); filter: none; } }
 
 /* Texto puro, para ações terciárias que não devem competir por atenção. */
 .btn.sutil {
   background: transparent; color: var(--dim); border-color: transparent; padding: 0 9px;
 }
-.btn.sutil:hover:not(:disabled) { color: var(--txt-hi); background: var(--surface-2); filter: none; }
+@media (hover: hover) { .btn.sutil:hover:not(:disabled) { color: var(--txt-hi); background: var(--surface-2); filter: none; } }
 
 .btn.perigo { background: var(--crit); color: var(--sobre-crit); }
 
@@ -239,15 +263,75 @@ a { color: var(--acento); }
 .barra-acoes .cresce { flex: 1 1 auto; }
 
 /*
- * Foco visível em TUDO que recebe teclado. O CSS anterior fazia
- * `outline: none` nos campos e sinalizava foco só mudando a cor da borda —
- * em `papel` e `oficina` essa mudança é quase imperceptível, e quem navega por
- * Tab ficava sem saber onde estava. Anel próprio, com cor do acento.
+ * O ANEL DE FOCO — e por que a versão anterior não desenhava nada.
+ *
+ * A regra antiga era `:where(a, button, input, …):focus-visible`. `:where()`
+ * ZERA a especificidade dos próprios argumentos, então a regra inteira valia
+ * (0,1,0) — só o peso do `:focus-visible`. E seis campos declaravam
+ * `outline: none` em regras como `.campo input`, que valem (0,1,1).
+ *
+ * (0,1,1) vence (0,1,0) em qualquer ordem de arquivo. Medido com Tab de
+ * verdade, os OITO seletores de campo do sistema não desenhavam anel nenhum —
+ * inclusive `.campo input`, que é o campo de formulário padrão. Botão e link
+ * desenhavam, porque nada os sobrescrevia. E o comentário que estava aqui
+ * dizia que a regra existia justamente para consertar isso.
+ *
+ * Isso não é acabamento. `confirmarAgora()` sinaliza campo obrigatório vazio
+ * com `el.focus()` — sem anel, a pessoa lê "Placa é obrigatório" e o foco vai
+ * para um campo que não muda de aparência. Num diálogo de seis campos, ela
+ * tem de adivinhar qual.
+ *
+ * Agora são duas regras, e a dupla é o ponto:
+ *
+ *   1. `:focus` zera o anel do NAVEGADOR — foco de mouse não desenha nada,
+ *      que é o efeito que os seis `outline: none` buscavam, num lugar só.
+ *   2. `:focus-visible` desenha o NOSSO — foco de teclado sempre marca.
+ *
+ * As duas em (0,1,1), a segunda depois: quando ambas casam, a segunda vence.
+ * Não depende de o navegador limitar o anel padrão ao `:focus-visible`, e
+ * nenhuma outra folha mexe em `outline`.
+ *
+ * `border-radius` saiu: `outline` já acompanha o raio do elemento sozinho, e
+ * declará-lo aqui mudava a FORMA do elemento ao receber foco.
  */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--acento);
-  outline-offset: 2px;
-  border-radius: var(--radius);
+:is(a, button, input, select, textarea, [tabindex], [role="button"]):focus {
+  outline: none;
+}
+
+:is(a, button, input, select, textarea, [tabindex], [role="button"]):focus-visible {
+  outline: var(--anel) solid var(--foco);
+  outline-offset: var(--anel-folga);
+}
+
+/*
+ * O campo encosta o anel na borda. Com folga, aparecem duas linhas
+ * concêntricas — a borda do campo e o anel — em vez de uma marca só. É a
+ * mesma distinção que o HeroUI faz entre `focus-ring` e `focus-field-ring`.
+ */
+:is(input, select, textarea):focus-visible {
+  --anel-folga: 0px;
+  border-color: var(--foco);
+}
+
+/*
+ * CAMPO INVÁLIDO.
+ *
+ * O HeroUI usa `invalid-field-ring`: contorno de 1px na cor de perigo quando
+ * sem foco, anel de 2px quando com foco. Aqui é a BORDA que muda, e não um
+ * contorno extra — os campos deste sistema já têm borda visível, e somar um
+ * contorno de 1px por fora dela dá duas linhas concêntricas onde a intenção é
+ * uma marca só. A ideia é a mesma: a marca sobrevive ao foco sair.
+ *
+ * Precisa vir DEPOIS do bloco de foco: `:is(input,…)[aria-invalid]` e
+ * `:is(input,…):focus-visible` empatam em (0,1,1), e no empate vence a última.
+ */
+:is(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--invalido);
+}
+
+:is(input, select, textarea)[aria-invalid="true"]:focus-visible {
+  outline-color: var(--invalido);
+  border-color: var(--invalido);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -281,7 +365,7 @@ a { color: var(--acento); }
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 8px 10px; margin-bottom: 5px; cursor: pointer;
 }
-.empresa-btn:hover { border-color: var(--line-strong); }
+@media (hover: hover) { .empresa-btn:hover { border-color: var(--line-strong); } }
 .empresa-btn.on { border-color: var(--acento); background: var(--acento-dim); }
 .empresa-cod {
   width: 26px; height: 26px; flex: 0 0 26px; border-radius: var(--radius);
@@ -298,8 +382,8 @@ nav.menu a {
   border: 1px solid transparent; position: relative;
 }
 nav.menu a svg { width: 15px; height: 15px; opacity: .75; }
-nav.menu a:hover { background: var(--surface-2); color: var(--txt); }
-nav.menu a:hover svg { opacity: 1; }
+@media (hover: hover) { nav.menu a:hover { background: var(--surface-2); color: var(--txt); } }
+@media (hover: hover) { nav.menu a:hover svg { opacity: 1; } }
 /* Ativo: barra à esquerda em vez de moldura. A moldura competia com o card
    selecionado da régua e as duas juntas deixavam a tela ruidosa. */
 nav.menu a.on {
@@ -325,7 +409,7 @@ nav.menu .grupo::after { content: ''; flex: 1; height: 1px; background: var(--li
   border-radius: var(--radius); padding: 7px 10px; color: var(--dim);
   font-size: 12.5px; text-align: left;
 }
-.busca-porta:hover { border-color: var(--acento); color: var(--dim); }
+@media (hover: hover) { .busca-porta:hover { border-color: var(--acento); color: var(--dim); } }
 .busca-porta svg { width: 15px; height: 15px; flex: 0 0 auto; }
 .busca-porta span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .busca-porta kbd, .paleta kbd {
@@ -394,7 +478,7 @@ th {
 td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
 tr:last-child td { border-bottom: none; }
 tr.clicavel { cursor: pointer; }
-tr.clicavel:hover td { background: var(--surface-2); }
+@media (hover: hover) { tr.clicavel:hover td { background: var(--surface-2); } }
 td.num, th.num { text-align: right; font-family: var(--mono); white-space: nowrap; }
 .forte { color: var(--txt-hi); font-weight: 600; }
 .fraco { color: var(--faint); font-size: 12px; }
@@ -455,7 +539,7 @@ td.num, th.num { text-align: right; font-family: var(--mono); white-space: nowra
   padding: 11px 12px; margin-bottom: 8px; cursor: grab;
 }
 .card-op:active { cursor: grabbing; }
-.card-op:hover { border-color: var(--acento); }
+@media (hover: hover) { .card-op:hover { border-color: var(--acento); } }
 .card-op .t { font-size: 13px; color: var(--txt-hi); line-height: 1.35; }
 .card-op .c { font-size: 11.5px; color: var(--faint); margin-top: 4px; }
 .card-op .v { font: 700 13px var(--mono); color: var(--acento); margin-top: 7px; }
@@ -479,7 +563,7 @@ html.travado body { position: fixed; left: 0; right: 0; width: 100%; }
 .gaveta-topo { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 6px; }
 .gaveta h2 { font-size: 21px; color: var(--txt-hi); letter-spacing: -.4px; }
 .fechar { background: none; border: 1px solid var(--line-strong); border-radius: var(--radius); color: var(--dim); cursor: pointer; padding: 5px 11px; }
-.fechar:hover { border-color: var(--crit); color: var(--crit); }
+@media (hover: hover) { .fechar:hover { border-color: var(--crit); color: var(--crit); } }
 .par { display: flex; justify-content: space-between; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
 .par dt { color: var(--faint); }
 .par dd { color: var(--txt); text-align: right; }
@@ -518,7 +602,7 @@ html.travado body { position: fixed; left: 0; right: 0; width: 100%; }
 .barra-busca { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .barra-busca input, .barra-busca select {
   background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius);
-  padding: 9px 12px; color: var(--txt-hi); outline: none; min-width: 200px;
+  padding: 9px 12px; color: var(--txt-hi); min-width: 200px;
 }
 .barra-busca input:focus, .barra-busca select:focus { border-color: var(--acento); }
 
@@ -549,7 +633,7 @@ html.travado body { position: fixed; left: 0; right: 0; width: 100%; }
     border-radius: var(--radius); color: var(--txt); cursor: pointer;
     padding: 8px 12px; font-size: 13px; font-weight: 600;
   }
-  .abrir-menu:hover { border-color: var(--acento); }
+  @media (hover: hover) { .abrir-menu:hover { border-color: var(--acento); } }
 
   /* Recolhido por padrão: o conteúdo começa logo abaixo da barra. */
   .lado .troca, .lado nav.menu, .lado .lado-rodape { display: none; }
@@ -576,13 +660,29 @@ html.travado body { position: fixed; left: 0; right: 0; width: 100%; }
 .manual-indice .rot {
   font: 10px var(--mono); letter-spacing: 1.2px; color: var(--faint); padding: 0 8px 8px;
 }
+/*
+ * 44 px de altura, e o porquê de ser aqui e não em toda parte.
+ *
+ * Medidos os 258 elementos tocáveis das treze telas: doze telas com ZERO
+ * abaixo de 44 px, e o índice do manual com 25 itens a 33 px. Não é defeito —
+ * 33 passa o piso AA da WCAG 2.5.8, que é 24 px. É o piso AAA (44) que falha,
+ * e é o piso que as outras doze cumprem.
+ *
+ * O custo é honesto: 25 itens × 11 px a mais = ~275 px de rolagem, num índice
+ * que já tem 882 px numa tela de 812. Pago porque o balcão da oficina é onde
+ * este sistema roda, e lá se toca a tela com a mão suja ou de luva.
+ *
+ * `display: flex` no lugar de `block`: `min-height` sozinho cresce a caixa mas
+ * deixa o texto colado no topo.
+ */
 .manual-indice a {
-  display: block; padding: 6px 9px; border-radius: var(--radius); color: var(--dim);
+  display: flex; align-items: center; min-height: 44px;
+  padding: 6px 9px; border-radius: var(--radius); color: var(--dim);
   text-decoration: none; font-size: 13px; border: 1px solid transparent;
 }
-.manual-indice a:hover { background: var(--surface-2); color: var(--txt-hi); }
+@media (hover: hover) { .manual-indice a:hover { background: var(--surface-2); color: var(--txt-hi); } }
 .manual-indice a.sub { padding-left: 20px; font-size: 12.5px; color: var(--faint); }
-.manual-indice a.sub:hover { color: var(--txt); }
+@media (hover: hover) { .manual-indice a.sub:hover { color: var(--txt); } }
 
 .manual-corpo { max-width: 780px; }
 .manual-corpo section { scroll-margin-top: 20px; }
@@ -641,9 +741,9 @@ textarea.mensagem.editavel {
   font: inherit; font-size: 13px; line-height: 1.55;
   border: 1px solid var(--line); border-left: 3px solid var(--acento);
   border-radius: 0 var(--radius) var(--radius) 0;
-  background: var(--ground); color: var(--txt); padding: 11px 14px; outline: none;
+  background: var(--ground); color: var(--txt); padding: 11px 14px;
 }
-textarea.mensagem.editavel:hover { border-color: var(--line-strong); border-left-color: var(--acento); }
+@media (hover: hover) { textarea.mensagem.editavel:hover { border-color: var(--line-strong); border-left-color: var(--acento); } }
 textarea.mensagem.editavel:focus { border-color: var(--acento); }
 .item.bloqueado textarea.mensagem.editavel { border-left-color: var(--crit); }
 
@@ -657,9 +757,12 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
 .mover-etapa {
   width: 100%; margin-top: 9px; background: var(--ground);
   border: 1px solid var(--line); border-radius: var(--radius);
-  color: var(--dim); font-size: 12px; padding: 5px 7px; cursor: pointer; outline: none;
+  color: var(--dim); font-size: 12px; padding: 5px 7px; cursor: pointer;
 }
-.mover-etapa:hover, .mover-etapa:focus { border-color: var(--acento); color: var(--txt-hi); }
+/* Partida em duas: embrulhar as duas juntas tiraria o sinal de FOCO do
+   aparelho de toque, que e onde o teclado virtual mais precisa dele. */
+.mover-etapa:focus { border-color: var(--acento); color: var(--txt-hi); }
+@media (hover: hover) { .mover-etapa:hover { border-color: var(--acento); color: var(--txt-hi); } }
 
 /* ── Campos personalizados na ficha ───────────────────────────────────────── */
 /* O formulário da ficha é desenhado a partir do registro de propriedades, e
@@ -711,7 +814,7 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
   text-decoration: none; color: inherit;
   transition: border-color .12s, background .12s, transform .12s;
 }
-.acao:hover { border-color: var(--acento); background: var(--surface-2); }
+@media (hover: hover) { .acao:hover { border-color: var(--acento); background: var(--surface-2); } }
 .acao:active { transform: translateY(1px); }
 .acao .ic {
   width: 44px; height: 44px; border-radius: var(--radius);
@@ -752,7 +855,7 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
 .acao-busca input {
   flex: 1; min-width: 0; background: var(--ground); border: 1px solid var(--line-strong);
   border-radius: var(--radius); padding: 8px 11px; color: var(--txt-hi);
-  font-size: 13px; outline: none;
+  font-size: 13px;
 }
 .acao-busca input:focus { border-color: var(--acento); }
 
@@ -861,7 +964,7 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
 }
 .paleta-campo svg { width: 17px; height: 17px; color: var(--faint); flex: 0 0 auto; }
 .paleta-campo input {
-  flex: 1; background: none; border: 0; outline: none;
+  flex: 1; background: none; border: 0;
   color: var(--txt-hi); font-size: 16px;
 }
 .paleta-campo input::placeholder { color: var(--faint); }

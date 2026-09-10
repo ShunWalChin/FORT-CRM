@@ -95,7 +95,12 @@
 .vt-estado.warn.on { background: var(--warn); border-color: var(--warn); color: var(--sobre-warn); }
 .vt-estado.crit.on { background: var(--crit); border-color: var(--crit); color: var(--sobre-crit); }
 .vt-estado.na.on { background: var(--surface-3); border-color: var(--line-strong); color: var(--txt-hi); }
-.vt-estado:disabled { opacity: .55; cursor: default; }
+/* `cursor: default` dizia o oposto do `not-allowed` que o resto do sistema
+   usa para a mesma coisa. Vistoria em só-leitura é indisponível igual. */
+.vt-estado:disabled {
+  opacity: var(--opacidade-desabilitado);
+  cursor: var(--cursor-desabilitado);
+}
 
 .vt-medida { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .vt-medida span {
@@ -430,7 +435,7 @@
   flex: 0 0 auto; width: 32px; height: 32px; margin: -5px -5px 0 0;
   background: none; border: 0; color: var(--faint); font-size: 20px; cursor: pointer;
 }
-.sv-x:hover { color: var(--crit); }
+@media (hover: hover) { .sv-x:hover { color: var(--crit); } }
 .sv-estados { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .sv-numeros { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .sv-numeros label, .sv-campos label { display: block; }
@@ -485,7 +490,7 @@
   background: none; border: 1px dashed var(--line-strong); border-radius: 20px;
   color: var(--dim); font: 500 12.5px var(--sans); cursor: pointer;
 }
-.vt-ficha:hover { border-color: var(--acento); color: var(--txt-hi); }
+@media (hover: hover) { .vt-ficha:hover { border-color: var(--acento); color: var(--txt-hi); } }
 .vt-ficha:active { background: var(--surface-2); }
 
 /* Observação de vistoria fechada: texto, e não campo desabilitado. */

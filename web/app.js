@@ -1139,7 +1139,38 @@ function perguntar({
       el.hidden = false;
     };
 
+    /*
+     * RECUSAR é uma coisa só, e são sempre as três juntas: dizer o que houve,
+     * MARCAR o campo, e levar o foco até ele.
+     *
+     * Antes eram as duas primeiras linhas repetidas em quatro pontos, sem a
+     * marca. E isso não é detalhe: num diálogo de seis campos, "Placa é
+     * obrigatório" não diz QUAL dos seis, e o foco sozinho só apontaria o
+     * campo se ele mudasse de aparência ao receber foco — e não mudava, porque
+     * seis regras de CSS apagavam o anel (ver o comentário do anel de foco em
+     * `styles.css`). A pessoa lia a mensagem e caçava o campo.
+     *
+     * `aria-invalid` resolve as duas pontas de uma vez: o CSS pinta a borda, e
+     * o leitor de tela anuncia o campo como inválido quando o foco chega nele.
+     */
+    const recusar = (el, msg) => {
+      erro(msg);
+      el.setAttribute('aria-invalid', 'true');
+      el.focus();
+    };
+
+    /*
+     * A marca sai quando a pessoa mexe no campo. Vermelho que continua depois
+     * de corrigido ensina a ignorar vermelho.
+     */
+    cx.addEventListener('input', (ev) => {
+      if (ev.target instanceof Element) ev.target.removeAttribute('aria-invalid');
+    });
+
     const confirmarAgora = () => {
+      // Segunda tentativa começa limpa: marca de uma rodada anterior que já
+      // foi corrigida noutro campo não pode continuar apontando para cá.
+      cx.querySelectorAll('[aria-invalid]').forEach((e) => e.removeAttribute('aria-invalid'));
       const vals = {};
       for (const c of campos) {
         if (c.tipo === 'opcoes') continue;
@@ -1147,7 +1178,7 @@ function perguntar({
         const v = String(el.value ?? '').trim();
         // Validar AQUI é metade do motivo de este diálogo existir: o `prompt`
         // devolvia qualquer coisa e o erro só aparecia no banco.
-        if (c.obrigatorio && !v) { erro(`${c.rotulo ?? 'Campo'} é obrigatório.`); el.focus(); return; }
+        if (c.obrigatorio && !v) { recusar(el, `${c.rotulo ?? 'Campo'} é obrigatório.`); return; }
         /*
          * `decimal` existe porque `type="number"` DESCARTA a vírgula.
          *
@@ -1165,9 +1196,9 @@ function perguntar({
           // de bancada) o ponto nao aparece e nao ha o que remover.
           const cru = c.tipo === 'decimal' ? v.replaceAll('.', '') : v;
           const n = Number(cru.replace(',', '.'));
-          if (!Number.isFinite(n)) { erro(`${c.rotulo} precisa ser um número.`); el.focus(); return; }
-          if (c.min !== undefined && n < c.min) { erro(`${c.rotulo}: mínimo ${c.min}.`); el.focus(); return; }
-          if (c.max !== undefined && n > c.max) { erro(`${c.rotulo}: máximo ${c.max}.`); el.focus(); return; }
+          if (!Number.isFinite(n)) { recusar(el, `${c.rotulo} precisa ser um número.`); return; }
+          if (c.min !== undefined && n < c.min) { recusar(el, `${c.rotulo}: mínimo ${c.min}.`); return; }
+          if (c.max !== undefined && n > c.max) { recusar(el, `${c.rotulo}: máximo ${c.max}.`); return; }
           vals[c.nome] = n; continue;
         }
         vals[c.nome] = v || null;
