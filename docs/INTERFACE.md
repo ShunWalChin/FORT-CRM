@@ -2,6 +2,80 @@
 
 > Cinco temas, versão mobile e as decisões de usabilidade — todas medidas.
 
+
+## O sistema de token, e o que veio do HeroUI
+
+O Soberano pediu a fatoração do front com uso integral do
+[HeroUI](https://github.com/heroui-inc/heroui). Clonei e medi: a versão 3.2.4
+exige `react`, `react-dom`, `react-aria`, `react-aria-components` e
+`tailwindcss` como *peer dependencies*, e os 10.088 linhas de CSS dos 84
+componentes trazem **1.382 diretivas `@apply`** — é fonte Tailwind, não CSS
+final. Não existe caminho "só o CSS".
+
+Adotá-lo integralmente custaria a propriedade que define este sistema: zero
+dependências, nenhum build, e um contêiner de produção que não carrega nem
+`package.json`. A decisão foi portar **o sistema de design**, não a biblioteca.
+
+Três ideias atravessaram. As três são de token, e nenhuma traz React junto.
+
+### 1. Todo fundo colorido anda com um par
+
+`--ok` vem com `--sobre-ok`. Quem pinta um fundo pega o par inteiro, e nunca
+escolhe a cor do texto separadamente.
+
+Era exatamente essa escolha solta que produzia, no código:
+
+```css
+.vt-estado.warn.on { background: var(--warn); color: #1a1200; }
+```
+
+O fundo seguia o tema e o texto não. Legível no escuro, ilegível nos três
+claros. Havia **52 cores literais fora do sistema de tema**; sobraram 22, e
+todas são os primitivos do bloco de reserva — o equivalente ao `--white` e
+`--black` do próprio HeroUI.
+
+### 2. Estado é derivado, não escolhido
+
+O hover do botão era `filter: brightness(var(--brilho-hover))`, com um número
+por tema. Falhava nos dois extremos: clarear 12% um botão quase branco não faz
+nada visível, e escurecer 8% um acento saturado lava a cor em vez de
+aprofundá-la.
+
+```css
+--acento-hover: color-mix(in oklab, var(--acento) 90%, var(--sobre-acento) 10%);
+```
+
+Puxa 10% na direção do **texto que vai por cima** — então escurece no tema
+escuro e clareia no claro, sem que ninguém escolha. Medido: no cockpit a
+luminosidade cai de 0,70 para 0,659; no Oficina sobe de 0,414 para 0,472.
+
+### 3. A mistura é em oklab
+
+Em sRGB, 15% de amarelo e 15% de azul têm pesos visuais diferentes. Em oklab,
+não — é o que faz uma família de tokens parecer uma família.
+
+### O que a medição pegou
+
+Ao dar token às cinco cores de avaria, clareei os tons nos temas escuros para
+saltarem do grafite e **mantive o texto branco**. Medido no navegador:
+branco sobre `#4a8fe7` dá **3,29:1**, e a letra do pino tem 9 px.
+
+Escurecer a cor resolveria o contraste e estragaria o propósito — o pino
+precisa ser claro para saltar do fundo. Quem cede é o texto. Depois da
+correção, o pior par dos cinco temas:
+
+| Tema | Pior contraste |
+|---|---|
+| Cockpit | 5,21:1 |
+| Meia-noite | 5,21:1 |
+| Oficina | 4,97:1 |
+| Cerrado | 4,97:1 |
+| Papel | 4,97:1 |
+
+Todos acima dos 4,5:1 que texto pequeno exige. Antes do par estar completo, o
+mesmo elemento marcava 3,29.
+
+
 ## Refino de usabilidade — o que mudou e por quê
 
 Cada item abaixo veio de usar o sistema como usuário, não de checklist.

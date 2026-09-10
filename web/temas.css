@@ -45,6 +45,8 @@
   --acento: var(--empresa-cor, #00b8c4);
   --sobre-acento: #04121a;
   --sobre-crit: #12000a;
+  --sobre-ok: #04140f;
+  --sobre-warn: #1a1200;
   --veu: rgba(3, 3, 10, .72);
   --sombra: 0 18px 44px rgba(0, 0, 0, .5);
   --brilho-hover: 1.12;
@@ -78,6 +80,8 @@
   --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 58%, #000);
   --sobre-acento: #ffffff;
   --sobre-crit: #ffffff;
+  --sobre-ok: #ffffff;
+  --sobre-warn: #ffffff;
   --veu: rgba(30, 28, 24, .55);
   --sombra: 0 14px 34px rgba(60, 55, 45, .18);
   --brilho-hover: .92;
@@ -110,6 +114,8 @@
   --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 50%, #2a1f10);
   --sobre-acento: #fdfaf2;
   --sobre-crit: #fdfaf2;
+  --sobre-ok: #ffffff;
+  --sobre-warn: #ffffff;
   --veu: rgba(45, 38, 24, .55);
   --sombra: 0 14px 34px rgba(90, 74, 44, .2);
   --brilho-hover: .92;
@@ -144,6 +150,8 @@
   --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 62%, #000);
   --sobre-acento: #ffffff;
   --sobre-crit: #ffffff;
+  --sobre-ok: #ffffff;
+  --sobre-warn: #ffffff;
   --veu: rgba(0, 0, 0, .5);
   --sombra: 0 10px 26px rgba(0, 0, 0, .16);
   --brilho-hover: .9;
@@ -177,6 +185,8 @@
   --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 55%, #f0a860);
   --sobre-acento: #1a1410;
   --sobre-crit: #1a0d08;
+  --sobre-ok: #0b1410;
+  --sobre-warn: #170f00;
   --veu: rgba(12, 9, 7, .74);
   --sombra: 0 18px 44px rgba(0, 0, 0, .55);
   --brilho-hover: 1.12;
@@ -188,19 +198,106 @@
 }
 
 /* ── Derivados ────────────────────────────────────────────────────────────── */
-/* Calculados a partir dos tokens acima para que um tema novo só precise
-   declarar as cores-base. `color-mix` no lugar de rgba fixo: o mesmo verde
-   sobre fundo claro e sobre fundo escuro precisa de opacidades diferentes
-   para ter o mesmo peso visual. */
+/*
+ * Um tema novo declara as cores-base e mais nada. Tudo abaixo é calculado.
+ *
+ * A disciplina veio do HeroUI, e é a parte dele que atravessa sem trazer React
+ * junto — três regras:
+ *
+ *   1. TODO FUNDO COLORIDO TEM UM PAR. `--ok` anda com `--sobre-ok`. Quem
+ *      pinta um fundo pega o par inteiro, e nunca escolhe a cor do texto
+ *      separadamente. Era exatamente essa escolha solta que produzia
+ *      `color: #1a1200` escrito à mão ao lado de `background: var(--warn)` —
+ *      legível no tema escuro e ilegível nos três claros.
+ *
+ *   2. ESTADO É DERIVADO. `hover` sai de `color-mix` sobre o próprio par, e
+ *      não de `filter: brightness()`. O filtro lava a cor em tema claro e não
+ *      faz efeito nenhum sobre superfície já branca; a mistura funciona nos
+ *      dois sentidos porque puxa na direção do texto, não do branco.
+ *
+ *   3. A MISTURA É EM OKLAB, e não em sRGB. Em sRGB, 15% de amarelo e 15% de
+ *      azul produzem pesos visuais diferentes — em oklab, não. É o que faz uma
+ *      família de tokens parecer uma família.
+ */
 :root {
-  --acento-dim: color-mix(in srgb, var(--acento) 14%, transparent);
-  --acento-borda: color-mix(in srgb, var(--acento) 42%, transparent);
-  --ok-dim: color-mix(in srgb, var(--ok) 13%, transparent);
-  --warn-dim: color-mix(in srgb, var(--warn) 13%, transparent);
-  --crit-dim: color-mix(in srgb, var(--crit) 13%, transparent);
-  --ok-borda: color-mix(in srgb, var(--ok) 34%, transparent);
-  --warn-borda: color-mix(in srgb, var(--warn) 36%, transparent);
-  --crit-borda: color-mix(in srgb, var(--crit) 36%, transparent);
+  /* Véu translúcido: fundo de tarja, de selo, de linha destacada. */
+  --acento-dim: color-mix(in oklab, var(--acento) 14%, transparent);
+  --ok-dim: color-mix(in oklab, var(--ok) 13%, transparent);
+  --warn-dim: color-mix(in oklab, var(--warn) 13%, transparent);
+  --crit-dim: color-mix(in oklab, var(--crit) 13%, transparent);
+
+  /* Borda: mais opaca que o véu, senão some sobre superfície clara. */
+  --acento-borda: color-mix(in oklab, var(--acento) 42%, transparent);
+  --ok-borda: color-mix(in oklab, var(--ok) 34%, transparent);
+  --warn-borda: color-mix(in oklab, var(--warn) 36%, transparent);
+  --crit-borda: color-mix(in oklab, var(--crit) 36%, transparent);
+
+  /*
+   * Hover derivado do PAR. Puxa 10% na direção do texto que vai por cima —
+   * escurece no tema claro e clareia no escuro, sem que ninguém escolha.
+   */
+  --acento-hover: color-mix(in oklab, var(--acento) 90%, var(--sobre-acento) 10%);
+  --ok-hover: color-mix(in oklab, var(--ok) 90%, var(--sobre-ok) 10%);
+  --warn-hover: color-mix(in oklab, var(--warn) 90%, var(--sobre-warn) 10%);
+  --crit-hover: color-mix(in oklab, var(--crit) 90%, var(--sobre-crit) 10%);
+  --surface-hover: color-mix(in oklab, var(--surface) 92%, var(--txt) 8%);
+
+  /*
+   * Cores de domínio da vistoria.
+   *
+   * Os cinco tipos de avaria viviam como hexadecimal repetido em três lugares
+   * cada — no pino do desenho, na ficha do seletor e na letra dentro dela.
+   * Como token, mudam num lugar só; e cada um traz o par, porque a letra é
+   * escrita POR CIMA da cor.
+   */
+  --risco: #2f5fa0;
+  --sobre-risco: #ffffff;
+  --amassado: var(--warn);
+  --sobre-amassado: var(--sobre-warn);
+  --trinca: #8a4fc0;
+  --sobre-trinca: #ffffff;
+  --ferrugem: #a85c28;
+  --sobre-ferrugem: #ffffff;
+  --faltando: var(--crit);
+  --sobre-faltando: var(--sobre-crit);
+  --outro: var(--dim);
+  --sobre-outro: var(--surface);
+
+  /* Níveis de revisão. Metais, e a ordem importa: bronze < prata < ouro. */
+  --bronze: #8a5a20;
+  --prata: #6d7880;
+  --ouro: #9a7420;
+}
+
+/*
+ * Nos temas escuros os metais e as cores de domínio precisam subir: um marrom
+ * de bronze legível sobre papel some sobre grafite. É o único lugar onde a
+ * cor é escolhida duas vezes, e é porque a percepção realmente muda.
+ */
+[data-tema="cockpit"],
+[data-tema="meia-noite"] {
+  --risco: #4a8fe7;
+  --trinca: #b06be0;
+  --ferrugem: #c2703a;
+  --bronze: #b07a3c;
+  --prata: #9aa7b0;
+  --ouro: #d4a63c;
+
+  /*
+   * O par VIRA JUNTO, e foi aqui que eu errei na primeira tentativa.
+   *
+   * Clareei os tons para eles se destacarem do grafite e mantive o texto
+   * branco — que é a escolha certa para o tom escuro dos temas claros e a
+   * errada para estes. Medido no navegador: branco sobre `#4a8fe7` dá 3,29:1,
+   * e a letra do pino tem 9 px. Abaixo dos 4,5:1 que texto pequeno exige.
+   *
+   * Trocar a cor por uma mais escura resolveria o contraste e estragaria o
+   * propósito: o pino precisa ser CLARO para saltar do fundo escuro. Quem cede
+   * é o texto.
+   */
+  --sobre-risco: #04101f;
+  --sobre-trinca: #150422;
+  --sobre-ferrugem: #1a0a02;
 }
 
 body {

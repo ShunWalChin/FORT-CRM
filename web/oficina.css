@@ -91,8 +91,8 @@
   background: var(--ground); border: 1px solid var(--line-strong); color: var(--dim);
   font: 600 12.5px var(--sans);
 }
-.vt-estado.ok.on { background: var(--ok); border-color: var(--ok); color: var(--sobre-acento); }
-.vt-estado.warn.on { background: var(--warn); border-color: var(--warn); color: #1a1200; }
+.vt-estado.ok.on { background: var(--ok); border-color: var(--ok); color: var(--sobre-ok); }
+.vt-estado.warn.on { background: var(--warn); border-color: var(--warn); color: var(--sobre-warn); }
 .vt-estado.crit.on { background: var(--crit); border-color: var(--crit); color: var(--sobre-crit); }
 .vt-estado.na.on { background: var(--surface-3); border-color: var(--line-strong); color: var(--txt-hi); }
 .vt-estado:disabled { opacity: .55; cursor: default; }
@@ -216,9 +216,21 @@
   font: 700 9.5px var(--mono); letter-spacing: .1em; text-transform: uppercase;
   padding: 3px 8px; border-radius: 3px; border: 1px solid;
 }
-.vt-nivel.bronze { color: #b07a3c; border-color: #b07a3c55; background: #b07a3c1a; }
-.vt-nivel.prata  { color: #9aa7b0; border-color: #9aa7b055; background: #9aa7b01a; }
-.vt-nivel.ouro   { color: #d4a63c; border-color: #d4a63c55; background: #d4a63c1a; }
+.vt-nivel.bronze {
+  color: var(--bronze);
+  border-color: color-mix(in oklab, var(--bronze) 40%, transparent);
+  background: color-mix(in oklab, var(--bronze) 12%, transparent);
+}
+.vt-nivel.prata {
+  color: var(--prata);
+  border-color: color-mix(in oklab, var(--prata) 40%, transparent);
+  background: color-mix(in oklab, var(--prata) 12%, transparent);
+}
+.vt-nivel.ouro {
+  color: var(--ouro);
+  border-color: color-mix(in oklab, var(--ouro) 40%, transparent);
+  background: color-mix(in oklab, var(--ouro) 12%, transparent);
+}
 
 /*
  * Onde o carro tem de estar para este grupo.
@@ -298,10 +310,10 @@
   display: grid; place-content: center; width: 20px; height: 20px; border-radius: 50%;
   background: var(--line-strong); color: var(--txt-hi); font: 700 10px var(--mono);
 }
-.cr-tipo.risco .cr-letra { background: #4a8fe7; color: #fff; }
-.cr-tipo.amassado .cr-letra { background: var(--warn); color: #1a1200; }
-.cr-tipo.trinca .cr-letra { background: #b06be0; color: #fff; }
-.cr-tipo.ferrugem .cr-letra { background: #c2703a; color: #fff; }
+.cr-tipo.risco .cr-letra { background: var(--risco); color: var(--sobre-risco); }
+.cr-tipo.amassado .cr-letra { background: var(--amassado); color: var(--sobre-amassado); }
+.cr-tipo.trinca .cr-letra { background: var(--trinca); color: var(--sobre-trinca); }
+.cr-tipo.ferrugem .cr-letra { background: var(--ferrugem); color: var(--sobre-ferrugem); }
 .cr-tipo.faltando .cr-letra { background: var(--crit); color: var(--sobre-crit); }
 
 .cr-tela {
@@ -330,15 +342,15 @@
 .cr-toque { fill: transparent; }
 .cr-bola { fill: var(--line-strong); stroke: var(--surface); stroke-width: 2; }
 .cr-pino text {
-  fill: #fff; font: 700 9px var(--mono); text-anchor: middle; pointer-events: none;
+  fill: var(--sobre-risco); font: 700 9px var(--mono); text-anchor: middle; pointer-events: none;
   user-select: none;
 }
-.cr-pino.risco .cr-bola { fill: #4a8fe7; }
-.cr-pino.amassado .cr-bola { fill: #e8a33d; }
-.cr-pino.trinca .cr-bola { fill: #b06be0; }
-.cr-pino.ferrugem .cr-bola { fill: #c2703a; }
-.cr-pino.faltando .cr-bola { fill: #ff2d78; }
-.cr-pino.outro .cr-bola { fill: #7c88a6; }
+.cr-pino.risco .cr-bola { fill: var(--risco); }
+.cr-pino.amassado .cr-bola { fill: var(--amassado); }
+.cr-pino.trinca .cr-bola { fill: var(--trinca); }
+.cr-pino.ferrugem .cr-bola { fill: var(--ferrugem); }
+.cr-pino.faltando .cr-bola { fill: var(--faltando); }
+.cr-pino.outro .cr-bola { fill: var(--outro); }
 /* O anel do selecionado nao pode engolir a cor do tipo: um anel de 3 sobre uma
    bola de 8,5 cobre um terco do raio, e no tamanho que ela tem na tela o pino
    inteiro passava a ler como "acento" em vez de "amassado". */
@@ -360,11 +372,21 @@
   background: var(--line-strong); color: var(--txt-hi); font: 700 11px var(--mono);
   flex: 0 0 auto;
 }
-.cr-aberta.risco .cr-selo, .cr-linha.risco .cr-selo { background: #4a8fe7; color: #fff; }
-.cr-aberta.amassado .cr-selo, .cr-linha.amassado .cr-selo { background: #e8a33d; color: #1a1200; }
-.cr-aberta.trinca .cr-selo, .cr-linha.trinca .cr-selo { background: #b06be0; color: #fff; }
-.cr-aberta.ferrugem .cr-selo, .cr-linha.ferrugem .cr-selo { background: #c2703a; color: #fff; }
-.cr-aberta.faltando .cr-selo, .cr-linha.faltando .cr-selo { background: #ff2d78; color: #fff; }
+.cr-aberta.risco .cr-selo, .cr-linha.risco .cr-selo {
+  background: var(--risco); color: var(--sobre-risco);
+}
+.cr-aberta.amassado .cr-selo, .cr-linha.amassado .cr-selo {
+  background: var(--amassado); color: var(--sobre-amassado);
+}
+.cr-aberta.trinca .cr-selo, .cr-linha.trinca .cr-selo {
+  background: var(--trinca); color: var(--sobre-trinca);
+}
+.cr-aberta.ferrugem .cr-selo, .cr-linha.ferrugem .cr-selo {
+  background: var(--ferrugem); color: var(--sobre-ferrugem);
+}
+.cr-aberta.faltando .cr-selo, .cr-linha.faltando .cr-selo {
+  background: var(--faltando); color: var(--sobre-faltando);
+}
 
 .cr-lista h3 { font: 600 13px var(--sans); color: var(--dim); margin: 0 0 8px; }
 .cr-linha {

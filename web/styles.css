@@ -34,6 +34,21 @@
   --acento: var(--cy);
   --acento-dim: rgba(0, 184, 196, 0.14);
 
+  /*
+   * Os pares. Todo fundo colorido anda com o texto que vai por cima, e quem
+   * pinta um fundo pega o par inteiro.
+   *
+   * Este bloco e a RESERVA: `temas.css` sobrescreve tudo isto, e existe para o
+   * sistema nao ficar sem cor caso ele nao carregue. Sem os pares aqui, o
+   * intervalo entre uma folha e outra desenharia texto sem cor definida sobre
+   * fundo colorido — e a falha apareceria so em rede ruim, que e onde ninguem
+   * procura.
+   */
+  --sobre-acento: #04121a;
+  --sobre-ok: #04140f;
+  --sobre-warn: #1a1200;
+  --sobre-crit: #12000a;
+
   --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Inter, sans-serif;
 
@@ -175,7 +190,23 @@ a { color: var(--acento); }
   line-height: 1; cursor: pointer; white-space: nowrap;
   transition: filter .12s, border-color .12s, background .12s, color .12s;
 }
-.btn:hover:not(:disabled) { filter: brightness(var(--brilho-hover)); }
+/*
+ * Hover DERIVADO do par, e nao `filter: brightness()`.
+ *
+ * O filtro era o mesmo numero para todos os temas, e falhava nos dois extremos:
+ * clarear 12% um botao que ja e quase branco no tema Papel nao faz nada
+ * visivel, e escurecer 8% um acento saturado no tema Oficina lava a cor em vez
+ * de aprofunda-la.
+ *
+ * `--acento-hover` puxa 10% na direcao do TEXTO que vai por cima. Em tema
+ * escuro o texto e escuro sobre acento claro, entao o hover escurece; em tema
+ * claro o texto e branco, entao clareia. A direcao sai do par, e ninguem
+ * escolhe um numero por tema.
+ *
+ * O `filter` fica para a variante de perigo e para as que nao tem par proprio.
+ */
+.btn:hover:not(:disabled) { background: var(--acento-hover); }
+.btn.perigo:hover:not(:disabled) { background: var(--crit-hover); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 
