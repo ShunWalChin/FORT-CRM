@@ -197,6 +197,310 @@
   --corpo-altura: 1.55;
 }
 
+/* ═══ Temas de dupla ══════════════════════════════════════════════════════
+ *
+ * Nove combinações de duas cores, trazidas de referência visual. Cada uma vira
+ * um tema inteiro — e os 23 tokens de cada NÃO foram escolhidos um a um:
+ * saíram de `gerar-temas.mjs`, que aplica a mesma regra nove vezes e mede o
+ * contraste do que produziu. Nenhum tema entrou aqui sem passar.
+ *
+ * ─── O que a primeira geração ensinou ───
+ *
+ * Comecei por "o mais luminoso da dupla é o fundo", que é como os cartões de
+ * referência estão desenhados. Medido: 5 de 9 passaram. As quatro falhas dizem
+ * a mesma coisa — **um cartaz não é uma interface**.
+ *
+ * O cartaz tem dois campos grandes e três palavras. A interface precisa de
+ * corpo, texto auxiliar, borda, e de dizer "atenção" e "crítico" por cima de
+ * tudo isso: oito níveis distinguíveis, não dois. Vulcânico pôs o laranja como
+ * chapa e o vermelho de crítico ficou em 1,09:1; Mantis pôs o verde como corpo
+ * sobre creme e deu 1,95:1.
+ *
+ * A regra corrigida: o fundo é o mais QUIETO da dupla (croma baixo, desempate
+ * pela luminosidade extrema), e a cor viva cede em direção ao polo oposto até
+ * bater 5:1. Duas das nove precisaram ceder — Mantis #59C749 virou #35772c e
+ * True Pink #FD1843 virou #ca1336. As outras sete entraram inteiras.
+ *
+ * ─── O acento não é da dupla ───
+ *
+ * `--acento` continua sendo `--empresa-cor` em todos. É o sinal periférico de
+ * qual empresa está na tela, e nenhum tema tem licença para apagá-lo — trocar a
+ * cor da empresa por uma cor de tema devolveria exatamente o erro que ela
+ * existe para evitar: registrar algo na empresa errada.
+ *
+ * Para regenerar: `node gerar-temas.mjs --escrever`
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Combo 10 — Skin Tone sobre Bridal. */
+[data-tema="nupcial"] {
+  color-scheme: dark;
+  --ground: #741A2F;
+  --surface: #7a2337;
+  --surface-2: #7e2a3e;
+  --surface-3: #833346;
+  --line: #8c4152;
+  --line-strong: #9e5f6d;
+  --txt: #f1b59c;
+  --txt-hi: #FFC6A8;
+  --dim: #d09084;
+  --faint: #c38079;
+  --ok: #35d6a4;
+  --warn: #e8a33d;
+  --crit: #ff4d6d;
+  --sobre-ok: #340c15;
+  --sobre-warn: #340c15;
+  --sobre-crit: #340c15;
+  --acento: var(--empresa-cor, #00b8c4);
+  --sobre-acento: #3a0d18;
+  --veu: rgba(0, 0, 0, .74);
+  --sombra: 0 18px 44px rgba(0, 0, 0, .5);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* Combo 09 — Vulcanico sobre Noturno. */
+[data-tema="vulcanico"] {
+  color-scheme: dark;
+  --ground: #001621;
+  --surface: #0a1f2a;
+  --surface-2: #122631;
+  --surface-3: #1c3039;
+  --line: #2b3e47;
+  --line-strong: #4d5c64;
+  --txt: #e74712;
+  --txt-hi: #FF4103;
+  --dim: #b85b3e;
+  --faint: #a35841;
+  --ok: #35d6a4;
+  --warn: #e8a33d;
+  --crit: #ff4d6d;
+  --sobre-ok: #000a0f;
+  --sobre-warn: #000a0f;
+  --sobre-crit: #000a0f;
+  --acento: var(--empresa-cor, #00b8c4);
+  --sobre-acento: #000b11;
+  --veu: rgba(0, 0, 0, .74);
+  --sombra: 0 18px 44px rgba(0, 0, 0, .5);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* Combo 08 — Luminous Moss sobre Silver. */
+[data-tema="musgo"] {
+  color-scheme: dark;
+  --ground: #141414;
+  --surface: #1d1d1d;
+  --surface-2: #242424;
+  --surface-3: #2e2e2e;
+  --line: #3c3c3c;
+  --line-strong: #5b5b5b;
+  --txt: #29d831;
+  --txt-hi: #2BEE34;
+  --dim: #23a229;
+  --faint: #218c26;
+  --ok: #35d6a4;
+  --warn: #e8a33d;
+  --crit: #ff4d6d;
+  --sobre-ok: #090909;
+  --sobre-warn: #090909;
+  --sobre-crit: #090909;
+  --acento: var(--empresa-cor, #00b8c4);
+  --sobre-acento: #0a0a0a;
+  --veu: rgba(0, 0, 0, .74);
+  --sombra: 0 18px 44px rgba(0, 0, 0, .5);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* Combo 07 — Turmeric sobre Malt. */
+[data-tema="curcuma"] {
+  color-scheme: dark;
+  --ground: #2A2312;
+  --surface: #332c1b;
+  --surface-2: #393223;
+  --surface-3: #413b2c;
+  --line: #4e483a;
+  --line-strong: #6a6559;
+  --txt: #eaaf0c;
+  --txt-hi: #FFBE0B;
+  --dim: #b4880d;
+  --faint: #9f780e;
+  --ok: #35d6a4;
+  --warn: #e8a33d;
+  --crit: #ff4d6d;
+  --sobre-ok: #131008;
+  --sobre-warn: #131008;
+  --sobre-crit: #131008;
+  --acento: var(--empresa-cor, #00b8c4);
+  --sobre-acento: #151209;
+  --veu: rgba(0, 0, 0, .74);
+  --sombra: 0 18px 44px rgba(0, 0, 0, .5);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* Combo 06 — Mantis sobre Milky. */
+[data-tema="mantis"] {
+  color-scheme: light;
+  --ground: #FFFDF1;
+  --surface: #f5f3e7;
+  --surface-2: #edebe0;
+  --surface-3: #e3e1d6;
+  --line: #d4d2c8;
+  --line-strong: #b3b1a9;
+  --txt: #457d3d;
+  --txt-hi: #35772c;
+  --dim: #63855a;
+  --faint: #738f6a;
+  --ok: #127a4f;
+  --warn: #8a5300;
+  --crit: #b3123c;
+  --sobre-ok: #ffffff;
+  --sobre-warn: #ffffff;
+  --sobre-crit: #ffffff;
+  --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 58%, #000);
+  --sobre-acento: #ffffff;
+  --veu: rgba(29, 65, 24, .55);
+  --sombra: 0 14px 34px rgba(40, 35, 30, .18);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* Combo 05 — Lime Sprout sobre Fresh Canopy. */
+[data-tema="copa"] {
+  color-scheme: dark;
+  --ground: #2D3E2C;
+  --surface: #354634;
+  --surface-2: #3c4c3b;
+  --surface-3: #445343;
+  --line: #515f50;
+  --line-strong: #6c786b;
+  --txt: #d2ea8c;
+  --txt-hi: #E4FD97;
+  --dim: #a4ba72;
+  --faint: #92a767;
+  --ok: #35d6a4;
+  --warn: #e8a33d;
+  --crit: #ff4d6d;
+  --sobre-ok: #141c14;
+  --sobre-warn: #141c14;
+  --sobre-crit: #141c14;
+  --acento: var(--empresa-cor, #00b8c4);
+  --sobre-acento: #171f16;
+  --veu: rgba(0, 0, 0, .74);
+  --sombra: 0 18px 44px rgba(0, 0, 0, .5);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* Combo 04 — Cyprus sobre Sand. */
+[data-tema="cipreste"] {
+  color-scheme: light;
+  --ground: #F0EDE4;
+  --surface: #e6e4db;
+  --surface-2: #dfdcd4;
+  --surface-3: #d6d3cb;
+  --line: #c7c5bd;
+  --line-strong: #a8a6a0;
+  --txt: #185851;
+  --txt-hi: #004741;
+  --dim: #507b74;
+  --faint: #61837c;
+  --ok: #127a4f;
+  --warn: #8a5300;
+  --crit: #b3123c;
+  --sobre-ok: #ffffff;
+  --sobre-warn: #ffffff;
+  --sobre-crit: #ffffff;
+  --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 58%, #000);
+  --sobre-acento: #ffffff;
+  --veu: rgba(0, 39, 36, .55);
+  --sombra: 0 14px 34px rgba(40, 35, 30, .18);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* Combo 03 — Cyber Line sobre Charcoal Violet. */
+[data-tema="cyber"] {
+  color-scheme: dark;
+  --ground: #3C1A47;
+  --surface: #44234e;
+  --surface-2: #4a2a54;
+  --surface-3: #51335b;
+  --line: #5d4166;
+  --line-strong: #775f7e;
+  --txt: #aae807;
+  --txt-hi: #B6FF00;
+  --dim: #8baf19;
+  --faint: #7f9820;
+  --ok: #35d6a4;
+  --warn: #e8a33d;
+  --crit: #ff4d6d;
+  --sobre-ok: #1b0c20;
+  --sobre-warn: #1b0c20;
+  --sobre-crit: #1b0c20;
+  --acento: var(--empresa-cor, #00b8c4);
+  --sobre-acento: #1e0d24;
+  --veu: rgba(0, 0, 0, .74);
+  --sombra: 0 18px 44px rgba(0, 0, 0, .5);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
+/* Combo 02 — True Pink sobre Chill White. */
+[data-tema="pink"] {
+  color-scheme: light;
+  --ground: #FFF9FA;
+  --surface: #f5eff0;
+  --surface-2: #ede8e9;
+  --surface-3: #e3dedf;
+  --line: #d4cfd0;
+  --line-strong: #b3aeaf;
+  --txt: #cf2a4a;
+  --txt-hi: #ca1336;
+  --dim: #bc5569;
+  --faint: #c06979;
+  --ok: #127a4f;
+  --warn: #8a5300;
+  --crit: #b3123c;
+  --sobre-ok: #ffffff;
+  --sobre-warn: #ffffff;
+  --sobre-crit: #ffffff;
+  --acento: color-mix(in oklab, var(--empresa-cor, #00b8c4) 58%, #000);
+  --sobre-acento: #ffffff;
+  --veu: rgba(111, 10, 30, .55);
+  --sombra: 0 14px 34px rgba(40, 35, 30, .18);
+
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --corpo: var(--sans);
+  --corpo-tam: 15px;
+  --corpo-altura: 1.55;
+}
+
 /* ── Derivados ────────────────────────────────────────────────────────────── */
 /*
  * Um tema novo declara as cores-base e mais nada. Tudo abaixo é calculado.
@@ -323,7 +627,35 @@ h1, h2, h3, .marca, .kpi .v, th, .btn, nav.menu a, .rot, .kicker {
 .tema-btn i {
   width: 11px; height: 11px; border-radius: 50%; display: block;
   border: 1px solid rgba(128, 128, 128, .5);
+  overflow: hidden; position: relative;
 }
+
+/*
+ * A ficha de um tema de dupla mostra as DUAS cores, em metades.
+ *
+ * Um ponto de 11 px com `#141414` (Musgo) e outro com `#001621` (Vulcânico)
+ * são o mesmo ponto preto. O que a pessoa escolhe é a combinação, e é ela que
+ * a ficha precisa mostrar — como nos cartões de referência, que são
+ * literalmente duas metades.
+ */
+.tema-btn i > b {
+  position: absolute; inset: 0 0 0 50%; display: block;
+}
+
+/*
+ * As duplas ficam numa fileira própria, com rótulo.
+ *
+ * Os cinco de trabalho existem por CONTEXTO — balcão sob luz forte, tela ao
+ * sol, vista cansada. Estes existem por identidade visual. Numa fileira só, a
+ * pessoa escolheria "o verde" sem saber que um foi desenhado para a varanda ao
+ * meio-dia e o outro não.
+ */
+.temas-rotulo {
+  font: 600 9.5px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--faint); margin: 2px 0 6px;
+}
+.temas.duplas { flex-wrap: wrap; gap: 5px; }
+.temas.duplas .tema-btn { flex: 0 0 calc((100% - 4 * 5px) / 5); height: 22px; }
 
 /*
  * No celular a bolinha de tema é um alvo de toque como qualquer outro. Medido
@@ -335,4 +667,7 @@ h1, h2, h3, .marca, .kpi .v, th, .btn, nav.menu a, .rot, .kicker {
   .temas { gap: 8px; margin-bottom: 12px; }
   .tema-btn { height: 38px; }
   .tema-btn i { width: 14px; height: 14px; }
+  /* Cinco por fileira a 375 px dariam 60 px de largura por 38 de altura — alvo
+     de sobra. As duplas seguem a mesma altura do resto. */
+  .temas.duplas .tema-btn { flex: 0 0 calc((100% - 4 * 8px) / 5); height: 38px; }
 }

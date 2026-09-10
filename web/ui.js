@@ -67,6 +67,26 @@ export const TEMAS = [
   { id: 'cerrado', nome: 'Cerrado', para: 'Claro quente. Tela vista sob sol.', amostra: '#f4efe2' },
   { id: 'papel', nome: 'Papel', para: 'Contraste máximo, corpo em serifa. Vista cansada e impressão.', amostra: '#ffffff' },
   { id: 'meia-noite', nome: 'Meia-noite', para: 'Escuro quente, pouco azul. Plantão 24 h.', amostra: '#14110f' },
+
+  /*
+   * Os nove de dupla. Vêm marcados com `dupla: true` porque são outra espécie
+   * de coisa: os cinco de cima existem por um contexto de uso — balcão sob luz
+   * forte, tela vista ao sol, vista cansada. Estes existem por identidade
+   * visual, e a diferença importa na hora de escolher.
+   *
+   * Os 23 tokens de cada saíram de `gerar-temas.mjs`, que aplica a mesma regra
+   * nove vezes e mede o contraste do que produziu. Para regenerar:
+   * `node gerar-temas.mjs --escrever`.
+   */
+  { id: 'nupcial', nome: 'Nupcial', para: 'Skin Tone sobre Bridal.', amostra: '#741A2F', tinta: '#FFC6A8', dupla: true },
+  { id: 'vulcanico', nome: 'Vulcânico', para: 'Vulcanico sobre Noturno.', amostra: '#001621', tinta: '#FF4103', dupla: true },
+  { id: 'musgo', nome: 'Musgo', para: 'Luminous Moss sobre Silver.', amostra: '#141414', tinta: '#2BEE34', dupla: true },
+  { id: 'curcuma', nome: 'Cúrcuma', para: 'Turmeric sobre Malt.', amostra: '#2A2312', tinta: '#FFBE0B', dupla: true },
+  { id: 'mantis', nome: 'Mantis', para: 'Mantis sobre Milky.', amostra: '#FFFDF1', tinta: '#35772c', dupla: true },
+  { id: 'copa', nome: 'Copa', para: 'Lime Sprout sobre Fresh Canopy.', amostra: '#2D3E2C', tinta: '#E4FD97', dupla: true },
+  { id: 'cipreste', nome: 'Cipreste', para: 'Cyprus sobre Sand.', amostra: '#F0EDE4', tinta: '#004741', dupla: true },
+  { id: 'cyber', nome: 'Cyber', para: 'Cyber Line sobre Charcoal Violet.', amostra: '#3C1A47', tinta: '#B6FF00', dupla: true },
+  { id: 'pink', nome: 'True Pink', para: 'True Pink sobre Chill White.', amostra: '#FFF9FA', tinta: '#ca1336', dupla: true },
 ];
 
 export const TEMA_PADRAO = 'cockpit';
@@ -91,16 +111,38 @@ export function aplicarTema(id) {
   return valido;
 }
 
-/** O seletor: cinco botões, com o nome do tema no `title` e em `aria-label`. */
+/**
+ * O seletor, em duas famílias.
+ *
+ * Os de trabalho existem por CONTEXTO de uso — balcão sob luz forte, tela vista
+ * ao sol, vista cansada. Os de dupla existem por identidade visual. Misturar as
+ * duas famílias numa fileira só faria a pessoa escolher "o verde" sem saber que
+ * um deles foi desenhado para o sol da varanda e o outro não.
+ *
+ * A ficha do tema de dupla mostra as DUAS cores, em metades. Um ponto de 14 px
+ * com `#141414` e outro com `#001621` são indistinguíveis; o que a pessoa está
+ * escolhendo é a combinação, e é ela que a ficha precisa mostrar.
+ */
 export function desenharSeletorDeTema() {
   const atual = temaAtual();
-  return `<div class="temas" role="group" aria-label="Tema de cores">
-    ${TEMAS.map((t) => `
-      <button class="tema-btn" data-tema="${t.id}"
+
+  const ficha = (t) => `
+      <button class="tema-btn${t.dupla ? ' dupla' : ''}" data-tema="${t.id}"
               aria-pressed="${t.id === atual}"
               title="${t.nome} — ${t.para}"
               aria-label="Tema ${t.nome}. ${t.para}">
-        <i style="background:${t.amostra}"></i>
-      </button>`).join('')}
+        <i style="background:${t.amostra}"${t.tinta
+  ? ` data-tinta><b style="background:${t.tinta}"></b>` : '>'}</i>
+      </button>`;
+
+  const trabalho = TEMAS.filter((t) => !t.dupla);
+  const duplas = TEMAS.filter((t) => t.dupla);
+
+  return `<div class="temas" role="group" aria-label="Tema de cores">
+    ${trabalho.map(ficha).join('')}
+  </div>
+  <div class="temas-rotulo">Duplas</div>
+  <div class="temas duplas" role="group" aria-label="Temas de dupla">
+    ${duplas.map(ficha).join('')}
   </div>`;
 }

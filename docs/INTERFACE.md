@@ -3,6 +3,79 @@
 > Cinco temas, versão mobile e as decisões de usabilidade — todas medidas.
 
 
+## Os nove temas de dupla
+
+Nove combinações de duas cores, trazidas como referência visual. Cada uma virou
+um tema inteiro — e os 23 tokens de cada **não foram escolhidos um a um**: saem
+de `gerar-temas.mjs`, que aplica a mesma regra nove vezes e mede o contraste do
+que produziu. Para regenerar:
+
+```bash
+node gerar-temas.mjs --escrever
+```
+
+### O que a primeira geração ensinou
+
+Comecei por *"o mais luminoso da dupla é o fundo"*, que é como os cartões de
+referência estão desenhados. Medido: **5 de 9 passaram**. As quatro falhas dizem
+a mesma coisa — **um cartaz não é uma interface**.
+
+O cartaz tem dois campos grandes e três palavras. A interface precisa de corpo,
+texto auxiliar, borda, e de dizer *atenção* e *crítico* por cima de tudo isso:
+oito níveis distinguíveis, não dois.
+
+| Tema | O que quebrou |
+|---|---|
+| Vulcânico | laranja `#FF4103` como chapa, e o vermelho de crítico em **1,09:1** |
+| Mantis | verde `#59C749` como corpo sobre creme: **1,95:1** |
+
+### A regra corrigida
+
+1. **O fundo é o mais quieto da dupla.** Chapa de página precisa recuar; cor
+   saturada de luminosidade média não recua, briga com tudo por cima. Escolha
+   por croma baixo, desempate pela luminosidade mais extrema.
+2. **A tinta cede até passar.** A outra cor é empurrada ao polo oposto do fundo
+   até bater 5:1 — o primeiro passo que passa, não o mais escuro possível, para
+   ceder o mínimo e continuar reconhecível.
+3. **A semântica também cede**, contra o fundo daquele tema, até 3,2:1.
+
+Duas das nove precisaram ceder: **Mantis `#59C749` → `#35772c`** e **True Pink
+`#FD1843` → `#ca1336`**. As outras sete entraram inteiras.
+
+### O acento não é da dupla
+
+`--acento` continua sendo `--empresa-cor` em todos os quatorze. É o sinal
+periférico de qual empresa está na tela, e nenhum tema tem licença para
+apagá-lo — trocar a cor da empresa por uma cor de tema devolveria exatamente o
+erro que ela existe para evitar.
+
+### As duas famílias
+
+O seletor separa. Os cinco de trabalho existem por **contexto de uso** — balcão
+sob luz forte, tela vista ao sol, vista cansada. Os nove de dupla existem por
+**identidade visual**. Numa fileira só, a pessoa escolheria "o verde" sem saber
+que um foi desenhado para a varanda ao meio-dia e o outro não.
+
+A ficha de um tema de dupla mostra as **duas** cores, em metades: um ponto de
+11 px com `#141414` (Musgo) e outro com `#001621` (Vulcânico) são o mesmo ponto
+preto.
+
+### Medido na tela, e não no gerador
+
+Os quatorze foram varridos no navegador, trocando o tema e lendo a cor
+computada:
+
+| | corpo | dim | crítico | acento |
+|---|---|---|---|---|
+| pior dos 14 | **4,67** | **4,05** | **3,38** | **4,48** |
+
+Todos acima do piso. E aqui uma armadilha que este arquivo já documentava e eu
+caí nela mesmo assim: **`getComputedStyle` devolve `oklab(...)` para valor vindo
+de `color-mix`**, e ler esses três números como se fossem RGB dá resultado sem
+sentido. Minha primeira varredura acusou o acento do Meia-noite em 1,12:1 —
+medido pelo canvas, como o projeto manda, ele é **8,5:1**. O tema estava certo;
+a medição, não.
+
 ## O sistema de token, e o que veio do HeroUI
 
 O Soberano pediu a fatoração do front com uso integral do
