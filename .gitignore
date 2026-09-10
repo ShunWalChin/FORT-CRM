@@ -33,3 +33,8 @@ Thumbs.db
 
 # Configuracao local do Claude Code (caminhos da maquina, nao do projeto).
 .claude/
+
+# Saída intermediária de gerar-temas.mjs. Os blocos finais vivem em
+# web/temas.css e a lista em web/ui.js; estes dois são só o caminho.
+temas-dupla.css
+temas-dupla.js

@@ -100,6 +100,12 @@ function tema(c) {
   const fundo = aFundo ? c.a : c.b;
   const viva = aFundo ? c.b : c.a;
 
+  // Os nomes seguem a escolha, e nao a ordem em que foram escritos. Nos nove
+  // combos `b` virou fundo em todos, o que faz "na sobre nb" acertar por acaso;
+  // um decimo em que `a` ganhasse o fundo sairia com o rotulo invertido.
+  const nomeFundo = aFundo ? c.na : c.nb;
+  const nomeTinta = aFundo ? c.nb : c.na;
+
   const escuro = luz(fundo) < 0.4;
   const polo = escuro ? '#ffffff' : '#000000';
   const antipolo = escuro ? '#000000' : '#ffffff';
@@ -119,6 +125,8 @@ function tema(c) {
 
   return {
     ...c,
+    nomeFundo,
+    nomeTinta,
     escuro,
     tokens: {
       ground: fundo,
@@ -180,7 +188,7 @@ if (process.argv.includes('--escrever')) {
   const { writeFileSync } = await import('node:fs');
   const css = temas.map((t) => {
     const linhas = Object.entries(t.tokens).map(([k, v]) => `  --${k}: ${v};`).join('\n');
-    return `/* Combo ${String(t.n).padStart(2, '0')} — ${t.na} sobre ${t.nb}. */
+    return `/* Combo ${String(t.n).padStart(2, '0')} — ${t.nomeTinta} sobre ${t.nomeFundo}. */
 [data-tema="${t.id}"] {
   color-scheme: ${t.escuro ? 'dark' : 'light'};
 ${linhas}
@@ -201,7 +209,7 @@ ${linhas}
    * pela combinacao — que e o que a pessoa esta escolhendo.
    */
   const lista = temas.map((t) => `  { id: '${t.id}', nome: '${t.nome}', `
-    + `para: '${t.na} sobre ${t.nb}.', amostra: '${t.tokens.ground}', `
+    + `para: '${t.nomeTinta} sobre ${t.nomeFundo}.', amostra: '${t.tokens.ground}', `
     + `tinta: '${t.tokens['txt-hi']}', dupla: true },`).join('\n');
   writeFileSync('temas-dupla.js', lista, 'utf8');
   console.log('\n  escrito: temas-dupla.css e temas-dupla.js');
