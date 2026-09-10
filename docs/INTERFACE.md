@@ -45,6 +45,37 @@ A distinção `focus-ring` / `focus-field-ring` do HeroUI veio junto: **campo
 encosta o anel na borda** (folga 0), **botão dá folga** (2 px). Com folga no
 campo aparecem duas linhas concêntricas onde a intenção é uma marca só.
 
+### O mesmo erro, duas vezes — e onde estado tem de morar
+
+Depois de publicar, a varredura da cascata em produção mostrou **cinco outras
+regras** `:focus` que eu não tinha visto: `.campo input:focus`,
+`.barra-busca input:focus`, `.acao-busca input:focus`,
+`textarea.mensagem.editavel:focus` e `.mover-etapa:focus`, todas pondo
+`border-color: var(--acento)`.
+
+Não eram só repetição. `.campo input:focus` vale **(0,2,1)** e a marca de campo
+inválido, `:is(input, …)[aria-invalid="true"]`, vale **(0,1,1)**. Medido — com
+`:enabled` no lugar de `:focus`, que tem o mesmo peso e não depende da janela
+estar em foco: **(0,2,1) vence**. Quem clicasse "Confirmar" com o mouse
+receberia o campo recusado com a borda no acento, e não em vermelho. E o
+caminho do mouse é o comum, porque `recusar()` foca por script logo depois do
+clique, sem passar por `:focus-visible`.
+
+As cinco viraram uma. Mas a primeira tentativa pôs a regra consolidada na linha
+296 — e aí `.campo input` (linha 162) perdia para ela, enquanto
+`.barra-busca input` (625) e `.acao-busca input` (877) vinham depois e ganhavam.
+Dois campos deixaram de tingir a borda.
+
+**Regra de estado mora no fim do arquivo.** Estado e base têm a mesma
+especificidade — `.campo input` é (0,1,1) e `:is(input, select, textarea):focus`
+também — então quem decide é a ordem, e estado no meio do arquivo vence só as
+bases que vieram antes. No fim, o empate resolve sempre a favor do estado.
+
+Uma exceção precisou de regra própria: `textarea.mensagem.editavel` é (0,2,1) na
+base, e especificidade vence ordem. Ela levou junto um
+`:not([aria-invalid="true"])` — sem ele, a regra restaurada (0,3,1) passaria por
+cima da marca de inválido, que é exatamente o defeito que as cinco causavam.
+
 ### Hover que grudava no toque
 
 22 regras `:hover`, **nenhuma** atrás de `@media (hover: hover)`. Medido no

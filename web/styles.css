@@ -163,7 +163,6 @@ a { color: var(--acento); }
   width: 100%; background: var(--ground); border: 1px solid var(--line-strong);
   border-radius: var(--radius); padding: 10px 12px; color: var(--txt-hi);
 }
-.campo input:focus, .campo select:focus, .campo textarea:focus { border-color: var(--acento); }
 .atalhos { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 14px; }
 .atalhos .t { font-size: 11px; font-family: var(--mono); letter-spacing: 1px; color: var(--faint); margin-bottom: 8px; }
 .atalho {
@@ -262,77 +261,7 @@ a { color: var(--acento); }
 .barra-acoes { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
 .barra-acoes .cresce { flex: 1 1 auto; }
 
-/*
- * O ANEL DE FOCO — e por que a versão anterior não desenhava nada.
- *
- * A regra antiga era `:where(a, button, input, …):focus-visible`. `:where()`
- * ZERA a especificidade dos próprios argumentos, então a regra inteira valia
- * (0,1,0) — só o peso do `:focus-visible`. E seis campos declaravam
- * `outline: none` em regras como `.campo input`, que valem (0,1,1).
- *
- * (0,1,1) vence (0,1,0) em qualquer ordem de arquivo. Medido com Tab de
- * verdade, os OITO seletores de campo do sistema não desenhavam anel nenhum —
- * inclusive `.campo input`, que é o campo de formulário padrão. Botão e link
- * desenhavam, porque nada os sobrescrevia. E o comentário que estava aqui
- * dizia que a regra existia justamente para consertar isso.
- *
- * Isso não é acabamento. `confirmarAgora()` sinaliza campo obrigatório vazio
- * com `el.focus()` — sem anel, a pessoa lê "Placa é obrigatório" e o foco vai
- * para um campo que não muda de aparência. Num diálogo de seis campos, ela
- * tem de adivinhar qual.
- *
- * Agora são duas regras, e a dupla é o ponto:
- *
- *   1. `:focus` zera o anel do NAVEGADOR — foco de mouse não desenha nada,
- *      que é o efeito que os seis `outline: none` buscavam, num lugar só.
- *   2. `:focus-visible` desenha o NOSSO — foco de teclado sempre marca.
- *
- * As duas em (0,1,1), a segunda depois: quando ambas casam, a segunda vence.
- * Não depende de o navegador limitar o anel padrão ao `:focus-visible`, e
- * nenhuma outra folha mexe em `outline`.
- *
- * `border-radius` saiu: `outline` já acompanha o raio do elemento sozinho, e
- * declará-lo aqui mudava a FORMA do elemento ao receber foco.
- */
-:is(a, button, input, select, textarea, [tabindex], [role="button"]):focus {
-  outline: none;
-}
 
-:is(a, button, input, select, textarea, [tabindex], [role="button"]):focus-visible {
-  outline: var(--anel) solid var(--foco);
-  outline-offset: var(--anel-folga);
-}
-
-/*
- * O campo encosta o anel na borda. Com folga, aparecem duas linhas
- * concêntricas — a borda do campo e o anel — em vez de uma marca só. É a
- * mesma distinção que o HeroUI faz entre `focus-ring` e `focus-field-ring`.
- */
-:is(input, select, textarea):focus-visible {
-  --anel-folga: 0px;
-  border-color: var(--foco);
-}
-
-/*
- * CAMPO INVÁLIDO.
- *
- * O HeroUI usa `invalid-field-ring`: contorno de 1px na cor de perigo quando
- * sem foco, anel de 2px quando com foco. Aqui é a BORDA que muda, e não um
- * contorno extra — os campos deste sistema já têm borda visível, e somar um
- * contorno de 1px por fora dela dá duas linhas concêntricas onde a intenção é
- * uma marca só. A ideia é a mesma: a marca sobrevive ao foco sair.
- *
- * Precisa vir DEPOIS do bloco de foco: `:is(input,…)[aria-invalid]` e
- * `:is(input,…):focus-visible` empatam em (0,1,1), e no empate vence a última.
- */
-:is(input, select, textarea)[aria-invalid="true"] {
-  border-color: var(--invalido);
-}
-
-:is(input, select, textarea)[aria-invalid="true"]:focus-visible {
-  outline-color: var(--invalido);
-  border-color: var(--invalido);
-}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -604,7 +533,6 @@ html.travado body { position: fixed; left: 0; right: 0; width: 100%; }
   background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius);
   padding: 9px 12px; color: var(--txt-hi); min-width: 200px;
 }
-.barra-busca input:focus, .barra-busca select:focus { border-color: var(--acento); }
 
 .medidor { height: 5px; background: var(--surface-3); border-radius: 3px; overflow: hidden; margin-top: 7px; }
 .medidor i { display: block; height: 100%; background: var(--acento); }
@@ -744,7 +672,6 @@ textarea.mensagem.editavel {
   background: var(--ground); color: var(--txt); padding: 11px 14px;
 }
 @media (hover: hover) { textarea.mensagem.editavel:hover { border-color: var(--line-strong); border-left-color: var(--acento); } }
-textarea.mensagem.editavel:focus { border-color: var(--acento); }
 .item.bloqueado textarea.mensagem.editavel { border-left-color: var(--crit); }
 
 .acoes-msg { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
@@ -761,7 +688,9 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
 }
 /* Partida em duas: embrulhar as duas juntas tiraria o sinal de FOCO do
    aparelho de toque, que e onde o teclado virtual mais precisa dele. */
-.mover-etapa:focus { border-color: var(--acento); color: var(--txt-hi); }
+/* A borda foi para o bloco de foco; o texto continua aqui porque e so
+   deste seletor. */
+.mover-etapa:focus { color: var(--txt-hi); }
 @media (hover: hover) { .mover-etapa:hover { border-color: var(--acento); color: var(--txt-hi); } }
 
 /* ── Campos personalizados na ficha ───────────────────────────────────────── */
@@ -857,7 +786,6 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
   border-radius: var(--radius); padding: 8px 11px; color: var(--txt-hi);
   font-size: 13px;
 }
-.acao-busca input:focus { border-color: var(--acento); }
 
 .inicio-faixa {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -1028,4 +956,144 @@ textarea.mensagem.editavel:focus { border-color: var(--acento); }
   .paleta-campo { padding: 14px 15px; }
   .paleta-campo input { font-size: 16px; } /* menos que isto e o iOS dá zoom */
   .paleta-rodape { display: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * ESTADO, E POR QUE ELE MORA NO FIM DO ARQUIVO
+ *
+ * Regra de estado tem de vencer regra-base. Isso não acontece sozinho: as duas
+ * têm a mesma especificidade — `.campo input` é (0,1,1) e
+ * `:is(input, select, textarea):focus` também — e no empate quem decide é a
+ * ORDEM. Estado no meio do arquivo vence só as bases que vieram antes.
+ *
+ * Foi exatamente o que aconteceu quando este bloco estava na linha 296:
+ * `.campo input` (linha 162) perdia para ele e tingia a borda no foco, mas
+ * `.barra-busca input` (625) e `.acao-busca input` (877) vinham depois e
+ * ganhavam — dois campos deixavam de tingir, e nada no código dizia por quê.
+ *
+ * No fim do arquivo o empate resolve sempre a favor do estado. Nenhuma das
+ * outras folhas (mobile, oficina, erp) mexe em borda de campo; a única que
+ * chega perto é a largura da borda do checkbox no mobile, que é outra
+ * propriedade e outro elemento.
+ *
+ * A ordem AQUI DENTRO também é a regra, e não acaso:
+ *
+ *   1. `:focus` zera o anel do navegador
+ *   2. `:focus` tinge a borda        — foco de mouse
+ *   3. `:focus-visible` desenha o anel
+ *   4. `:focus-visible` no campo     — anel colado, borda tingida
+ *   5. `[aria-invalid]`              — vence 2 e 4 por vir depois
+ *   6. `[aria-invalid]:focus-visible`
+ *
+ * Todas as de campo têm a MESMA forma de seletor, então o empate é por
+ * construção: mexer numa não desequilibra a outra.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/*
+ * O ANEL DE FOCO — e por que a versão anterior não desenhava nada.
+ *
+ * A regra antiga era `:where(a, button, input, …):focus-visible`. `:where()`
+ * ZERA a especificidade dos próprios argumentos, então a regra inteira valia
+ * (0,1,0) — só o peso do `:focus-visible`. E seis campos declaravam
+ * `outline: none` em regras como `.campo input`, que valem (0,1,1).
+ *
+ * (0,1,1) vence (0,1,0) em qualquer ordem de arquivo. Medido com Tab de
+ * verdade, os OITO seletores de campo do sistema não desenhavam anel nenhum —
+ * inclusive `.campo input`, que é o campo de formulário padrão. Botão e link
+ * desenhavam, porque nada os sobrescrevia. E o comentário que estava aqui
+ * dizia que a regra existia justamente para consertar isso.
+ *
+ * Isso não é acabamento. `confirmarAgora()` sinaliza campo obrigatório vazio
+ * com `el.focus()` — sem anel, a pessoa lê "Placa é obrigatório" e o foco vai
+ * para um campo que não muda de aparência. Num diálogo de seis campos, ela
+ * tem de adivinhar qual.
+ *
+ * Agora são duas regras, e a dupla é o ponto:
+ *
+ *   1. `:focus` zera o anel do NAVEGADOR — foco de mouse não desenha nada,
+ *      que é o efeito que os seis `outline: none` buscavam, num lugar só.
+ *   2. `:focus-visible` desenha o NOSSO — foco de teclado sempre marca.
+ *
+ * As duas em (0,1,1), a segunda depois: quando ambas casam, a segunda vence.
+ * Não depende de o navegador limitar o anel padrão ao `:focus-visible`, e
+ * nenhuma outra folha mexe em `outline`.
+ *
+ * `border-radius` saiu: `outline` já acompanha o raio do elemento sozinho, e
+ * declará-lo aqui mudava a FORMA do elemento ao receber foco.
+ */
+:is(a, button, input, select, textarea, [tabindex], [role="button"]):focus {
+  outline: none;
+}
+
+/*
+ * Foco de MOUSE tinge a borda; foco de TECLADO ganha o anel inteiro.
+ *
+ * Esta linha substitui cinco regras espalhadas que faziam exatamente isto —
+ * `.campo input:focus`, `.barra-busca input:focus`, `.acao-busca input:focus`,
+ * `textarea.mensagem.editavel:focus` e `.mover-etapa:focus`, todas pondo
+ * `border-color: var(--acento)`.
+ *
+ * Espalhadas elas não eram só repetição: `.campo input:focus` vale (0,2,1), e
+ * a marca de campo inválido, `:is(input,…)[aria-invalid="true"]`, vale (0,1,1).
+ * MEDIDO no navegador: (0,2,1) vence. Quem clicasse "Confirmar" com o mouse
+ * receberia o campo recusado com a borda no ACENTO, e não no vermelho — e o
+ * caminho do mouse é o caminho comum, porque `recusar()` foca por script logo
+ * depois do clique, sem passar por `:focus-visible`.
+ *
+ * Junta, a regra empata em (0,1,1) com a marca de inválido, que vem depois no
+ * arquivo e por isso vence. O empate é por construção: as duas têm a mesma
+ * forma de seletor, então nenhuma reforma de uma desequilibra a outra.
+ */
+:is(input, select, textarea):focus {
+  border-color: var(--foco);
+}
+
+/*
+ * A única que precisa de regra própria. `textarea.mensagem.editavel` é (0,2,1)
+ * na base — mais forte que a linha acima, e especificidade vence ordem, então
+ * estar no fim do arquivo não resolve. Sem esta linha ela perde a tintura de
+ * borda que tinha antes (o anel continua, mas o acabamento muda).
+ *
+ * O `:not([aria-invalid])` é obrigatório e não zelo: sem ele, esta regra
+ * (0,3,1) passaria por cima da marca de inválido (0,1,1) — que é exatamente o
+ * defeito que as cinco regras espalhadas causavam, reintroduzido num elemento.
+ */
+textarea.mensagem.editavel:focus:not([aria-invalid="true"]) {
+  border-color: var(--foco);
+}
+
+:is(a, button, input, select, textarea, [tabindex], [role="button"]):focus-visible {
+  outline: var(--anel) solid var(--foco);
+  outline-offset: var(--anel-folga);
+}
+
+/*
+ * O campo encosta o anel na borda. Com folga, aparecem duas linhas
+ * concêntricas — a borda do campo e o anel — em vez de uma marca só. É a
+ * mesma distinção que o HeroUI faz entre `focus-ring` e `focus-field-ring`.
+ */
+:is(input, select, textarea):focus-visible {
+  --anel-folga: 0px;
+  border-color: var(--foco);
+}
+
+/*
+ * CAMPO INVÁLIDO.
+ *
+ * O HeroUI usa `invalid-field-ring`: contorno de 1px na cor de perigo quando
+ * sem foco, anel de 2px quando com foco. Aqui é a BORDA que muda, e não um
+ * contorno extra — os campos deste sistema já têm borda visível, e somar um
+ * contorno de 1px por fora dela dá duas linhas concêntricas onde a intenção é
+ * uma marca só. A ideia é a mesma: a marca sobrevive ao foco sair.
+ *
+ * Precisa vir DEPOIS do bloco de foco: `:is(input,…)[aria-invalid]` e
+ * `:is(input,…):focus-visible` empatam em (0,1,1), e no empate vence a última.
+ */
+:is(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--invalido);
+}
+
+:is(input, select, textarea)[aria-invalid="true"]:focus-visible {
+  outline-color: var(--invalido);
+  border-color: var(--invalido);
 }
